@@ -1,0 +1,351 @@
+import { Button, Card, Col, Input, Modal, Progress, Radio, Row, Slider, Space, Table, Tag, Typography, App as AntApp, Alert, Divider } from 'antd';
+import { SafetyCertificateOutlined } from '@ant-design/icons';
+import { useState } from 'react';
+import { useStore } from '@/store/store';
+import { COLOR } from '@/theme';
+import { PageHeader } from '@/components/ui';
+import type { AssignmentSubmit } from '@/mock/types';
+import { DEMO_TODAY } from '@/mock/seedBiz';
+
+/** V4.0 CR-07：抽查三问 → 一次「真实性确认」 */
+interface ConfirmDraft {
+  agree: boolean;
+  result: '真实' | '存疑';
+  note: string;
+  /** judge.deepSpotCheck 开启时才需要（可选高级问卷） */
+  q1?: string;
+  q2?: string;
+  q3?: string;
+}
+
+export default function JudgeReview() {
+  const { db, me, setDb, log, hasRole, flags } = useStore();
+  const { message } = AntApp.useApp();
+  const [current, setCurrent] = useState<AssignmentSubmit | null>(null);
+  const [scores, setScores] = useState<Record<string, number>>({});
+  const [opinion, setOpinion] = useState('');
+  const [spot, setSpot] = useState<{ q1: string; q2: string; q3: string } | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmDraft | null>(null);
+
+  /** PRD V4.0 §6.2：ADMIN 可进入本页查看（菜单可见），但无业务审批权，操作入口禁用 */
+  const canOperate = hasRole('JUDGE', 'ORGANIZER');
+  /** 开关：judge.confirmMode 关闭 → 回到 V3.0 的三问抽查；judge.deepSpotCheck 开启 → 展开高级问卷 */
+  const confirmMode = flags.judgeConfirmMode !== false;
+  const deepSpot = flags.judgeDeepSpotCheck === true;
+
+  /** V4.0 CR-07：已做真实性确认的作业保留在队列内（便于截止前撤回重评），仅本开关路径下才会出现 confirmed 字段 */
+  const card = db.scoreCards.find((c) => c.id === 'SC1' && c.status === '启用')!;
+  const queue = db.submits.filter(
+    (s) => (['AI_SCORED', 'REVIEWING', 'REVIEWED', 'SPOT_CHECK'].includes(s.status) || !!s.confirmed)
+      && s.union_id !== me.union_id,
+  );
+
+  const total = card.dimensions.reduce((a, d) => a + (scores[d.name] ?? 0), 0);
+  const now = () => `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`;
+
+  const submitScore = () => {
+    if (Object.keys(scores).length < card.dimensions.length) { message.warning('请完成所有维度打分'); return; }
+    if (opinion.trim().length < 10) { message.warning('复核意见至少 10 字'); return; }
+    setDb((p) => ({
+      ...p,
+      submits: p.submits.map((s) => (s.id === current!.id
+        ? {
+            ...s, status: 'REVIEWED', judge_score: total,
+            final_score: Math.round(((s.ai_score ?? 0) * card.ai_weight / 100 + total * card.judge_weight / 100) * 10) / 10,
+          } : s)),
+      scoreResults: [...p.scoreResults, {
+        id: `SR-${current!.id}-JD-${Date.now()}`, target_type: 'submit', target_id: current!.id,
+        card_id: card.id, card_version: card.version, source: 'JUDGE',
+        dim_scores: scores, total, reason: opinion,
+        scorer_union_id: me.union_id, scorer_name: me.name, created_at: DEMO_TODAY + ' 18:40',
+      }],
+    }));
+    log('评委复核打分', current!.code, `四维合计 ${total}，意见：${opinion.slice(0, 20)}…`);
+    message.success(`复核完成，最终分按 AI ${card.ai_weight}% + 评委 ${card.judge_weight}% 合成`);
+    setCurrent(null); setScores({}); setOpinion('');
+  };
+
+  /** V3.0 保留路径：judge.confirmMode 关闭时的三问抽查 */
+  const submitSpot = () => {
+    if (!spot || !spot.q1 || !spot.q2 || !spot.q3) { message.warning('3 问必须全部填写'); return; }
+    setDb((p) => ({
+      ...p,
+      submits: p.submits.map((s) => (s.id === current!.id
+        ? { ...s, status: 'PASSED', spot_check: { ...spot, result: '通过', by: me.name } } : s)),
+    }));
+    log('3 问抽查', current!.code, '结论：通过');
+    message.success('抽查结论：通过');
+    setSpot(null); setCurrent(null);
+  };
+
+  /** V4.0 CR-07：确认真实性 —— 确认即代表复核结束，可在评分截止前撤回重评 */
+  const submitConfirm = () => {
+    if (!confirm?.agree) { message.error('请先勾选「确认为本人真实作品」'); return; }
+    if (confirm.result === '存疑' && (confirm.note?.trim().length ?? 0) < 10) {
+      message.error('标记为「存疑」时必须填写不少于 10 字的说明');
+      return;
+    }
+    const prevStatus = current!.status;
+    const nextStatus: AssignmentSubmit['status'] = confirm.result === '真实' ? 'PASSED' : 'REVIEWING';
+    setDb((p) => ({
+      ...p,
+      submits: p.submits.map((s) => (s.id === current!.id
+        ? {
+            ...s, status: nextStatus,
+            confirmed: { by: me.name, at: now(), result: confirm.result, note: confirm.note || undefined },
+            /** deepSpotCheck 开启且已填写时，仍写入 deprecated 的三问字段（保留历史读取） */
+            spot_check: deepSpot && confirm.q1 && confirm.q2 && confirm.q3
+              ? { q1: confirm.q1, q2: confirm.q2, q3: confirm.q3, result: '通过', by: me.name }
+              : s.spot_check,
+          } : s)),
+    }));
+    log(
+      confirm.result === '真实' ? '真实性确认通过' : '真实性确认存疑',
+      current!.code,
+      `确认人 ${me.name}（钉钉身份不可编辑）· ${prevStatus} → ${nextStatus}${confirm.note ? ` · 备注：${confirm.note.slice(0, 20)}…` : ''}`,
+    );
+    message.success(confirm.result === '真实' ? '已确认真实性，复核完成' : '已标记存疑，退回重新复核并通知组织者');
+    setConfirm(null); setCurrent(null);
+  };
+
+  /** 撤回确认（评分截止前可重评，全程留痕） */
+  const retractConfirm = (r: AssignmentSubmit) => {
+    setDb((p) => ({
+      ...p,
+      submits: p.submits.map((s) => {
+        if (s.id !== r.id) return s;
+        const { confirmed: _drop, ...rest } = s;
+        return { ...rest, status: 'REVIEWED' };
+      }),
+    }));
+    log('撤回真实性确认', r.code, `原确认人 ${r.confirmed?.by ?? '—'}，退回 REVIEWED 可重新复核`);
+    message.success('已撤回确认，退回待复核状态（已留痕）');
+  };
+
+  const confirmOkDisabled = !confirm?.agree
+    || (confirm?.result === '存疑' && (confirm?.note?.trim().length ?? 0) < 10);
+
+  return (
+    <Space direction="vertical" size={16} style={{ width: '100%' }}>
+      <PageHeader title="评委复核" desc="AI 预评分 + 评委复核，最终分按权重合成" />
+      {!canOperate && (
+        <Alert type="warning" showIcon
+          message="当前身份为只读浏览"
+          description="PRD V3.0 §3.2：系统管理员无业务数据审批权，仅可查看复核队列与进度；打分、抽查与真实性确认需评委（JUDGE）或组织者（ORGANIZER）身份。" />
+      )}
+      <Alert type="info" showIcon
+        message={`最终分 = AI 分 × ${card.ai_weight}% + 评委均分 × ${card.judge_weight}%（多评委取均值，公式后台可配置）`}
+        description="评委姓名从钉钉读取、不可编辑；评委不能复核自己的作业，系统自动过滤。" />
+      {confirmMode && (
+        <Alert type="success" showIcon
+          message="V4.0 CR-07：抽查已简化为一次「真实性确认」"
+          description="确认人取钉钉身份不可编辑，确认即代表复核结束；评分截止前可撤回重评（全程留痕）。原三问字段保留为可选高级项，由开关 judge.deepSpotCheck 控制。" />
+      )}
+
+      <Row gutter={16}>
+        <Col xs={24} lg={14}>
+          <Card size="small" title={`待复核队列（${queue.length}）`}>
+            <Table
+              size="small" rowKey="id" pagination={{ pageSize: 6 }} dataSource={queue}
+              columns={[
+                { title: '编号', dataIndex: 'code', width: 140 },
+                { title: '姓名', dataIndex: 'name', width: 80 },
+                { title: '作业', dataIndex: 'title', ellipsis: true },
+                { title: 'AI 分', dataIndex: 'ai_score', width: 70, render: (v?: number) => <span className="num">{v ?? '—'}</span> },
+                { title: '状态', dataIndex: 'status', render: (v: string) => <Tag color={v === 'REVIEWED' ? 'green' : 'purple'}>{v}</Tag> },
+                {
+                  title: '操作', width: confirmMode ? 180 : 140,
+                  render: (_, r) => (
+                    <Space size={4}>
+                      <Button size="small" type="link" disabled={!canOperate} onClick={() => setCurrent(r)}>打分</Button>
+                      {confirmMode ? (
+                        r.confirmed ? (
+                          <Button size="small" type="link" disabled={!canOperate} onClick={() => retractConfirm(r)}>撤回确认</Button>
+                        ) : (
+                          <Button
+                            size="small" type="link" disabled={!canOperate}
+                            onClick={() => {
+                              setCurrent(r);
+                              setConfirm({ agree: false, result: '真实', note: '' });
+                            }}
+                          >
+                            确认真实性
+                          </Button>
+                        )
+                      ) : (
+                        r.ai_score !== undefined && r.ai_score >= 80 && (
+                          <Button size="small" type="link" disabled={!canOperate} onClick={() => { setCurrent(r); setSpot({ q1: '', q2: '', q3: '' }); }}>抽查</Button>
+                        )
+                      )}
+                    </Space>
+                  ),
+                },
+              ]}
+              expandable={confirmMode ? {
+                expandedRowRender: (r) => r.confirmed ? (
+                  <div style={{ fontSize: 12, color: COLOR.textSub }}>
+                    <SafetyCertificateOutlined style={{ color: COLOR.success }} />{' '}
+                    已确认：{r.confirmed.result} · 确认人 {r.confirmed.by} · {r.confirmed.at}
+                    {r.confirmed.note && ` · 备注：${r.confirmed.note}`}
+                  </div>
+                ) : <span style={{ fontSize: 12, color: COLOR.textMuted }}>尚未确认真实性</span>,
+                rowExpandable: (r) => confirmMode,
+              } : undefined}
+            />
+          </Card>
+        </Col>
+
+        <Col xs={24} lg={10}>
+          {current ? (
+            <Card size="small" title={`打分面板 · ${current.code}`}>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                提报人：{current.name}（{current.dept_name}）· AI 分 {current.ai_score} · 评分卡 {card.name} {current.score_card_version}
+              </Typography.Text>
+              <div style={{ marginTop: 12 }}>
+                {card.dimensions.map((d) => (
+                  <div key={d.id} style={{ marginBottom: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                      <span>{d.name}（权重 {d.weight}%）</span>
+                      <span className="num">{scores[d.name] ?? 0} / {d.max_score}</span>
+                    </div>
+                    <Slider
+                      min={0} max={d.max_score} value={scores[d.name] ?? 0}
+                      onChange={(v) => setScores({ ...scores, [d.name]: Number(v) })}
+                      tooltip={{ formatter: (v) => `${v} 分` }}
+                    />
+                    <div style={{ fontSize: 11, color: COLOR.textSub }}>{d.standard}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
+                <span>评委合计</span><span className="num" style={{ color: COLOR.primary, fontSize: 20 }}>{total}</span>
+              </div>
+              <Input.TextArea
+                rows={3} style={{ marginTop: 8 }} placeholder="复核意见（≥10 字）"
+                value={opinion} onChange={(e) => setOpinion(e.target.value)}
+              />
+              <Space style={{ marginTop: 8 }}>
+                <Button type="primary" disabled={!canOperate} onClick={submitScore}>提交复核</Button>
+                <Button onClick={() => setCurrent(null)}>取消</Button>
+              </Space>
+            </Card>
+          ) : (
+            <Card size="small">
+              <Progress percent={Math.round((db.submits.filter((s) => s.judge_score !== undefined).length / Math.max(1, db.submits.length)) * 100)} strokeColor={COLOR.primary} />
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                复核进度：{db.submits.filter((s) => s.judge_score !== undefined).length}/{db.submits.length}；复核未完成不进入公示
+              </Typography.Text>
+              <div style={{ marginTop: 12 }}>
+                {confirmMode ? (
+                  <>
+                    <Typography.Text strong>真实性确认</Typography.Text>
+                    <div style={{ fontSize: 13, color: COLOR.textSub, marginTop: 4 }}>
+                      一次勾选确认替代原三问抽查：勾选「确认为本人真实作品」+ 可选备注 → 提交。
+                      前 10 名必做；组织者可对任意作业发起；存疑时必须写明原因。
+                    </div>
+                    <div style={{ fontSize: 13, color: COLOR.textSub, marginTop: 8 }}>
+                      已确认 {db.submits.filter((s) => s.confirmed).length} 件
+                      {deepSpot && ' · 高级三问问卷已开启'}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <Typography.Text strong>3 问抽查</Typography.Text>
+                    <div style={{ fontSize: 13, color: COLOR.textSub, marginTop: 4 }}>
+                      ① 真实输入是什么 ② 中途改过什么 ③ 同事用的反馈<br />
+                      前 10 名必做；组织者可对任意作业发起。
+                    </div>
+                  </>
+                )}
+              </div>
+            </Card>
+          )}
+        </Col>
+      </Row>
+
+      {/* V4.0 CR-07：真实性确认弹窗 */}
+      <Modal
+        open={!!confirm} title={`真实性确认 · ${current?.code}`}
+        onCancel={() => setConfirm(null)} onOk={submitConfirm}
+        okText="提交确认" okButtonProps={{ disabled: confirmOkDisabled }}
+      >
+        <Space direction="vertical" size={10} style={{ width: '100%' }}>
+          <div style={{ fontSize: 13, color: COLOR.textSub }}>
+            提报人：{current?.name}（{current?.dept_name}）· AI 分 {current?.ai_score} · 评委分 {current?.judge_score ?? '—'}
+          </div>
+
+          {/* 二次焦点确认：默认不勾选，必须人工勾选 */}
+          <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={confirm?.agree ?? false}
+              onChange={(e) => setConfirm({ ...confirm!, agree: e.target.checked })}
+            />
+            <span style={{ fontSize: 13 }}>
+              确认为本人真实作品（本人独立完成，AI 仅作辅助工具）
+            </span>
+          </label>
+
+          <div>
+            <div style={{ fontSize: 13, marginBottom: 4 }}>确认结论</div>
+            <Radio.Group
+              value={confirm?.result ?? '真实'}
+              onChange={(e) => setConfirm({ ...confirm!, result: e.target.value })}
+            >
+              <Radio value="真实">真实</Radio>
+              <Radio value="存疑">存疑（退回重新复核）</Radio>
+            </Radio.Group>
+          </div>
+
+          <div>
+            <div style={{ fontSize: 13, marginBottom: 4 }}>
+              备注{confirm?.result === '存疑' ? '（必填，≥10 字，说明存疑原因）' : '（可选）'}
+            </div>
+            <Input.TextArea
+              rows={3} value={confirm?.note ?? ''}
+              placeholder={confirm?.result === '存疑' ? '请说明存疑原因（≥10 字）' : '补充说明（可选）'}
+              onChange={(e) => setConfirm({ ...confirm!, note: e.target.value })}
+            />
+          </div>
+
+          {deepSpot && (
+            <>
+              <Divider style={{ margin: '4px 0' }} />
+              <div style={{ fontSize: 12, color: COLOR.textMuted }}>
+                高级问卷（judge.deepSpotCheck 已开启，选填；填写后将一并留档）
+              </div>
+              <div>① 真实输入是什么</div>
+              <Input.TextArea rows={2} value={confirm?.q1 ?? ''} onChange={(e) => setConfirm({ ...confirm!, q1: e.target.value })} />
+              <div>② 中途改过什么</div>
+              <Input.TextArea rows={2} value={confirm?.q2 ?? ''} onChange={(e) => setConfirm({ ...confirm!, q2: e.target.value })} />
+              <div>③ 同事用的反馈</div>
+              <Input.TextArea rows={2} value={confirm?.q3 ?? ''} onChange={(e) => setConfirm({ ...confirm!, q3: e.target.value })} />
+            </>
+          )}
+
+          <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+            确认人取钉钉身份（{me.name}）不可编辑；确认后可在评分截止前撤回重评，全程留痕。
+          </Typography.Text>
+        </Space>
+      </Modal>
+
+      {/* V3.0 保留路径：judge.confirmMode 关闭时的三问抽查 */}
+      <Modal
+        open={!!spot} title={`3 问抽查 · ${current?.code}`} onCancel={() => setSpot(null)} onOk={submitSpot}
+        okText="提交抽查结论"
+      >
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          <div>① 真实输入是什么</div>
+          <Input.TextArea rows={2} value={spot?.q1} onChange={(e) => setSpot({ ...spot!, q1: e.target.value })} />
+          <div>② 中途改过什么</div>
+          <Input.TextArea rows={2} value={spot?.q2} onChange={(e) => setSpot({ ...spot!, q2: e.target.value })} />
+          <div>③ 同事用的反馈</div>
+          <Input.TextArea rows={2} value={spot?.q3} onChange={(e) => setSpot({ ...spot!, q3: e.target.value })} />
+          <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+            不通过则取消评奖资格并标记，结果通知本人与其团队负责人。
+          </Typography.Text>
+        </Space>
+      </Modal>
+    </Space>
+  );
+}

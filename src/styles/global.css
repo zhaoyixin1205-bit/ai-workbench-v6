@@ -1,0 +1,788 @@
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+body {
+  background: #f5f7fb;
+  color: #1f2937;
+  font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* 更柔和的滚动条（仅 webkit） */
+  scrollbar-width: thin;
+  scrollbar-color: #e5e7eb transparent;
+}
+body::-webkit-scrollbar {
+  width: 8px;
+}
+body::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 4px;
+}
+body::-webkit-scrollbar-track {
+  background: transparent;
+}
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* 数字等宽，保证榜单对齐（PRD 9.3） */
+.num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+  letter-spacing: -0.01em;
+}
+
+/* 容器体系 */
+.wb-container {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+.wb-container-wide {
+  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* 卡片体系：参考 getdesign.md 的浮起感 */
+.wb-card {
+  background: #fff;
+  border: 1px solid #f3f4f6;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(31, 41, 55, 0.06), 0 1px 2px rgba(31, 41, 55, 0.04);
+}
+/* V4.1 Moka §6：入场快出慢停，位移统一小位移（上浮 2px），不缩放 */
+.wb-card-hover {
+  transition: box-shadow 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
+              transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
+              border-color 240ms ease;
+  will-change: transform, box-shadow;
+}
+.wb-card-hover:hover {
+  box-shadow: rgba(30, 36, 53, 0.16) 0 7px 14px;
+  transform: translateY(-2px);
+  border-color: #ffe4d9;
+}
+.wb-card-hover:active {
+  transform: translateY(-1px);
+}
+
+/* 区块标题 */
+.wb-section-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1f2937;
+  margin: 0 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  letter-spacing: -0.01em;
+}
+
+/* 指标数字 */
+.wb-metric {
+  font-size: 32px;
+  font-weight: 800;
+  color: #ff6b35;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+/* 文字层级 */
+.wb-h1 {
+  font-size: 28px;
+  font-weight: 800;
+  color: #1f2937;
+  letter-spacing: -0.02em;
+}
+.wb-h2 {
+  font-size: 22px;
+  font-weight: 700;
+  color: #1f2937;
+  letter-spacing: -0.01em;
+}
+.wb-h3 {
+  font-size: 17px;
+  font-weight: 700;
+  color: #1f2937;
+}
+.wb-body {
+  font-size: 14px;
+  line-height: 1.7;
+  color: #6b7280;
+}
+.wb-caption {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+/* C 端底部 Tab */
+.wb-tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 100;
+  display: flex;
+  background: rgba(255, 255, 255, 0.96);
+  border-top: 1px solid #f3f4f6;
+  backdrop-filter: blur(8px);
+  padding-bottom: env(safe-area-inset-bottom);
+  box-shadow: 0 -2px 12px rgba(31, 41, 55, 0.04);
+}
+.wb-tabbar-item {
+  flex: 1;
+  min-height: 54px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  font-size: 11px;
+  color: #9ca3af;
+  transition: color 0.2s ease;
+}
+.wb-tabbar-item.active {
+  color: #ff6b35;
+}
+.wb-tabbar-item .anticon {
+  font-size: 20px;
+}
+
+.wb-body-with-tabbar {
+  padding-bottom: 72px;
+}
+
+/* 空状态 */
+.wb-empty {
+  padding: 56px 16px;
+  text-align: center;
+  color: #9ca3af;
+}
+
+/* Banner / Hero：渐变 + 柔和阴影 */
+.wb-banner {
+  position: relative;
+  background: linear-gradient(135deg, #ff6b35 0%, #ff7b47 35%, #ff9d76 100%);
+  color: #fff;
+  border-radius: 20px;
+  padding: 28px;
+  box-shadow: 0 8px 24px rgba(255, 107, 53, 0.22), 0 2px 6px rgba(255, 107, 53, 0.10);
+  overflow: hidden;
+}
+.wb-banner::before {
+  content: '';
+  position: absolute;
+  top: -30%;
+  right: -10%;
+  width: 360px;
+  height: 360px;
+  background: radial-gradient(circle, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0) 70%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+.wb-banner::after {
+  content: '';
+  position: absolute;
+  bottom: -40%;
+  left: -5%;
+  width: 260px;
+  height: 260px;
+  background: radial-gradient(circle, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0) 70%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* 横向滚动 */
+.wb-scroll-x {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  scroll-snap-type: x mandatory;
+}
+.wb-scroll-x::-webkit-scrollbar {
+  height: 5px;
+}
+.wb-scroll-x::-webkit-scrollbar-thumb {
+  background: #e5e7eb;
+  border-radius: 3px;
+}
+.wb-scroll-x > * {
+  scroll-snap-align: start;
+}
+
+.wb-avatar-anon {
+  background: linear-gradient(135deg, #cbd5e1, #94a3b8);
+}
+
+/* 通用按钮增强 */
+.wb-btn-primary {
+  background: linear-gradient(135deg, #ff6b35 0%, #ff7b47 100%);
+  border: none;
+  box-shadow: 0 4px 12px rgba(255, 107, 53, 0.22);
+  transition: all 0.2s ease;
+}
+.wb-btn-primary:hover {
+  box-shadow: 0 6px 16px rgba(255, 107, 53, 0.30);
+  transform: translateY(-1px);
+}
+
+/* 加载/过渡 */
+.wb-fade-in {
+  animation: wbFadeIn 0.35s ease-out;
+}
+@keyframes wbFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ==========================================================================
+   Ant Design 组件统一规范化层
+   目的：让 31 个页面无需逐个改写即可获得一致的圆角 / 阴影 / 低饱和配色 / 过渡
+   约束：只做视觉增强，不改动任何布局尺寸与交互语义
+   ========================================================================== */
+
+/* —— 卡片 —— */
+.ant-card {
+  border-color: #f3f4f6 !important;
+  box-shadow: 0 2px 8px rgba(31, 41, 55, 0.06), 0 1px 2px rgba(31, 41, 55, 0.04);
+  transition: box-shadow 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
+              transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
+              border-color 240ms ease;
+}
+.ant-card-hoverable:hover {
+  border-color: #ffe4d9 !important;
+  box-shadow: rgba(30, 36, 53, 0.16) 0 7px 14px;
+  transform: translateY(-2px);
+}
+.ant-card-head {
+  border-bottom-color: #f3f4f6 !important;
+  font-weight: 700;
+}
+.ant-card-head-title {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* —— 按钮 —— */
+.ant-btn-primary {
+  box-shadow: 0 4px 12px rgba(255, 107, 53, 0.22);
+}
+.ant-btn-primary:hover {
+  box-shadow: 0 6px 16px rgba(255, 107, 53, 0.30) !important;
+  transform: translateY(-1px);
+}
+.ant-btn {
+  transition: all 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+/* V4.1 Moka §1.2：页面主 CTA 一律胶囊（只作用于大号主按钮，表格内小按钮保持 10px 圆角） */
+.ant-btn-primary.ant-btn-lg,
+.ant-btn-lg.ant-btn-primary {
+  border-radius: 999px !important;
+  padding-inline: 28px;
+  font-weight: 700;
+  box-shadow: rgba(255, 138, 96, 0.28) 0 6px 16px;
+}
+.ant-btn-primary.ant-btn-lg:hover {
+  box-shadow: rgba(255, 138, 96, 0.34) 0 10px 22px !important;
+}
+.ant-btn:not(.ant-btn-primary):not(.ant-btn-link):not(.ant-btn-text):hover {
+  border-color: #ffb694 !important;
+  color: #e55d2b !important;
+}
+
+/* —— 标签：把 antd 预设色统一成低饱和 chip —— */
+.ant-tag {
+  border: none;
+  font-weight: 600;
+  font-size: 11px;
+  line-height: 18px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  margin-inline-end: 6px;
+}
+.ant-tag-orange,
+.ant-tag-volcano {
+  background: #fff1eb !important;
+  color: #c2410c !important;
+}
+.ant-tag-blue,
+.ant-tag-geekblue {
+  background: #eff6ff !important;
+  color: #1d4ed8 !important;
+}
+.ant-tag-purple,
+.ant-tag-magenta {
+  background: #f3e8ff !important;
+  color: #7e22ce !important;
+}
+.ant-tag-green,
+.ant-tag-lime {
+  background: #ecfdf5 !important;
+  color: #047857 !important;
+}
+.ant-tag-red {
+  background: #fef2f2 !important;
+  color: #b91c1c !important;
+}
+.ant-tag-gold,
+.ant-tag-cyan {
+  background: #fffbeb !important;
+  color: #b45309 !important;
+}
+.ant-tag-default {
+  background: #f3f4f6 !important;
+  color: #6b7280 !important;
+}
+
+/* —— 表格 —— */
+.ant-table-wrapper .ant-table {
+  border-radius: 14px;
+}
+.ant-table-wrapper .ant-table-thead > tr > th {
+  background: #fafbfc !important;
+  color: #6b7280 !important;
+  font-weight: 600 !important;
+  font-size: 13px;
+  border-bottom: 1px solid #f3f4f6 !important;
+}
+.ant-table-wrapper .ant-table-thead > tr > th::before {
+  display: none !important;
+}
+.ant-table-wrapper .ant-table-tbody > tr > td {
+  border-bottom: 1px solid #f8f9fb !important;
+}
+.ant-table-wrapper .ant-table-tbody > tr:hover > td {
+  background: #fffaf7 !important;
+}
+.ant-table-wrapper .ant-table-tbody > tr:last-child > td {
+  border-bottom: none !important;
+}
+
+/* —— 标题排版 —— */
+.ant-typography h1,
+h1.ant-typography,
+.ant-typography h2,
+h2.ant-typography,
+.ant-typography h3,
+h3.ant-typography,
+.ant-typography h4,
+h4.ant-typography,
+.ant-typography h5,
+h5.ant-typography {
+  color: #1f2937;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+.ant-typography {
+  color: #1f2937;
+}
+.ant-typography.ant-typography-secondary,
+.ant-typography-secondary {
+  color: #6b7280;
+}
+
+/* —— 表单控件：柔和聚焦环，替代生硬描边 —— */
+.ant-input:focus,
+.ant-input-focused,
+.ant-input-affix-wrapper:focus,
+.ant-input-affix-wrapper-focused,
+.ant-select-focused .ant-select-selector,
+.ant-picker-focused,
+.ant-input-number-focused {
+  border-color: #ffb694 !important;
+  box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.10) !important;
+}
+.ant-input:hover,
+.ant-input-affix-wrapper:hover,
+.ant-select:not(.ant-select-disabled):hover .ant-select-selector,
+.ant-picker:hover {
+  border-color: #ffd0bb !important;
+}
+
+/* —— 步骤条 —— */
+.ant-steps {
+  padding: 4px 0;
+}
+.ant-steps .ant-steps-item-title {
+  font-size: 13px !important;
+  font-weight: 600;
+}
+.ant-steps .ant-steps-item-process .ant-steps-item-icon {
+  box-shadow: 0 4px 12px rgba(255, 107, 53, 0.24);
+}
+
+/* —— 分段控制器：胶囊化 —— */
+.ant-segmented {
+  padding: 3px;
+  border-radius: 12px;
+  background: #f3f4f6;
+}
+.ant-segmented .ant-segmented-item {
+  border-radius: 9px;
+  transition: all 0.2s ease;
+}
+.ant-segmented .ant-segmented-item:hover:not(.ant-segmented-item-selected) {
+  color: #e55d2b;
+}
+.ant-segmented .ant-segmented-item-selected {
+  box-shadow: 0 2px 8px rgba(31, 41, 55, 0.08);
+}
+.ant-segmented .ant-segmented-item-selected .ant-segmented-item-label {
+  color: #e55d2b;
+  font-weight: 600;
+}
+
+/* —— 单选按钮组：选中态用主色浅底，替代纯描边 —— */
+.ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled) {
+  background: #fff1eb !important;
+  border-color: #ffb694 !important;
+  color: #c2410c !important;
+  font-weight: 600;
+  box-shadow: none !important;
+}
+.ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled)::before {
+  background-color: #ffb694 !important;
+}
+.ant-radio-group-solid .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled) {
+  background: linear-gradient(135deg, #ff7b47 0%, #ff6b35 100%) !important;
+  border-color: transparent !important;
+  color: #fff !important;
+  box-shadow: 0 4px 12px rgba(255, 107, 53, 0.22) !important;
+}
+.ant-radio-group-solid .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled)::before {
+  background-color: transparent !important;
+}
+
+/* —— 统计数值 —— */
+.ant-statistic-content {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+  letter-spacing: -0.02em;
+}
+.ant-statistic-title {
+  color: #6b7280;
+  font-size: 13px;
+}
+
+/* —— 弹层：更柔和的圆角与阴影 —— */
+.ant-modal .ant-modal-content {
+  border-radius: 18px;
+  padding: 24px;
+  box-shadow: 0 24px 60px rgba(31, 41, 55, 0.16), 0 6px 16px rgba(31, 41, 55, 0.08);
+}
+.ant-modal .ant-modal-header {
+  border-bottom: none;
+  margin-bottom: 16px;
+}
+.ant-modal .ant-modal-title {
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: -0.01em;
+}
+.ant-drawer-content {
+  border-radius: 18px 0 0 18px;
+}
+.ant-dropdown-menu,
+.ant-select-dropdown {
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(31, 41, 55, 0.12) !important;
+  padding: 6px;
+}
+.ant-dropdown-menu-item,
+.ant-select-item {
+  border-radius: 8px !important;
+}
+.ant-popover-inner {
+  border-radius: 12px;
+}
+
+/* —— 其它细节 —— */
+.ant-divider {
+  border-color: #f3f4f6 !important;
+}
+.ant-list-item {
+  border-block-end-color: #f3f4f6 !important;
+}
+.ant-descriptions-item-label {
+  color: #6b7280 !important;
+  font-size: 13px;
+}
+.ant-collapse {
+  border: 1px solid #f3f4f6;
+  border-radius: 14px;
+  overflow: hidden;
+}
+.ant-alert {
+  border-radius: 12px;
+  border: none;
+}
+.ant-empty-description {
+  color: #9ca3af;
+  font-size: 13px;
+}
+.ant-progress-text {
+  font-variant-numeric: tabular-nums;
+  font-size: 12px !important;
+}
+.ant-tabs-tab {
+  font-weight: 500;
+}
+.ant-tabs-tab-active .ant-tabs-tab-btn {
+  font-weight: 700;
+}
+.ant-menu-item-selected {
+  font-weight: 600;
+}
+.ant-menu-light.ant-menu-root.ant-menu-inline {
+  border-inline-end: none !important;
+}
+/* 键盘可访问性：统一焦点环 */
+:focus-visible {
+  outline: 2px solid rgba(255, 107, 53, 0.55);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* 页面级进场过渡 */
+.wb-page {
+  animation: wbFadeIn 0.35s ease-out both;
+}
+
+/* 移动端隐藏 PC 专属元素，反之亦然 */
+.only-mobile {
+  display: none;
+}
+@media (max-width: 768px) {
+  .only-pc {
+    display: none !important;
+  }
+  .only-mobile {
+    display: block;
+  }
+  /* 底部 Tab 栏必须保持横向 flex（两条规则同为单类选择器，此处用双类提升优先级） */
+  .wb-tabbar.only-mobile {
+    display: flex;
+  }
+  .wb-container,
+  .wb-container-wide {
+    padding: 0 16px;
+  }
+  .wb-banner {
+    padding: 20px;
+    border-radius: 16px;
+  }
+  /* 移动端表格横向滚动更顺滑 */
+  .ant-table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .ant-modal .ant-modal-content {
+    padding: 18px;
+    border-radius: 16px;
+  }
+  .ant-card {
+    box-shadow: 0 1px 4px rgba(31, 41, 55, 0.05);
+  }
+}
+@media (min-width: 769px) {
+  .only-mobile {
+    display: none !important;
+  }
+}
+
+/* ==========================================================================
+   V4.1 · Moka 交互系统复刻层
+   对应《Moka_交互系统逻辑_复刻参考.md》：§1 令牌 / §4 交互模式库 / §5 状态反馈 / §6 微动效
+   约束：只做视觉与交互增强，不改动任何既有布局尺寸与业务语义
+   ========================================================================== */
+
+/* —— P1 悬浮预览：省掉一次点击，只放「决策需要的最小信息集」 —— */
+.wb-hovercard {
+  min-width: 180px;
+  max-width: 300px;
+  background: #fff;
+  border: 1px solid #f0f1f4;
+  border-radius: 12px;
+  box-shadow: rgba(30, 36, 53, 0.16) 0 7px 14px;
+  padding: 12px 14px;
+  animation: wbPopIn 150ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes wbPopIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* —— P9 聚焦浮层卡：引导/强调不用遮罩箭头，而用品牌色描边「提升」 —— */
+.wb-spotlight {
+  position: relative;
+  background: #fff;
+  border: 1.5px solid #ffb694;
+  border-radius: 16px;
+  box-shadow: rgba(255, 138, 96, 0.28) 0 14px 28px, rgba(255, 138, 96, 0.16) 0 6px 10px;
+}
+.wb-spotlight::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 107, 53, 0.18);
+  pointer-events: none;
+}
+
+/* —— §5 骨架屏：形状对齐最终内容，超过 300ms 才显示（避免闪烁） —— */
+.wb-skeleton {
+  display: block;
+  background: linear-gradient(90deg, #f2f3f6 25%, #eaecf0 37%, #f2f3f6 63%);
+  background-size: 400% 100%;
+  border-radius: 6px;
+  animation: wbShimmer 1.4s ease-in-out infinite;
+  animation-delay: 300ms;
+}
+@keyframes wbShimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+.wb-skeleton-line { height: 12px; margin-bottom: 8px; }
+.wb-skeleton-line:last-child { margin-bottom: 0; }
+.wb-skeleton-block { height: 68px; border-radius: 10px; }
+
+/* —— P4 指标卡：大数字 + 环比 + 迷你趋势 + 口径说明 —— */
+.wb-metric-card {
+  background: #fff;
+  border: 1px solid #f3f4f6;
+  border-radius: 16px;
+  padding: 18px;
+  box-shadow: 0 2px 8px rgba(31, 41, 55, 0.06), 0 1px 2px rgba(31, 41, 55, 0.04);
+  transition: box-shadow 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
+              transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  height: 100%;
+}
+.wb-metric-card:hover {
+  box-shadow: rgba(30, 36, 53, 0.16) 0 7px 14px;
+  transform: translateY(-2px);
+}
+.wb-trend-up { color: #dc2626; }   /* 中国市场惯例：涨 = 红 */
+.wb-trend-down { color: #059669; } /* 跌 = 绿 */
+.wb-trend-flat { color: #9ca3af; }
+
+/* —— P6 主动提醒：事实 + 一个动作按钮，不做纯告知 —— */
+.wb-nudge {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #fff1eb;
+  border-radius: 12px;
+  transition: background 120ms cubic-bezier(0.2, 0.8, 0.2, 1),
+              transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.wb-nudge:hover {
+  background: #ffe4d9;
+  transform: translateX(3px);
+}
+.wb-nudge-icon {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ff6b35;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.16);
+}
+
+/* —— §5 批量操作：选中即浮出底部操作条，始终显示「已选 n 项」 —— */
+.wb-batch-bar {
+  position: sticky;
+  bottom: 12px;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(8px);
+  border: 1px solid #f0f1f4;
+  border-radius: 999px;
+  box-shadow: rgba(30, 36, 53, 0.16) 0 7px 14px;
+  animation: wbPopIn 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* —— P10 悬浮帮助条：常驻但不挡内容（≤64px 贴边）—— */
+.wb-helper {
+  position: fixed;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 80;
+  width: 56px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 6px;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(8px);
+  border: 1px solid #f0f1f4;
+  border-radius: 999px;
+  box-shadow: rgba(30, 36, 53, 0.16) 0 7px 14px;
+}
+.wb-helper-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 2px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1.2;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.wb-helper-item:hover {
+  color: #e55d2b;
+  background: #fff1eb;
+}
+.wb-helper-item .anticon { font-size: 16px; }
+
+/* —— §8 低频角色：单屏、大字、少选择 —— */
+.wb-roomy {
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+/* —— 内容切换：150ms 淡入 + 12px 上移（Moka P2）—— */
+.wb-swap-in {
+  animation: wbSwapIn 150ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes wbSwapIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 768px) {
+  .wb-helper { display: none; }
+}
+
+/* 尊重系统「减弱动态效果」偏好 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,0 +1,39 @@
+# 依赖
+node_modules/
+.pnpm-store/
+
+# 构建产物（dist 由 npm run build 生成，不入库）
+dist/
+dist_new/
+build/
+
+# Vite 临时文件（每次 dev/build 生成的 timestamp 配置）
+vite.config.ts.timestamp-*.mjs
+*.timestamp-*.mjs
+vite.config.js.timestamp-*.mjs
+
+# TypeScript 增量编译缓存
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# 本地环境变量 / 凭据（钉钉 AppKey、AppSecret、Token 等一律不得入库）
+.env
+.env.*
+!.env.example
+
+# 编辑器与系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 日志
+*.log
+npm-debug.log*
+yarn-error.log*
+
+# 本地临时产物
+.cache/
+.playwright-mcp/
+.shots/
+coverage/
