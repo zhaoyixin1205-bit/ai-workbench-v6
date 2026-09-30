@@ -1,4 +1,5 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { fetchState, fetchStateVersion, pushState, resetRemoteState } from '@/service/stateService';
 import type { ReactNode } from 'react';
 import * as org from '@/mock/seedOrg';
 import * as biz from '@/mock/seedBiz';
@@ -217,9 +218,24 @@ export const DEFAULT_FLAGS: FeatureFlags = {
   realFileService: true,
 };
 
+/** V6.1：数据同步状态（前端据此告诉用户「现在是共享数据还是只有你一个人看得见」） */
+export interface SyncInfo {
+  /** remote = 已接后端（多人共享）；local = 未接后端（数据只在本机浏览器） */
+  mode: 'remote' | 'local';
+  /** loading 首次拉取中 / synced 已同步 / saving 写入中 / conflict 版本冲突 / offline 后端不可达 */
+  state: 'loading' | 'synced' | 'saving' | 'conflict' | 'offline';
+  driver?: string;
+  updatedBy?: string;
+  message?: string;
+}
+
 interface Ctx {
   db: DB;
   setDb: React.Dispatch<React.SetStateAction<DB>>;
+  /** V6.1：数据同步状态 */
+  sync: SyncInfo;
+  /** V6.1：手动拉取服务端最新数据（冲突后点「刷新」时用） */
+  pullRemote: () => Promise<void>;
   me: User;
   /** 一键切换演示身份（PRD 3.2 双维授权：角色 + 数据范围） */
   switchIdentity: (unionId: string) => void;
@@ -228,7 +244,7 @@ interface Ctx {
   flags: FeatureFlags;
   setFlags: React.Dispatch<React.SetStateAction<FeatureFlags>>;
   campaign: Campaign;
-  resetDemo: () => void;
+  resetDemo: () => Promise<void>;
   /** 可见数据范围过滤（SELF / DEPT_TREE / ALL） */
   visibleUsers: () => User[];
   /** V4.0 CR-01：是否带团队（有下属 / 有管辖部门），决定是否渲染「团队板块」 */
@@ -255,6 +271,48 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
     return initialDB();
   });
+  /* ------------------------------------------------------------------
+   * V6.1：后端持久化。目标是把 localStorage 从「唯一真源」降级为「离线兜底」，
+   * 让所有人看到同一份数据；后端不可达时自动退回 V6.0 的纯本地行为。
+   * ------------------------------------------------------------------ */
+  const versionRef = useRef(0);
+  /** 本地有改动尚未落盘：轮询时不用远程覆盖，避免吃掉用户正在编辑的内容 */
+  const dirtyRef = useRef(false);
+  /** 本次 setDb 来自远程拉取 —— 不触发回写，否则「拉→写→拉」会无限循环 */
+  const fromRemoteRef = useRef(false);
+  /** 与 sync.mode 同步的引用：回写 effect 只依赖 db，避免 setSync 反过来触发写回 */
+  const modeRef = useRef<'local' | 'remote'>('local');
+  const [sync, setSync] = useState<SyncInfo>({ mode: 'local', state: 'loading' });
+
+  const setMode = useCallback((mode: 'local' | 'remote', patch: Partial<SyncInfo>) => {
+    modeRef.current = mode;
+    setSync((s) => ({ ...s, mode, ...patch }));
+  }, []);
+
+  const pullRemote = useCallback(async () => {
+    const env = await fetchState();
+    if (!env) {
+      setMode('local', {
+        state: 'offline',
+        message: '未连接后端：数据只存在本机浏览器，其他人看不到',
+      });
+      return;
+    }
+    versionRef.current = env.version;
+    dirtyRef.current = false;
+    if (env.data && typeof env.data === 'object') {
+      fromRemoteRef.current = true;
+      setDb(hydrate(env.data));
+    }
+    setMode('remote', { state: 'synced', updatedBy: env.updated_by || '', driver: env.driver });
+    // 服务端还没有数据 → 用种子播种；随后的回写 effect 会把它落到服务端，
+    // 数据库因此不需要手工初始化，部署后第一台打开页面的机器自动完成播种。
+    if (!env.data) {
+      setDb(initialDB());
+      setSync((s) => ({ ...s, state: 'saving' }));
+    }
+  }, [setMode]);
+
   const [meId, setMeId] = useState<string>(() => localStorage.getItem(LS_ME) || 'uid001');
   const [flags, setFlags] = useState<FeatureFlags>(() => {
     try {
@@ -267,9 +325,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return DEFAULT_FLAGS;
   });
 
-  useEffect(() => {
-    localStorage.setItem(LS_KEY, JSON.stringify(db));
-  }, [db]);
+  // 「我是谁」和「功能开关」仍然留在本地：身份切换是个人操作偏好，不该被别人同步走。
   useEffect(() => {
     localStorage.setItem(LS_ME, meId);
   }, [meId]);
@@ -286,6 +342,87 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [db.campaigns]
   );
 
+  /* 首次挂载：向后端要一次全量数据；拿不到就退回本机模式 */
+  useEffect(() => {
+    void pullRemote();
+  }, [pullRemote]);
+
+  /* 回写：db 变化后防抖落库。远程模式写后端，失败降级写本机（不丢改动） */
+  useEffect(() => {
+    if (fromRemoteRef.current) {
+      fromRemoteRef.current = false;
+      return;
+    }
+    if (modeRef.current !== 'remote') {
+      try {
+        localStorage.setItem(LS_KEY, JSON.stringify(db));
+      } catch { /* 超出配额时忽略，不阻塞交互 */ }
+      return;
+    }
+    dirtyRef.current = true;
+    setSync((s) => ({ ...s, state: 'saving' }));
+    const timer = setTimeout(async () => {
+      const r = await pushState(db, versionRef.current, me?.name ?? '');
+      if (!r) {
+        try {
+          localStorage.setItem(LS_KEY, JSON.stringify(db));
+        } catch { /* ignore */ }
+        setMode('local', { state: 'offline', message: '与后端断开，改动已暂存在本机浏览器' });
+        dirtyRef.current = false;
+        return;
+      }
+      if (r.ok) {
+        versionRef.current = r.version;
+        dirtyRef.current = false;
+        setSync((s) => ({ ...s, mode: 'remote', state: 'synced', updatedBy: me?.name ?? '' }));
+        return;
+      }
+      if (r.conflict) {
+        // 别人先提交了：拉最新覆盖本地，并如实告知「本次改动未生效」——
+        // 静默覆盖比冲突提示危险得多，后者至少让用户知道自己要重做。
+        const env = await fetchState();
+        if (env?.data) {
+          fromRemoteRef.current = true;
+          setDb(hydrate(env.data));
+        }
+        versionRef.current = env?.version ?? r.version;
+        dirtyRef.current = false;
+        setMode('remote', {
+          state: 'conflict',
+          message: `${r.error}（已载入最新数据，你的这次改动未生效，请重新操作）`,
+        });
+        return;
+      }
+      dirtyRef.current = false;
+      setSync((s) => ({ ...s, state: 'offline', message: r.error }));
+    }, 700);
+    return () => clearTimeout(timer);
+  }, [db, me?.name, setMode]);
+
+  /* 轮询：只比版本号，变了才拉全量。本地有未落盘改动时跳过，避免吃掉正在编辑的内容 */
+  useEffect(() => {
+    const timer = setInterval(async () => {
+      if (modeRef.current !== 'remote' || dirtyRef.current) return;
+      const v = await fetchStateVersion();
+      if (v === null) {
+        setMode('local', { state: 'offline', message: '与后端断开' });
+        return;
+      }
+      if (v > versionRef.current) {
+        const env = await fetchState();
+        if (env?.data && typeof env.data === 'object') {
+          fromRemoteRef.current = true;
+          setDb(hydrate(env.data));
+        }
+        if (env) {
+          versionRef.current = env.version;
+          setSync((s) => ({ ...s, updatedBy: env.updated_by || '' }));
+        }
+      }
+    }, 8000);
+    return () => clearInterval(timer);
+  }, [setMode]);
+
   const switchIdentity = useCallback((unionId: string) => setMeId(unionId), []);
   const switchToRole = useCallback(
     (role: Role) => {
@@ -295,11 +432,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [db.users]
   );
   const hasRole = useCallback((...roles: Role[]) => roles.some((r) => me.roles.includes(r)), [me]);
-  const resetDemo = useCallback(() => {
+  const resetDemo = useCallback(async () => {
+    const ok = await resetRemoteState(me?.name ?? '');
     localStorage.removeItem(LS_KEY);
-    setDb(initialDB());
     setMeId('uid001');
-  }, []);
+    if (ok) {
+      // 服务端已清空（version+1）→ 先取回新版本号再播种，否则回写会撞上乐观锁
+      const env = await fetchState();
+      versionRef.current = env?.version ?? 0;
+      setMode('remote', { state: 'saving' });
+      setDb(initialDB());
+      return;
+    }
+    setDb(initialDB());
+  }, [me?.name, setMode]);
 
   const visibleUsers = useCallback(() => {
     if (me.scope_type === 'ALL') return db.users;
@@ -348,7 +494,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const value: Ctx = {
-    db, setDb, me, switchIdentity, switchToRole, hasRole, flags, setFlags,
+    db, setDb, sync, pullRemote, me, switchIdentity, switchToRole, hasRole, flags, setFlags,
     campaign, resetDemo, visibleUsers, hasTeam, managedDeptIds, scopeRows, log,
   };
   return <StoreCtx.Provider value={value}>{children}</StoreCtx.Provider>;

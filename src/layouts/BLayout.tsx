@@ -8,6 +8,7 @@ import {
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useMemo } from 'react';
 import RoleSwitcher from '@/components/RoleSwitcher';
+import SyncBadge from '@/components/SyncBadge';
 import NoAccess from '@/components/PageGuard';
 import { useStore } from '@/store/store';
 import { COLOR, SHADOW } from '@/theme';
@@ -145,6 +146,7 @@ export default function BLayout() {
               />
             </Space>
             <Tag color="blue" style={{ marginInlineEnd: 0 }}>数据截止 {DEMO_TODAY}（T-1）</Tag>
+            <SyncBadge />
             <Button size="small" icon={<ExportOutlined />}>导出</Button>
             <RoleSwitcher />
           </Space>

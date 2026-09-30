@@ -229,9 +229,10 @@ CREATE TABLE IF NOT EXISTS attachment_file (
 `;
 
 class PgDriver {
-  constructor(url) {
+  constructor(url, sslmode) {
     this.name = 'pg';
     this.url = url;
+    this.sslmode = sslmode;
   }
 
   async init() {
@@ -242,12 +243,19 @@ class PgDriver {
     } catch {
       throw new Error('检测到 DATABASE_URL 但缺少 pg 依赖，请执行 `npm i pg` 后重启（或改用 local / s3 驱动）');
     }
-    this.pool = new pg.Pool({ connectionString: this.url, ssl: { rejectUnauthorized: false } });
+    // 只有显式要求才开 SSL：内网 / 本机 PostgreSQL 默认不启用 SSL，硬开会握手失败
+    const opts = { connectionString: this.url, max: 5 };
+    if (this.sslmode === 'require') opts.ssl = { rejectUnauthorized: false };
+    this.pool = new pg.Pool(opts);
     await this.pool.query(PG_SCHEMA);
   }
 
   async put(key, buf) {
-    await this.pool.query('UPDATE attachment_file SET content=$2 WHERE object_key=$1', [key, buf]);
+    const r = await this.pool.query('UPDATE attachment_file SET content=$2 WHERE object_key=$1', [key, buf]);
+    // 更新 0 行说明元数据行不存在（调用顺序错了）→ 必须报错，否则「上传成功但下载为空」
+    if (r.rowCount === 0) {
+      throw new Error(`文件内容写入失败：object_key=${key} 无对应元数据行（应先 writeMeta 再 put）`);
+    }
   }
 
   async get(key) {
@@ -317,6 +325,9 @@ export function createFileRepository(env = process.env) {
       prefix: env.S3_PREFIX || 'wb-files',
     });
   }
-  if (env.DATABASE_URL) return new PgDriver(env.DATABASE_URL);
+  if (env.DATABASE_URL) {
+    const sslmode = env.PGSSLMODE || (/sslmode=require/.test(env.DATABASE_URL) ? 'require' : 'disable');
+    return new PgDriver(env.DATABASE_URL, sslmode);
+  }
   return new LocalDriver(root);
 }

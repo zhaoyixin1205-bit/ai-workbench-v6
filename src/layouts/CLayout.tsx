@@ -7,6 +7,7 @@ import {
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useMemo, useState } from 'react';
 import RoleSwitcher from '@/components/RoleSwitcher';
+import SyncBadge from '@/components/SyncBadge';
 import NoAccess from '@/components/PageGuard';
 import { useStore } from '@/store/store';
 import { COLOR, GRADIENT, SHADOW } from '@/theme';
@@ -108,6 +109,7 @@ export default function CLayout() {
         </nav>
 
         <Space size={12}>
+          <span className="only-pc"><SyncBadge /></span>
           {canAdmin && (
             <Tooltip title="管理后台 / 工作台">
               <Button
