@@ -4,11 +4,12 @@ import { useStore } from '@/store/store';
 import { COLOR } from '@/theme';
 import { PageHeader, StatCard } from '@/components/ui';
 import type { ScoreDimension } from '@/mock/types';
+import { DEMO_TODAY } from '@/mock/seedBiz';
 import { useSkillAdminConverge } from '@/auth/converge';
 import { ScopeNotice } from '@/components/ScopeNotice';
 
 export default function ScoreCardAdmin() {
-  const { db, setDb, log, scopeRows } = useStore();
+  const { db, setDb, log, scopeRows, flags } = useStore();
   /** V4.0 A-3：影响面提示按数据范围统计 */
   const inScope = scopeRows(db.submits);
   /** V4.0 CR-09：技能管理员在本页为只读浏览者（§6.2 矩阵 ◐） */
@@ -17,9 +18,18 @@ export default function ScoreCardAdmin() {
   const [cardId, setCardId] = useState(db.scoreCards[0].id + '-v2');
   const [editing, setEditing] = useState(false);
   const [dims, setDims] = useState<ScoreDimension[]>(db.scoreCards[0].dimensions);
+  /** V6.0 CR-24 开关：关闭=只有「编辑维度→保存即新版本」，无新建/复制/启用/停用/删除 */
+  const lifecycleOn = flags.scoreCardLifecycle !== false;
 
-  const card = db.scoreCards.find((c) => `${c.id}-${c.version}` === cardId) ?? db.scoreCards[0];
+  /** V6.0 CR-24：列表只展示未软删的卡 */
+  const cards = db.scoreCards.filter((c) => !c.is_deleted);
+  const card = cards.find((c) => `${c.id}-${c.version}` === cardId) ?? cards[0] ?? db.scoreCards[0];
   const weightSum = dims.reduce((a, b) => a + b.weight, 0);
+
+  /** 引用数：绑定了作业类型，或已产生评分结果 → 禁止删除，仅可停用 */
+  const refCount = (c: typeof card) =>
+    db.assignmentTypes.filter((t) => t.score_card_id === c.id).length
+    + db.scoreResults.filter((r) => r.card_id === c.id).length;
 
   const save = () => {
     if (weightSum !== 100) { message.error(`维度权重合计必须 = 100，当前 ${weightSum}`); return; }
@@ -39,6 +49,86 @@ export default function ScoreCardAdmin() {
     });
   };
 
+  /** V6.0 CR-24：新建空白评分卡（默认草稿态，权重留空由组织者配置） */
+  const createCard = () => {
+    const id = `SC${Date.now()}`;
+    const blank: ScoreDimension[] = [
+      { id: `D${Date.now()}-1`, sort: 1, name: '业务价值', weight: 40, max_score: 10, standard: '解决了多大的业务问题', levels: [] },
+      { id: `D${Date.now()}-2`, sort: 2, name: '可复用性', weight: 30, max_score: 10, standard: '别人照着做的成本有多低', levels: [] },
+      { id: `D${Date.now()}-3`, sort: 3, name: '完成度', weight: 30, max_score: 10, standard: '产出物是否完整可用', levels: [] },
+    ];
+    setDb((p) => ({
+      ...p,
+      scoreCards: [{
+        id, name: '新建评分卡', version: 'v1', total_rule: '加权求和', pass_line: 60,
+        ai_weight: 40, judge_weight: 60, status: '草稿', bind_target: '未绑定',
+        dimensions: blank, updated_at: `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`,
+      }, ...p.scoreCards],
+    }));
+    log('新建评分卡', '新建评分卡 v1', 'V6.0 CR-24：默认草稿态，三维合计 100%');
+    message.success('已新建空白评分卡（草稿态，可直接配置维度与权重）');
+    setCardId(`${id}-v1`);
+    setDims(blank);
+  };
+
+  /** V6.0 CR-24：复制生成副本草稿，不复制绑定关系 */
+  const copyCard = (c: typeof card) => {
+    const id = `SC${Date.now()}`;
+    setDb((p) => ({
+      ...p,
+      scoreCards: [{
+        ...c,
+        id,
+        name: `${c.name} 副本`,
+        version: 'v1',
+        status: '草稿',
+        /** 绑定关系不复制 */
+        bind_target: '未绑定',
+        copied_from: `${c.id}-${c.version}`,
+        dimensions: c.dimensions.map((d) => ({ ...d, id: `D${Date.now()}-${d.id}` })),
+        updated_at: `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`,
+      }, ...p.scoreCards],
+    }));
+    log('复制评分卡', `${c.name} ${c.version}`, `生成副本草稿，不复制绑定关系（来源 ${c.id}-${c.version}）`);
+    message.success('已生成副本草稿（绑定关系未复制，需重新配置）');
+  };
+
+  /** V6.0 CR-24：启用 / 停用（停用不影响历史提报按旧版本计算） */
+  const toggleStatus = (c: typeof card) => {
+    const next = c.status === '启用' ? '停用' : '启用';
+    setDb((p) => ({
+      ...p,
+      scoreCards: p.scoreCards.map((x) => (`${x.id}-${x.version}` === `${c.id}-${c.version}` ? { ...x, status: next } : x)),
+    }));
+    log(next === '启用' ? '启用评分卡' : '停用评分卡', `${c.name} ${c.version}`, '停用不影响历史提报按旧版本计算（6.5.5 版本绑定口径）');
+    message.success(`已${next}（历史提报仍按原绑定版本计算）`);
+  };
+
+  /** V6.0 CR-24：软删；有引用时禁止删除，仅可停用 */
+  const deleteCard = (c: typeof card) => {
+    const n = refCount(c);
+    if (n > 0) {
+      message.error(`该卡存在 ${n} 处引用（已绑定作业类型或已产生评分结果），禁止删除，仅可「停用」`);
+      return;
+    }
+    modal.confirm({
+      title: `删除「${c.name} ${c.version}」？`,
+      content: '删除为软删，记录保留可追溯；删除后不再出现在列表与绑定选项中。',
+      okText: '确认删除',
+      okButtonProps: { danger: true },
+      onOk: () => {
+        setDb((p) => ({
+          ...p,
+          scoreCards: p.scoreCards.map((x) => (`${x.id}-${x.version}` === `${c.id}-${c.version}`
+            ? { ...x, is_deleted: true, deleted_at: `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}` }
+            : x)),
+        }));
+        log('删除评分卡', `${c.name} ${c.version}`, 'V6.0 CR-24：软删并留痕，无引用方可删除');
+        message.success('已删除（软删，记录保留可追溯）');
+      },
+    });
+  };
+
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <PageHeader title="评分卡管理（Q8：评分权重可自行配置）" desc="四维评分卡与权重可自行配置（Q8）" />
@@ -49,7 +139,7 @@ export default function ScoreCardAdmin() {
       <Row gutter={16}>
         <Col xs={24} lg={8}>
           <Card size="small" title="评分卡列表">
-            {db.scoreCards.map((c) => (
+            {cards.map((c) => (
               <div
                 key={`${c.id}-${c.version}`}
                 onClick={() => { setCardId(`${c.id}-${c.version}`); setDims(c.dimensions); setEditing(false); }}
@@ -65,10 +155,32 @@ export default function ScoreCardAdmin() {
                 <div style={{ fontSize: 12, color: COLOR.textSub, marginTop: 4 }}>
                   版本 {c.version} · 及格线 {c.pass_line} · AI {c.ai_weight}% / 评委 {c.judge_weight}%
                 </div>
-                <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>绑定：{c.bind_target}</div>
+                <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>
+                  绑定：{c.bind_target}{c.copied_from ? ` · 复制自 ${c.copied_from}` : ''}
+                </div>
+                {/* V6.0 CR-24：全生命周期五类操作（开关关闭时不渲染） */}
+                {lifecycleOn && (
+                  <Space size={4} style={{ marginTop: 8 }} wrap>
+                    <Button size="small" disabled={readOnly} onClick={(e) => { e.stopPropagation(); copyCard(c); }}>复制</Button>
+                    <Button size="small" disabled={readOnly} onClick={(e) => { e.stopPropagation(); toggleStatus(c); }}>
+                      {c.status === '启用' ? '停用' : '启用'}
+                    </Button>
+                    <Button
+                      size="small" danger disabled={readOnly} type="text"
+                      onClick={(e) => { e.stopPropagation(); deleteCard(c); }}
+                    >
+                      删除{refCount(c) > 0 ? `（引用 ${refCount(c)}）` : ''}
+                    </Button>
+                  </Space>
+                )}
               </div>
             ))}
-            <Button block disabled={readOnly} onClick={() => message.success('已新建空白评分卡（Q11 终端评分卡口径到位后可直接配置）')}>新建评分卡</Button>
+            <Button
+              block disabled={readOnly}
+              onClick={lifecycleOn ? createCard : () => message.success('已新建空白评分卡（Q11 终端评分卡口径到位后可直接配置）')}
+            >
+              新建评分卡
+            </Button>
           </Card>
         </Col>
 

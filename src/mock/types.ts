@@ -144,6 +144,42 @@ export interface Attachment {
   ext: string;
   /** 说明（可选） */
   note?: string;
+  /** V6.0 CR-31：真实文件 id（可下载）；为空表示演示态未落真实文件 */
+  file_id?: string;
+  /** V6.0 CR-31：下载代理地址；演示态为空串 */
+  url?: string;
+  /** V6.0 CR-31：存储驱动；demo = 文件服务不可用时的降级态 */
+  driver?: 'local' | 's3' | 'pg' | 'demo';
+}
+
+/**
+ * V6.0 CR-31：真实文件记录（U-12 结案，A-39 结案）。
+ * 此前附件「只登记文件名与体积、不落真实文件、无法下载」；接入文件服务后，
+ * 每个上传都会在服务端落盘并在此留下可下载、可校验、可软删的元数据。
+ * driver = 'demo' 表示文件服务不可用时的降级态（仅登记元数据，url 为空）。
+ */
+export interface AttachmentFile {
+  id: string;
+  /** 业务归属：案例 Skill 包 / 案例附件 / 作业提报 / 悬赏方案 */
+  biz_type: 'CASE_SKILL' | 'CASE_ATTACH' | 'SUBMIT' | 'BOUNTY_SOLUTION';
+  biz_id: string;
+  name: string;
+  ext: string;
+  /** 字节数（人类可读体积由 formatSize 派生，不落库两份口径） */
+  size: number;
+  driver: 'local' | 's3' | 'pg' | 'demo';
+  /** 服务端对象键；前端不直接使用（下载走服务端代理，不暴露真实路径） */
+  object_key: string;
+  /** 下载代理地址；demo 态为空串 */
+  url: string;
+  uploaded_by: string;
+  uploaded_at: string;
+  is_deleted: boolean;
+  /** zip 包结构校验结论（仅 zip 有值）：服务端解包后校验是否含 SKILL.md 与 manifest.yaml */
+  zip_checked?: boolean;
+  zip_valid?: boolean;
+  /** 缺失的必含文件清单，用于给出明确提示而非笼统报错 */
+  zip_missing?: string[];
 }
 
 /** 体积格式化：字节 → 人类可读（供上传组件与展示共用，保证口径一致） */
@@ -181,6 +217,41 @@ export interface CaseItem {
   skill_packages?: SkillPackage[];
   /** V4.1：补充信息 / 附件（非必填，各类型文件） */
   attachments?: Attachment[];
+  /** V6.0 CR-28：软删标记（删除一律软删并留痕，实体不物理移除） */
+  is_deleted?: boolean;
+  deleted_at?: string;
+}
+
+/**
+ * V6.0 CR-28：每周场景卡（30 秒学一个知识点）。
+ * 此前场景卡由 `cases.slice(0,6)` 派生 —— 无独立实体、无法新建 / 下线 / 删除。
+ * 新增实体后由内容管理独立 CRUD；派生数据源保留为 `source_case_id` 以便回溯。
+ */
+export interface SceneCard {
+  id: string;
+  title: string;
+  /** 一句话知识点（≤40 字，卡片流直接展示） */
+  summary: string;
+  /** 30 秒能看完的正文（≤300 字） */
+  content: string;
+  track: Track;
+  emoji: string;
+  /** 草稿 / 已发布 / 已下线 */
+  status: 'DRAFT' | 'PUBLISHED' | 'OFFLINE';
+  tags?: string[];
+  /** 归属周次，如 2026-W40；用于「本周」筛选 */
+  week?: string;
+  view_count: number;
+  pushed_at?: string;
+  published_at?: string;
+  offline_at?: string;
+  created_by?: string;
+  created_at?: string;
+  /** 由历史案例迁移而来的场景卡保留原案例 id，点击仍可进案例详情 */
+  source_case_id?: string;
+  /** V6.0 CR-28：软删标记 */
+  is_deleted?: boolean;
+  deleted_at?: string;
 }
 
 export interface Topic {
@@ -199,6 +270,15 @@ export interface Topic {
   tags?: string[];
   /** V4.0 CR-03：可重复选择上限；0=不限（默认），1=回到旧排他行为 */
   select_limit?: number;
+  /** V6.0 CR-17：是否为用户在「其他」中填写的自定义选题 */
+  is_custom?: boolean;
+  /** V6.0 CR-17：创建人（自定义选题为填写者本人） */
+  created_by?: string;
+  /** V6.0 CR-17：可见性。自定义选题默认 PRIVATE（仅本人与组织者可见），组织者可公开 */
+  visibility?: 'PRIVATE' | 'PUBLIC';
+  /** V6.0 CR-28：软删标记（删除一律软删并留痕） */
+  is_deleted?: boolean;
+  deleted_at?: string;
 }
 
 /** V4.0 CR-03/CR-04：选题记录（非排斥，同一选题可被多人选中） */
@@ -263,7 +343,44 @@ export interface Bounty {
   reject_reason?: string;
   desensitized: boolean;
   created_at: string;
+  /** @deprecated V6.0 CR-20：结构化方案上线后改为 solution_fields；旧值自动映射为 solution_fields.scene_desc（字段保留不删） */
   solution?: string;
+  /** V6.0 CR-20：结构化方案（与作业提报通用模板同构） */
+  solution_fields?: {
+    scene_desc?: string;
+    output_sample?: string;
+    skill_used?: string;
+    before_after?: string;
+  };
+  /** V6.0 CR-20：方案附件（白名单同作业，单文件 ≤50MB，最多 5 个） */
+  solution_attachments?: { name: string; size: string }[];
+  /** V6.0 CR-21：方案版本链 —— 每次「修改」生成新版本，原版本保留不覆写 */
+  solution_versions?: SolutionVersion[];
+  /** V6.0 CR-21：补充记录 —— 仅追加资料，不改状态、不改积分 */
+  supplements?: SolutionSupplement[];
+  /** V6.0 CR-21：已使用的「修改」次数（上限可配置，默认 3） */
+  solution_modify_count?: number;
+}
+
+/** V6.0 CR-21：方案版本（每次修改生成，原版本保留留痕） */
+export interface SolutionVersion {
+  id: string;
+  version: number;
+  fields: NonNullable<Bounty['solution_fields']>;
+  attachments: { name: string; size: string }[];
+  /** 修改说明（≥10 字） */
+  note: string;
+  operator: string;
+  created_at: string;
+}
+
+/** V6.0 CR-21：方案补充（追加资料，不影响状态与积分） */
+export interface SolutionSupplement {
+  id: string;
+  content: string;
+  attachments: { name: string; size: string }[];
+  operator: string;
+  created_at: string;
 }
 
 /* ---------- M3 作业提报 ---------- */
@@ -318,7 +435,11 @@ export type SubmitStatus =
   | 'ASSET_ONLINE'
   | 'ASSET_REJECTED'
   | 'WITHDRAWN'
-  | 'SCORE_FAILED';
+  | 'SCORE_FAILED'
+  /** V6.0 CR-19：全流程结束（公示不再是前置条件） */
+  | 'COMPLETED'
+  /** V6.0 CR-19：已共识（可选态，组织者手动标记，不设自动条件） */
+  | 'CONSENSUS';
 
 export interface AssignmentSubmit {
   id: string;
@@ -354,6 +475,18 @@ export interface AssignmentSubmit {
   proxy_reason?: string;
   /** V4.0 CR-04：关联选题（我的选题 → 作业提报） */
   topic_id?: string;
+  /** V6.0 CR-18：「其他·自定义」选题名（≤30 字）；与 topic_id 二选一 */
+  custom_topic?: string;
+  /**
+   * V6.0 CR-19：公示标记位（与状态机解耦）。
+   * 原 PUBLISHED 状态保留不删（历史数据兼容），但不再是入库的前置条件。
+   */
+  is_published?: boolean;
+  published_by?: string;
+  published_at?: string;
+  /** V6.0 CR-19：已共识标记（U-6 拍板：组织者手动标记 + 留痕，不设自动触发条件） */
+  consensus_by?: string;
+  consensus_at?: string;
 }
 
 /* ---------- M5 评分卡 ---------- */
@@ -378,6 +511,44 @@ export interface ScoreCard {
   bind_target: string;
   dimensions: ScoreDimension[];
   updated_at: string;
+  /** V6.0 CR-24：软删标记（删除一律软删，禁止物理删除） */
+  is_deleted?: boolean;
+  deleted_at?: string;
+  /** V6.0 CR-24：复制来源（复制生成副本草稿，不复制绑定关系） */
+  copied_from?: string;
+}
+
+/** V6.0 CR-23：流程编排白名单规则（from_status → 允许的 to_status 集合） */
+export interface SubmitFlowRule {
+  id: string;
+  from_status: SubmitStatus;
+  to_status: SubmitStatus[];
+  /** 是否允许（关闭后该条路径整体禁用，无需删记录） */
+  enabled: boolean;
+  remark?: string;
+}
+
+/** V6.0 CR-23：流程流转日志（只增不改） */
+export interface SubmitFlowLog {
+  id: string;
+  submit_id: string;
+  from_status: SubmitStatus;
+  to_status: SubmitStatus;
+  operator: string;
+  /** 理由必填（≥10 字） */
+  reason: string;
+  created_at: string;
+}
+
+/** V6.0 CR-25：复核结论覆盖（覆盖不覆写，新增记录保留原结论） */
+export interface ReviewOverride {
+  id: string;
+  submit_id: string;
+  original_result: string;
+  new_result: string;
+  reason: string;
+  operator: string;
+  created_at: string;
 }
 
 export interface ScoreResult {
@@ -421,6 +592,11 @@ export interface ExpertSchedule {
   type: '1v1' | '直播' | '线下';
   place_or_link: string;
   status: 'OPEN' | 'FULL' | 'CLOSED' | 'HOLIDAY';
+  /** V6.0 CR-26：排班来源（手工维护 / 批量导入）；缺省视为手工 */
+  source?: 'MANUAL' | 'BATCH';
+  batch_id?: string;
+  updated_by?: string;
+  updated_at?: string;
 }
 
 export interface Booking {
@@ -488,7 +664,8 @@ export interface Asset {
   /** V4.0 CR-10：后台同步时间；为空表示「待测」，禁止显示裸 0 */
   reuse_synced_at?: string;
   online_at: string;
-  status: '已上架' | '已下架';
+  /** V6.0 CR-27：新增「已下线」= 软删态（枚举只增，旧值语义不变） */
+  status: '已上架' | '已下架' | '已下线';
   restricted: boolean;
 }
 
@@ -623,6 +800,29 @@ export interface BoardConfig {
   cards: BoardCardConfig[];
   updated_by: string;
   updated_at: string;
+}
+
+/* ---------- V6.0 CR-13 公告（新实体，与社区帖子解耦） ---------- */
+export interface Announcement {
+  id: string;
+  title: string;
+  content: string;
+  /** 草稿 / 已发布 / 已下线 */
+  status: 'DRAFT' | 'PUBLISHED' | 'OFFLINE';
+  pinned: boolean;
+  published_at: string;
+  /** 下线时间；为空表示长期有效 */
+  offline_at?: string;
+  created_by: string;
+  /**
+   * 来源于社区 BD4 帖子的公告保留原帖 id，点击可复用帖子详情页；
+   * CR-28 后由内容管理直接新建的公告无此字段，点击进公告区。
+   */
+  source_post_id?: string;
+  created_at: string;
+  /** V6.0 CR-28：软删标记（删除一律软删并留痕） */
+  is_deleted?: boolean;
+  deleted_at?: string;
 }
 
 /* ---------- 系统 ---------- */

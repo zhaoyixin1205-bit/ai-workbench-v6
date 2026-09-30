@@ -1,4 +1,4 @@
-import { Badge, Button, Card, Col, Progress, Row, Space, Tag, Typography, Empty, List } from 'antd';
+import { Badge, Button, Card, Col, Progress, Row, Space, Tag, Tooltip, Typography, Empty, List } from 'antd';
 import {
   ArrowRightOutlined, FireOutlined, TrophyOutlined, ClockCircleOutlined,
   CheckCircleOutlined, TeamOutlined, RocketOutlined, WalletOutlined,
@@ -9,11 +9,12 @@ import { useStore, useStats } from '@/store/store';
 import { COLOR, GRADIENT, SHADOW } from '@/theme';
 import { CoverBlock, HoverCard, MetricCard, Nudge, TrackTag } from '@/components/ui';
 import TeamBoard from '@/components/TeamBoard';
+import AnnounceTicker, { type TickerItem } from '@/components/AnnounceTicker';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import dayjs from 'dayjs';
 
 export default function Home() {
-  const { db, me, campaign, flags } = useStore();
+  const { db, me, campaign, flags, hasRole } = useStore();
   const stats = useStats();
 
   const daysLeft = dayjs(campaign.end_date).diff(dayjs(DEMO_TODAY), 'day');
@@ -43,7 +44,60 @@ export default function Home() {
   const hotCases = [...db.cases].sort((a, b) => b.view_count - a.view_count).slice(0, 5);
   const bounties = db.bounties.filter((b) => b.status === 'PUBLISHED').slice(0, 4);
   const hotPosts = [...db.posts].filter((p) => p.status === '正常').sort((a, b) => b.like_count + b.comment_count * 3 - (a.like_count + a.comment_count * 3)).slice(0, 3);
-  const announcements = db.posts.filter((p) => p.board_id === 'BD4').slice(0, 2);
+  /**
+   * V6.0 CR-13：公告独立为 announcement 实体，首页公告条以它为唯一数据源。
+   * 口径：仅「已发布」且未过期（offline_at 为空＝长期有效）、且已到发布时间。
+   * 排序：置顶优先，其次发布时间倒序。
+   */
+  const announcements = db.announcements
+    .filter((a) => a.status === 'PUBLISHED')
+    .filter((a) => !a.published_at || !dayjs(a.published_at).isAfter(dayjs(DEMO_TODAY).endOf('day')))
+    .filter((a) => !a.offline_at || !dayjs(a.offline_at).isBefore(dayjs(DEMO_TODAY).startOf('day')))
+    .sort((a, b) => {
+      if (!!b.pinned !== !!a.pinned) return b.pinned ? 1 : -1;
+      return dayjs(b.published_at).valueOf() - dayjs(a.published_at).valueOf();
+    })
+    .slice(0, 5);
+
+  /**
+   * V6.0 CR-28：场景卡改读独立实体 sceneCards（此前由 cases.slice(0,6) 派生）。
+   * 口径：仅「已发布」且未软删；数据源为空时回落到派生逻辑，保证旧库不出现空壳区块。
+   */
+  const sceneCards = (db.sceneCards ?? []).filter((c) => c.status === 'PUBLISHED' && !c.is_deleted);
+  const sceneFallback = sceneCards.length === 0
+    ? db.cases.slice(0, 6).map((c) => ({
+      id: c.id, title: c.title, summary: c.summary, emoji: c.cover,
+      source_case_id: c.id,
+    })) as typeof sceneCards
+    : sceneCards;
+
+  const tickerItems: TickerItem[] = announcements.map((a) => ({
+    id: a.id,
+    title: a.title,
+    // 有原帖的公告复用帖子详情页；CR-28 后新建的公告进公告区
+    to: a.source_post_id ? `/community/${a.source_post_id}` : '/community',
+    pinned: a.pinned,
+  }));
+
+  /** CR-13：开关关闭 ≡ V5.0 —— 公告回到右下角列表，首页无独立公告条 */
+  const tickerOn = flags.homeAnnounceTicker !== false;
+  /** CR-14：社区关闭时悬赏榜独占整行，不得出现半边空白 */
+  const rightColOn = flags.community || !tickerOn;
+
+  /**
+   * V6.0 CR-15：评委复核入口（仅 JUDGE 角色）。
+   * 非 JUDGE 身份下该区块在 DOM 中完全不存在（不是置灰）。
+   * 待复核数 = status ∈ {AI_SCORED, REVIEWING} 且当前评委未复核的条数；
+   * 为 0 时展示空态而不隐藏卡片，避免评委以为入口消失。
+   */
+  const judgeEntryOn = flags.homeJudgeEntry !== false && hasRole('JUDGE');
+  const judgePendingCount = db.submits.filter(
+    (s) => (s.status === 'AI_SCORED' || s.status === 'REVIEWING')
+      && !db.scoreResults.some(
+        (r) => r.target_type === 'submit' && r.target_id === s.id
+          && r.source === 'JUDGE' && r.scorer_union_id === me.union_id
+      )
+  ).length;
 
   return (
     <Space direction="vertical" size={20} style={{ width: '100%' }} className="wb-fade-in">
@@ -111,6 +165,9 @@ export default function Home() {
           </Row>
         </div>
       </div>
+
+      {/* V6.0 CR-13：公告条置顶（Hero 之下、我的待办之上）；无公告时整条不渲染 */}
+      {tickerOn && tickerItems.length > 0 && <AnnounceTicker items={tickerItems} />}
 
       {/* 我的待办 */}
       <Card
@@ -228,9 +285,66 @@ export default function Home() {
         </div>
       </div>
 
+      {/* V6.0 CR-15：评委复核入口（仅 JUDGE 渲染；非 JUDGE 身份 DOM 中不存在） */}
+      {judgeEntryOn && (
+        <Card
+          styles={{ body: { padding: 16 } }}
+          title={
+            <Space size={8}>
+              <CheckCircleOutlined style={{ color: COLOR.primary }} />
+              <span style={{ fontWeight: 700 }}>评委复核</span>
+              <span style={{ fontSize: 13, fontWeight: 400, color: COLOR.textMuted }}>
+                待你复核 {judgePendingCount} 条
+              </span>
+            </Space>
+          }
+          extra={<Link to="/admin/judge" style={{ color: COLOR.primary, fontSize: 13 }}>去复核 <ArrowRightOutlined /></Link>}
+        >
+          {judgePendingCount === 0 ? (
+            /* 规则③：为 0 时展示空态而不隐藏卡片，避免评委以为入口消失 */
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="暂无待复核作业，新的作业送出后会在这里出现"
+            />
+          ) : (
+            <Space direction="vertical" size={8} style={{ width: '100%' }}>
+              <div style={{ fontSize: 13, color: COLOR.textSub }}>
+                有 <b className="num">{judgePendingCount}</b> 条作业已出 AI 分，等待你完成复核与真实性确认。
+              </div>
+              <Link to="/admin/judge">
+                <Button type="primary" size="small">开始复核（{judgePendingCount}）</Button>
+              </Link>
+            </Space>
+          )}
+        </Card>
+      )}
+
+      {/* V6.0 CR-14：场景卡上移至「案例精选」正下方，共用同一视觉分组 */}
+      <Card
+        title={<Space size={8}><span style={{ fontWeight: 700 }}>本周高频场景卡</span><span style={{ fontSize: 13, fontWeight: 400, color: COLOR.textMuted }}>30 秒学一个</span></Space>}
+      >
+        <Space wrap size={8}>
+          {sceneFallback.map((c) => (
+            <Tooltip key={c.id} title={c.summary}>
+              <Link to={c.source_case_id ? `/cases/${c.source_case_id}` : '/cases'}>
+                <span style={{
+                  display: 'inline-block', padding: '6px 14px', borderRadius: 999,
+                  background: COLOR.primaryLight, color: '#C2410C', fontSize: 13, fontWeight: 500,
+                  transition: 'all 0.2s ease', boxShadow: SHADOW.inset,
+                }}>{c.emoji} {c.title}</span>
+              </Link>
+            </Tooltip>
+          ))}
+        </Space>
+        <div style={{ marginTop: 14, fontSize: 12, color: COLOR.textMuted }}>
+          <CheckCircleOutlined /> 本周已发布 {sceneFallback.length} 张场景卡 · 阅读埋点计入个人活跃
+        </div>
+      </Card>
+
+      {/* V6.0 CR-14：悬赏榜与社区热帖一行 2 列（各 12 栅格，取消 14/10 非对称） */}
       <Row gutter={[20, 20]}>
         {/* 悬赏榜 */}
-        <Col xs={24} lg={14}>
+        <Col xs={24} lg={rightColOn ? 12 : 24}>
           <Card
             styles={{ body: { paddingTop: 8 } }}
             title={<Space size={8}><TrophyOutlined style={{ color: COLOR.primary }} /><span style={{ fontWeight: 700 }}>悬赏榜</span></Space>}
@@ -262,61 +376,47 @@ export default function Home() {
           </Card>
         </Col>
 
-        {/* 公告 + 社区热帖 */}
-        <Col xs={24} lg={10}>
-          <Card
-            styles={{ body: { paddingTop: 8 } }}
-            title={<Space size={8}><span style={{ fontWeight: 700 }}>📢 公告</span></Space>}
-          >
-            {announcements.map((p) => (
-              <div key={p.id} style={{ padding: '10px 0', borderBottom: `1px dashed ${COLOR.borderLight}`, fontSize: 13 }}>
-                <Link to={`/community/${p.id}`} style={{ fontWeight: 500 }}>{p.title}</Link>
-              </div>
-            ))}
-          </Card>
-          {flags.community && (
-            <Card
-              style={{ marginTop: 20 }}
-              styles={{ body: { paddingTop: 8 } }}
-              title={<Space size={8}><TeamOutlined style={{ color: COLOR.primary }} /><span style={{ fontWeight: 700 }}>社区热帖</span></Space>}
-              extra={<Link to="/community" style={{ color: COLOR.primary, fontSize: 13 }}>进入社区</Link>}
-            >
-              {hotPosts.map((p) => (
-                <Link key={p.id} to={`/community/${p.id}`}>
-                  <div style={{ padding: '10px 0', borderBottom: `1px dashed ${COLOR.borderLight}` }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.5 }}>{p.title}</div>
-                    <Space size={10} style={{ fontSize: 11, color: COLOR.textMuted, marginTop: 4 }}>
-                      <span>{p.anonymous ? p.anon_no : p.author_name}</span>
-                      <span>👍 {p.like_count}</span>
-                      <span>💬 {p.comment_count}</span>
-                    </Space>
+        {/* 右列：社区热帖（公告已上移至顶部公告条；开关关闭时公告回到此处 ≡ V5.0） */}
+        {rightColOn && (
+          <Col xs={24} lg={12}>
+            {!tickerOn && (
+              <Card
+                styles={{ body: { paddingTop: 8 } }}
+                title={<Space size={8}><span style={{ fontWeight: 700 }}>📢 公告</span></Space>}
+              >
+                {announcements.map((a) => (
+                  <div key={a.id} style={{ padding: '10px 0', borderBottom: `1px dashed ${COLOR.borderLight}`, fontSize: 13 }}>
+                    <Link to={a.source_post_id ? `/community/${a.source_post_id}` : '/community'} style={{ fontWeight: 500 }}>
+                      {a.title}
+                    </Link>
                   </div>
-                </Link>
-              ))}
-            </Card>
-          )}
-        </Col>
+                ))}
+              </Card>
+            )}
+            {flags.community && (
+              <Card
+                style={{ marginTop: tickerOn ? 0 : 20 }}
+                styles={{ body: { paddingTop: 8 } }}
+                title={<Space size={8}><TeamOutlined style={{ color: COLOR.primary }} /><span style={{ fontWeight: 700 }}>社区热帖</span></Space>}
+                extra={<Link to="/community" style={{ color: COLOR.primary, fontSize: 13 }}>进入社区</Link>}
+              >
+                {hotPosts.map((p) => (
+                  <Link key={p.id} to={`/community/${p.id}`}>
+                    <div style={{ padding: '10px 0', borderBottom: `1px dashed ${COLOR.borderLight}` }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.5 }}>{p.title}</div>
+                      <Space size={10} style={{ fontSize: 11, color: COLOR.textMuted, marginTop: 4 }}>
+                        <span>{p.anonymous ? p.anon_no : p.author_name}</span>
+                        <span>👍 {p.like_count}</span>
+                        <span>💬 {p.comment_count}</span>
+                      </Space>
+                    </div>
+                  </Link>
+                ))}
+              </Card>
+            )}
+          </Col>
+        )}
       </Row>
-
-      {/* 每周场景卡 */}
-      <Card
-        title={<Space size={8}><span style={{ fontWeight: 700 }}>本周高频场景卡</span><span style={{ fontSize: 13, fontWeight: 400, color: COLOR.textMuted }}>30 秒学一个</span></Space>}
-      >
-        <Space wrap size={8}>
-          {db.cases.slice(0, 6).map((c) => (
-            <Link key={c.id} to={`/cases/${c.id}`}>
-              <span style={{
-                display: 'inline-block', padding: '6px 14px', borderRadius: 999,
-                background: COLOR.primaryLight, color: '#C2410C', fontSize: 13, fontWeight: 500,
-                transition: 'all 0.2s ease', boxShadow: SHADOW.inset,
-              }}>{c.title}</span>
-            </Link>
-          ))}
-        </Space>
-        <div style={{ marginTop: 14, fontSize: 12, color: COLOR.textMuted }}>
-          <CheckCircleOutlined /> 本周已发布 6 张场景卡 · 阅读埋点计入个人活跃
-        </div>
-      </Card>
     </Space>
   );
 }

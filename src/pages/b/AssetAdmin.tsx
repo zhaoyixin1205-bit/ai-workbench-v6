@@ -7,6 +7,7 @@ import type { Asset, AssetApply, ScopeSubject } from '@/mock/types';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import ScopePicker, { ScopeText, parseScope, useScopeCommit } from '@/components/ScopePicker';
 import { ReuseLabel, sumReuse } from '@/components/ReuseStat';
+import BatchImport from '@/components/BatchImport';
 
 export default function AssetAdmin() {
   const { db, setDb, me, log, flags } = useStore();
@@ -22,6 +23,44 @@ export default function AssetAdmin() {
   const [imp, setImp] = useState<Asset | null>(null);
   const [cnt, setCnt] = useState<number>(0);
   const [cntUsers, setCntUsers] = useState<number>(0);
+  /** V6.0 CR-27：台账批量导入 / 批量调整可见范围 / 批量软删 */
+  const batchOn = flags.assetLedgerBatch !== false;
+  const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
+
+  /** 批量调整可见范围（不改复用数据） */
+  const batchScope = (scope: string) => {
+    setDb((p) => ({
+      ...p,
+      assets: p.assets.map((a) => (selectedAssetIds.includes(a.id) ? { ...a, visible_scope: scope } : a)),
+    }));
+    log('批量调整可见范围', `${selectedAssetIds.length} 个资产`, `统一调整为「${scope}」`);
+    message.success(`已将 ${selectedAssetIds.length} 个资产的可见范围调整为「${scope}」`);
+    setSelectedAssetIds([]);
+  };
+
+  /** 删除为软删；已产生复用记录的资产禁止删除，仅可下线 */
+  const batchDeleteAssets = () => {
+    const blocked = db.assets.filter((a) => selectedAssetIds.includes(a.id) && a.reuse_count > 0);
+    if (blocked.length) {
+      message.error(`${blocked.length} 个资产已产生复用记录，禁止删除，仅可下线：${blocked.map((b) => b.name).join('、')}`);
+      return;
+    }
+    modal.confirm({
+      title: `删除 ${selectedAssetIds.length} 个资产？`,
+      content: '删除为软删（置为「已下线」），台账记录保留可追溯。',
+      okText: '确认删除',
+      okButtonProps: { danger: true },
+      onOk: () => {
+        setDb((p) => ({
+          ...p,
+          assets: p.assets.map((a) => (selectedAssetIds.includes(a.id) ? { ...a, status: '已下线' as Asset['status'] } : a)),
+        }));
+        log('批量删除资产', `${selectedAssetIds.length} 个`, 'V6.0 CR-27：软删（置为已下线），已产生复用记录的资产不在内');
+        message.success(`已删除 ${selectedAssetIds.length} 个资产（软删）`);
+        setSelectedAssetIds([]);
+      },
+    });
+  };
 
   const review = (a: AssetApply) => {
     if (a.status === '待初审') {
@@ -153,9 +192,74 @@ export default function AssetAdmin() {
         />
       </Card>
 
-      <Card size="small" title="资产库台账（可见范围与复用统计）">
+      <Card
+        size="small" title="资产库台账（可见范围与复用统计）"
+        extra={batchOn ? (
+          <Space size={8} wrap>
+            {/* V6.0 CR-27：台账批量导入 —— 字段 = asset_id + 可见范围 + 复用次数 + 复用人数，覆盖写入而非累加 */}
+            <BatchImport
+              title="资产台账批量导入"
+              columns={['资产ID', '可见范围', '复用次数', '复用人数']}
+              hint="口径：复用次数为「总量」不是增量，导入后覆盖写入（U-3 口径）；可见范围填「全员/本部门/仅组织者」或指定主体名"
+              sample={[[db.assets[0]?.id ?? 'AS1', '全员', '128', '36']]}
+              validate={(rows) => rows.map((r, i) => {
+                const [assetId, scope, reuse, users] = r;
+                const asset = db.assets.find((a) => a.id === assetId);
+                if (!asset) return { row: i + 2, name: assetId || `第 ${i + 2} 行`, result: '失败' as const, reason: '资产 ID 不存在（请从台账复制准确 ID）' };
+                if (!Number.isFinite(Number(reuse)) || Number(reuse) < 0) {
+                  return { row: i + 2, name: asset.name, result: '失败' as const, reason: '复用次数必须为 ≥0 的数字' };
+                }
+                if (!Number.isFinite(Number(users)) || Number(users) < 0) {
+                  return { row: i + 2, name: asset.name, result: '失败' as const, reason: '复用人数必须为 ≥0 的数字' };
+                }
+                /** 已产生复用记录的资产允许覆盖更新（这是台账维护的本意），不做跳过 */
+                return {
+                  row: i + 2, name: asset.name, result: '成功' as const,
+                  data: { id: asset.id, visible_scope: scope || asset.visible_scope, reuse_count: Number(reuse), reuse_user_count: Number(users) },
+                };
+              })}
+              onCommit={(items) => {
+                const at = `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`;
+                const map = new Map(items.map((it) => [it.data!.id, it.data!]));
+                setDb((p) => ({
+                  ...p,
+                  assets: p.assets.map((a) => {
+                    const d = map.get(a.id);
+                    if (!d) return a;
+                    return {
+                      ...a,
+                      visible_scope: d.visible_scope,
+                      reuse_count: d.reuse_count,
+                      reuse_user_count: d.reuse_user_count,
+                      reuse_source: 'MANUAL' as const,
+                      reuse_synced_at: at,
+                    };
+                  }),
+                }));
+                log('批量导入资产台账', `${items.length} 条`, `覆盖写入而非累加（U-3 口径），来源 MANUAL，同步于 ${at}`);
+                message.success(`已覆盖更新 ${items.length} 条台账（复用次数为总量口径）`);
+              }}
+            />
+            {/* V6.0 CR-27：批量调整可见范围 */}
+            <Select
+              size="small" placeholder="批量调整可见范围" style={{ width: 160 }}
+              value={undefined}
+              onChange={(v) => batchScope(String(v))}
+              options={['全员', '本部门', '仅组织者'].map((v) => ({ value: v, label: v }))}
+              disabled={selectedAssetIds.length === 0}
+            />
+            <Button size="small" danger disabled={selectedAssetIds.length === 0} onClick={batchDeleteAssets}>
+              删除{selectedAssetIds.length ? `（${selectedAssetIds.length}）` : ''}
+            </Button>
+          </Space>
+        ) : undefined}
+      >
         <Table
           size="small" rowKey="id" pagination={false} dataSource={db.assets}
+          rowSelection={batchOn ? {
+            selectedRowKeys: selectedAssetIds,
+            onChange: (keys) => setSelectedAssetIds(keys as string[]),
+          } : undefined}
           columns={[
             { title: '资产名称', dataIndex: 'name' },
             { title: '类型', dataIndex: 'type', render: (v: string) => <Tag color={v === 'Skill 包' ? 'purple' : v === '智能体' ? 'geekblue' : 'blue'}>{v}</Tag> },

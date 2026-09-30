@@ -8,7 +8,7 @@
  */
 import type { Role } from '@/mock/types';
 
-export type FlagKey = 'community' | 'shop' | 'clinic' | 'wbAdmin';
+export type FlagKey = 'community' | 'shop' | 'clinic' | 'wbAdmin' | 'adminCoreConverge' | 'teamView';
 
 export interface RouteAccess {
   /** 路由路径（支持前缀匹配，如 /cases 覆盖 /cases/:id） */
@@ -20,6 +20,17 @@ export interface RouteAccess {
   denyRoles?: Role[];
   /** 依赖的功能开关，关闭时不可进入 */
   flag?: FlagKey;
+  /**
+   * V6.0 CR-22：权限收窄后的角色集合。
+   * 仅当开关 `adminCoreConverge` 开启时生效；未定义该字段的路由行为完全不变，
+   * 因此既有 191 项断言的口径不受影响（只增字段，不改既有判定分支）。
+   */
+  convergedRoles?: Role[];
+  /**
+   * V6.0 CR-30：仅部门负责人可见（属性型守卫，不是角色）。
+   * 依赖 subject.isDeptLeader；未声明该字段的路由行为不变。
+   */
+  requireDeptLeader?: boolean;
   /**
    * 是否存在子路由（如 /cases/:id、/work/submit/:typeId）。
    * 只有声明 children 的 key 才允许前缀继承授权；未声明者仅精确匹配，
@@ -40,17 +51,22 @@ export const ADMIN_ACCESS: RouteAccess[] = [
   {
     key: '/admin/assignment', label: '作业管理',
     roles: ['LEADER', 'EXPERT', 'ORGANIZER', 'SKILL_ADMIN', 'ADMIN'],
-    reason: 'PRD V4.0 §6.2：同「进度看板」行口径；EXPERT 进入后仅可见本人相关数据。',
+    /* V6.0 CR-22：开关 adminCoreConverge 开启后收窄为组织者 / 系统管理员；
+       LEADER 看团队进度改由 C 端「团队视图 /team」承接（CR-30），两者必须同批发布。 */
+    convergedRoles: ['ORGANIZER', 'ADMIN'],
+    reason: 'PRD V4.0 §6.2：同「进度看板」行口径；EXPERT 进入后仅可见本人相关数据。V6.0 CR-22：权限已收窄为组织者与系统管理员，部门负责人请通过首页「我的团队 / /team」查看本团队进度。',
   },
   {
     key: '/admin/scorecard', label: '评分卡管理',
     roles: ['LEADER', 'EXPERT', 'ORGANIZER', 'SKILL_ADMIN', 'ADMIN'],
-    reason: 'PRD V4.0 §6.2：评分卡权重可配（Q8），开放给观察类与管理类角色。',
+    convergedRoles: ['ORGANIZER', 'ADMIN'],
+    reason: 'PRD V4.0 §6.2：评分卡权重可配（Q8），开放给观察类与管理类角色。V6.0 CR-22：权限已收窄为组织者与系统管理员，观察类角色如需查看口径请联系组织者导出。',
   },
   {
     key: '/admin/bounty', label: '悬赏审核',
     roles: ['LEADER', 'EXPERT', 'ORGANIZER', 'SKILL_ADMIN', 'ADMIN'],
-    reason: 'PRD V4.0 §6.2：同「进度看板」行口径。',
+    convergedRoles: ['ORGANIZER', 'ADMIN'],
+    reason: 'PRD V4.0 §6.2：同「进度看板」行口径。V6.0 CR-22：审核动作仅组织者与系统管理员可执行。',
   },
   {
     key: '/admin/judge', label: '评委复核',
@@ -105,7 +121,7 @@ export const ADMIN_ACCESS: RouteAccess[] = [
   {
     key: '/admin/expert-workbench', label: '专家工作台',
     roles: ['EXPERT'], flag: 'clinic',
-    reason: 'PRD V3.0 §6.4.7 + V4.0 §6.2：专家端工作台仅问诊专家可见，受 clinic 开关控制。',
+    reason: 'PRD V3.0 §6.4.7 + V4.0 §6.2：专家端工作台仅问诊专家可见，受 clinic 开关控制。V6.0 CR-16：入口已下沉至专家门诊 /clinic/workbench，本路由保留重定向（@deprecated，过渡后清理）。',
   },
 ];
 
@@ -124,6 +140,18 @@ export const C_ACCESS: RouteAccess[] = [
   },
   { key: '/work', label: '作业提报', reason: '', children: true },
   { key: '/clinic', label: '专家门诊', flag: 'clinic', children: true, reason: 'PRD V3.0 §6.4：专家门诊由 clinic 开关控制。' },
+  {
+    /* V6.0 CR-16：专家工作台下沉至 C 端专家门诊；/clinic 已声明 children，前缀继承自动覆盖 */
+    key: '/clinic/workbench', label: '专家工作台',
+    roles: ['EXPERT'], flag: 'clinic',
+    reason: 'V6.0 CR-16：专家工作台仅问诊专家可见可进，受 clinic 开关控制；功能与原 /admin/expert-workbench 完全一致（共用同一组件）。',
+  },
+  {
+    /* V6.0 CR-30：负责人团队视图（U-4 结案），属性型守卫 + teamView 开关 */
+    key: '/team', label: '我的团队',
+    requireDeptLeader: true, flag: 'teamView',
+    reason: 'V6.0 CR-30：团队视图仅部门负责人可见（按管辖部门收敛数据范围）；本页不展示已公示 / 已共识 / 入库环节。',
+  },
   { key: '/community', label: '社区', flag: 'community', children: true, reason: 'PRD V3.0 §6.11：社区由 community 开关控制。' },
   { key: '/assets', label: '资产库', reason: '' },
   { key: '/shop', label: '积分商城', flag: 'shop', reason: 'PRD V3.0 §6.8.2：积分商城由 shop 开关控制。' },
@@ -133,6 +161,8 @@ export const C_ACCESS: RouteAccess[] = [
 export interface GuardSubject {
   roles: Role[];
   flags: Record<FlagKey, boolean>;
+  /** V6.0 CR-30：是否部门负责人（属性型守卫）。缺省 false，不影响既有判定 */
+  isDeptLeader?: boolean;
 }
 
 export interface GuardDeny {
@@ -164,12 +194,31 @@ export function matchAccess(path: string, list: RouteAccess[]): RouteAccess | un
 export function checkAccess(path: string, subject: GuardSubject, list: RouteAccess[]): GuardResult {
   const access = matchAccess(path, list);
   if (!access) return { ok: false, kind: 'NOT_FOUND', message: '该页面未在授权表中登记', access: EMPTY };
+
   if (access.denyRoles?.some((r) => subject.roles.includes(r))) {
     return { ok: false, kind: 'ROLE', access, message: access.reason || '当前角色不允许访问该页面' };
   }
-  if (access.roles?.length && !access.roles.some((r) => subject.roles.includes(r))) {
-    return { ok: false, kind: 'ROLE', access, message: access.reason || '当前角色不允许访问该页面' };
+
+  /**
+   * V6.0 CR-22：收窄仅在开关开启且该路由声明了 convergedRoles 时生效。
+   * 403 展示的「所需角色」同步取收窄后集合，避免「提示与实际口径不一致」。
+   */
+  const converged = !!access.convergedRoles && subject.flags.adminCoreConverge === true;
+  const effectiveRoles = converged ? access.convergedRoles : access.roles;
+  if (effectiveRoles?.length && !effectiveRoles.some((r) => subject.roles.includes(r))) {
+    return {
+      ok: false,
+      kind: 'ROLE',
+      access: converged ? { ...access, roles: access.convergedRoles } : access,
+      message: access.reason || '当前角色不允许访问该页面',
+    };
   }
+
+  /** V6.0 CR-30：属性型守卫 —— 仅部门负责人可见 */
+  if (access.requireDeptLeader && !subject.isDeptLeader) {
+    return { ok: false, kind: 'ROLE', access, message: access.reason || '该页面仅部门负责人可见' };
+  }
+
   if (access.flag && !subject.flags[access.flag]) {
     return { ok: false, kind: 'FLAG', access, message: `「${access.label}」模块当前未开启，请联系组织者在系统管理中启用。` };
   }

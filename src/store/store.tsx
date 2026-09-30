@@ -6,7 +6,8 @@ import type {
   User, Role, CaseItem, Topic, Bounty, AssignmentType, AssignmentPeriod, AssignmentSubmit,
   ScoreCard, ScoreResult, Expert, ExpertSchedule, Booking, ExpertReview, AssetApply, Asset,
   PointRecord, ShopItem, ShopOrder, Board, Post, PostComment, WbUsage, AuditLog, AppMessage,
-  Campaign, Tag, Dept, TopicSelection, BoardConfig, ImportJob, ImportJobItem,
+  Campaign, Tag, Dept, TopicSelection, BoardConfig, ImportJob, ImportJobItem, Announcement,
+  SubmitFlowRule, SubmitFlowLog, ReviewOverride, SceneCard, AttachmentFile,
 } from '@/mock/types';
 
 export interface DB {
@@ -44,7 +45,35 @@ export interface DB {
   /** V4.0 CR-11 导入批次回执 */
   importJobs: ImportJob[];
   importJobItems: ImportJobItem[];
+  /** V6.0 CR-13 公告（新实体；CR-28 后由内容管理 CRUD） */
+  announcements: Announcement[];
+  /** V6.0 CR-23 流程编排白名单规则（默认 8 条安全转移路径） */
+  submitFlowRules: SubmitFlowRule[];
+  /** V6.0 CR-23 流程流转日志（只增不改） */
+  submitFlowLogs: SubmitFlowLog[];
+  /** V6.0 CR-25 复核结论覆盖记录（覆盖不覆写） */
+  reviewOverrides: ReviewOverride[];
+  /** V6.0 CR-28 每周场景卡（新实体；此前由 cases.slice(0,6) 派生） */
+  sceneCards: SceneCard[];
+  /** V6.0 CR-31 真实文件记录（上传落真实存储后的元数据） */
+  attachmentFiles: AttachmentFile[];
 }
+
+/**
+ * V6.0 CR-23：默认安全转移路径（禁止任意跳转）。
+ * 覆盖「退回重做」「跳过重跑」「送复核」「直接完成」四类真实运营动作，
+ * 不含任何「草稿直接跳到入库」这类越级路径。
+ */
+export const DEFAULT_FLOW_RULES: SubmitFlowRule[] = [
+  { id: 'FR1', from_status: 'SUBMITTED', to_status: ['SCORING_AI', 'REVIEWING', 'WITHDRAWN'], enabled: true, remark: '未跑分可退回重跑或直接送人工复核' },
+  { id: 'FR2', from_status: 'SCORING_AI', to_status: ['SUBMITTED', 'AI_SCORED', 'SCORE_FAILED'], enabled: true, remark: '评分中可退回重跑' },
+  { id: 'FR3', from_status: 'AI_SCORED', to_status: ['REVIEWING', 'SUBMITTED', 'SCORE_FAILED'], enabled: true, remark: '出分后可送复核或退回重跑' },
+  { id: 'FR4', from_status: 'REVIEWING', to_status: ['REVIEWED', 'AI_SCORED'], enabled: true, remark: '复核中可完成或退回重审' },
+  { id: 'FR5', from_status: 'REVIEWED', to_status: ['COMPLETED', 'REVIEWING'], enabled: true, remark: '复核完成 → 已完成（公示不再是前置条件）' },
+  { id: 'FR6', from_status: 'COMPLETED', to_status: ['CONSENSUS', 'REVIEWED', 'ASSET_APPLYING'], enabled: true, remark: '完成后可标记共识或进入入库申请' },
+  { id: 'FR7', from_status: 'CONSENSUS', to_status: ['ASSET_APPLYING', 'COMPLETED'], enabled: true, remark: '共识后进入入库或退回已完成' },
+  { id: 'FR8', from_status: 'ASSET_APPLYING', to_status: ['ASSET_ONLINE', 'ASSET_REJECTED', 'COMPLETED'], enabled: true, remark: '入库申请可上线 / 驳回 / 退回' },
+];
 
 function initialDB(): DB {
   return {
@@ -59,6 +88,11 @@ function initialDB(): DB {
     wbUsage: biz.WB_USAGE, auditLogs: org.AUDIT_LOGS, messages: org.MESSAGES,
     topicSelections: biz.TOPIC_SELECTIONS, boardConfigs: biz.BOARD_CONFIGS,
     importJobs: [], importJobItems: [],
+    announcements: biz.ANNOUNCEMENTS,
+    submitFlowRules: DEFAULT_FLOW_RULES,
+    submitFlowLogs: [], reviewOverrides: [],
+    sceneCards: biz.SCENE_CARDS,
+    attachmentFiles: [],
   };
 }
 
@@ -72,6 +106,12 @@ function hydrate(raw: unknown): DB {
     boardConfigs: p.boardConfigs ?? base.boardConfigs,
     importJobs: p.importJobs ?? [],
     importJobItems: p.importJobItems ?? [],
+    announcements: p.announcements ?? base.announcements,
+    submitFlowRules: p.submitFlowRules ?? base.submitFlowRules,
+    submitFlowLogs: p.submitFlowLogs ?? [],
+    reviewOverrides: p.reviewOverrides ?? [],
+    sceneCards: p.sceneCards ?? base.sceneCards,
+    attachmentFiles: p.attachmentFiles ?? [],
   };
 }
 
@@ -118,6 +158,45 @@ export interface FeatureFlags {
   caseAttachment: boolean;
   /** V4.1：Moka 复刻的悬浮帮助条（关闭=不显示右侧常驻帮助入口） */
   helperBar: boolean;
+  /* ---- V6.0 新增开关 ---- */
+  /** CR-13 首页公告条置顶 + 文字轮转（关闭=公告回到 V5.0 右下角列表） */
+  homeAnnounceTicker: boolean;
+  /** CR-17 选题「其他·自定义」与私有可见（关闭=只能选既有选题，≡ V5.0） */
+  topicCustom: boolean;
+  /** CR-18 作业提报支持「不选选题」直提（关闭=必须关联选题，≡ V5.0） */
+  workNoTopic: boolean;
+  /** CR-19 提报状态机 V2（+COMPLETED/CONSENSUS、公示解耦；关闭=沿用 V5.0 状态机） */
+  submitFlowV2: boolean;
+  /** CR-20/21 悬赏方案结构化 + 修改/补充双通道（关闭=单文本框方案，≡ V5.0） */
+  bountySolutionV2: boolean;
+  /** CR-22 后台三板块权限收窄（关闭=回到 V5.0 宽口径，≡ 191 项断言原口径） */
+  adminCoreConverge: boolean;
+  /** CR-30 负责人团队视图 /team（关闭=不渲染入口且不可进入） */
+  teamView: boolean;
+  /** CR-15 首页评委复核入口（关闭=首页不出现该区块） */
+  homeJudgeEntry: boolean;
+  /** CR-16 专家工作台下沉 /clinic/workbench（关闭=仅保留旧 B 端入口） */
+  clinicWorkbench: boolean;
+  /** CR-23 作业流程编排（退回/转移，白名单约束） */
+  submitFlowControl: boolean;
+  /** CR-24 评分卡全生命周期（新建/复制/启用/停用/删除） */
+  scoreCardLifecycle: boolean;
+  /** CR-25 评委复核结果可覆盖与退回 */
+  judgeOverride: boolean;
+  /** CR-26 专家排班批量维护与已发布直改 */
+  expertScheduleBatch: boolean;
+  /** CR-27 资产台账批量管理 */
+  assetLedgerBatch: boolean;
+  /** CR-28 内容管理全维度 CRUD */
+  contentFullCrud: boolean;
+  /** CR-29 商城商品批量导入与批量删除 */
+  shopBatch: boolean;
+  /**
+   * CR-31 真实文件服务（默认 ON）。
+   * 关闭 → 回到 A-39 演示态（只登记文件名与体积，诚实文案说明无法下载）。
+   * 另：后端不可达时前端自动降级到演示态，不需要人工关开关。
+   */
+  realFileService: boolean;
 }
 
 /** 开关默认值：新增能力默认 ON（演示可见），风险类默认 OFF */
@@ -130,6 +209,12 @@ export const DEFAULT_FLAGS: FeatureFlags = {
   communityV2Layout: true, shopV2Flow: true,
   boardConfigurable: true, userManualManage: true, scopeNotice: true,
   caseSkillPackage: true, caseAttachment: true, helperBar: true,
+  homeAnnounceTicker: true,
+  topicCustom: true, workNoTopic: true, submitFlowV2: true, bountySolutionV2: true,
+  adminCoreConverge: true, teamView: true, homeJudgeEntry: true, clinicWorkbench: true,
+  submitFlowControl: true, scoreCardLifecycle: true, judgeOverride: true,
+  expertScheduleBatch: true, assetLedgerBatch: true, contentFullCrud: true, shopBatch: true,
+  realFileService: true,
 };
 
 interface Ctx {

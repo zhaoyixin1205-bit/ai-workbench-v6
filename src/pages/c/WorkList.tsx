@@ -25,11 +25,23 @@ const STATUS_META: Record<SubmitStatus, { text: string; color: string }> = {
   ASSET_REJECTED: { text: '入库驳回', color: 'red' },
   WITHDRAWN: { text: '已撤回', color: 'default' },
   SCORE_FAILED: { text: '评分失败', color: 'red' },
+  /** V6.0 CR-19 新增两态 */
+  COMPLETED: { text: '已完成', color: 'green' },
+  CONSENSUS: { text: '已共识', color: 'geekblue' },
 };
 
-export function SubmitStatusTag({ status }: { status: SubmitStatus }) {
-  const m = STATUS_META[status];
-  return <Tag color={m.color}>{m.text}</Tag>;
+/**
+ * V6.0 CR-19：公示由「状态」降级为「标记位」，所以单独渲染一个附加标签。
+ * 这样「已完成 + 已公示」两个事实都能看见，不会互相掩盖。
+ */
+export function SubmitStatusTag({ status, published }: { status: SubmitStatus; published?: boolean }) {
+  const m = STATUS_META[status] ?? { text: status, color: 'default' };
+  return (
+    <Space size={4}>
+      <Tag color={m.color} style={{ marginInlineEnd: 0 }}>{m.text}</Tag>
+      {published && <Tag color="green" style={{ marginInlineEnd: 0 }}>已公示</Tag>}
+    </Space>
+  );
 }
 
 export default function WorkList() {

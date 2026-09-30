@@ -37,3 +37,9 @@ yarn-error.log*
 .playwright-mcp/
 .shots/
 coverage/
+
+# V6.0：守卫回归脚本的 esbuild 打包临时产物
+tmp/
+
+# V6.0 CR-31：本地文件驱动的真实文件落盘目录（含用户上传二进制，严禁入库）
+server/data/

@@ -1,4 +1,4 @@
-import { Button, Card, Col, Input, Modal, Progress, Radio, Row, Slider, Space, Table, Tag, Typography, App as AntApp, Alert, Divider } from 'antd';
+import { Button, Card, Col, Form, Input, InputNumber, Modal, Progress, Radio, Row, Select, Slider, Space, Table, Tag, Typography, App as AntApp, Alert, Divider } from 'antd';
 import { SafetyCertificateOutlined } from '@ant-design/icons';
 import { useState } from 'react';
 import { useStore } from '@/store/store';
@@ -125,6 +125,79 @@ export default function JudgeReview() {
   const confirmOkDisabled = !confirm?.agree
     || (confirm?.result === '存疑' && (confirm?.note?.trim().length ?? 0) < 10);
 
+  /* ---------- V6.0 CR-25：组织者覆盖复核结论（覆盖不覆写，新增记录） ---------- */
+  const overrideOn = flags.judgeOverride !== false;
+  const canOverride = hasRole('ORGANIZER', 'ADMIN');
+  const [overrideTarget, setOverrideTarget] = useState<AssignmentSubmit | null>(null);
+  const [overrideForm] = Form.useForm();
+
+  /** 已复核结论：优先展示最新一次覆盖结果，同时保留原始分 */
+  const lastOverride = (submitId: string) =>
+    db.reviewOverrides.filter((o) => o.submit_id === submitId)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+
+  const openOverride = (r: AssignmentSubmit) => {
+    setOverrideTarget(r);
+    overrideForm.resetFields();
+    overrideForm.setFieldsValue({
+      new_result: r.confirmed?.result ?? r.status,
+      new_score: r.final_score ?? r.judge_score ?? 0,
+      reason: '',
+    });
+  };
+
+  const doOverride = async () => {
+    const r = overrideTarget!;
+    let vals: { new_result?: string; new_score?: number; reason?: string };
+    try {
+      vals = await overrideForm.validateFields();
+    } catch {
+      message.error('请填写调整后结论与理由');
+      return;
+    }
+    const reason = (vals.reason ?? '').trim();
+    if (reason.length < 10) { message.error('覆盖理由必填且不少于 10 字'); return; }
+
+    /** 原结论不可变：只新增 review_override 记录，不改写原 review_confirm */
+    const original = r.confirmed?.result ?? r.status;
+    const originalScore = r.final_score ?? r.judge_score ?? 0;
+    const newScore = Number(vals.new_score ?? originalScore);
+    const at = `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`;
+
+    setDb((p) => ({
+      ...p,
+      submits: p.submits.map((s) => (s.id === r.id ? { ...s, final_score: newScore } : s)),
+      reviewOverrides: [{
+        id: `RO${Date.now()}`, submit_id: r.id,
+        original_result: `${original}（${originalScore} 分）`,
+        new_result: `${vals.new_result}（${newScore} 分）`,
+        reason, operator: me.name, created_at: at,
+      }, ...p.reviewOverrides],
+      /** 覆盖后通知原评委与作者（沿用 M10 触达点） */
+      messages: [
+        {
+          id: `MSG-OV-${Date.now()}-1`, union_id: r.union_id, type: '复核结果调整',
+          title: '你的作业复核结论已被调整',
+          content: `${r.code}：${original} → ${vals.new_result}。理由：${reason}`,
+          channel: '站内' as const, status: '未读' as const, sent_at: at,
+        },
+        ...(r.confirmed?.by
+          ? [{
+            id: `MSG-OV-${Date.now()}-2`, union_id: 'all', type: '复核结果调整',
+            title: '复核结论被组织者覆盖',
+            content: `${r.code}：原评委 ${r.confirmed.by} 的结论 ${original} 已被覆盖为 ${vals.new_result}。`,
+            channel: '站内' as const, status: '未读' as const, sent_at: at,
+          }]
+          : []),
+        ...p.messages,
+      ],
+    }));
+    log('覆盖复核结论', r.code, `${original}（${originalScore} 分）→ ${vals.new_result}（${newScore} 分）；理由：${reason}（覆盖不覆写，原记录保留）`);
+    message.success('已覆盖并留痕，原结论保留可追溯；已通知作者与原评委');
+    setOverrideTarget(null);
+    overrideForm.resetFields();
+  };
+
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <PageHeader title="评委复核" desc="AI 预评分 + 评委复核，最终分按权重合成" />
@@ -177,6 +250,10 @@ export default function JudgeReview() {
                           <Button size="small" type="link" disabled={!canOperate} onClick={() => { setCurrent(r); setSpot({ q1: '', q2: '', q3: '' }); }}>抽查</Button>
                         )
                       )}
+                      {/* V6.0 CR-25：组织者可覆盖复核结论（覆盖不覆写） */}
+                      {overrideOn && canOverride && (
+                        <Button size="small" type="link" onClick={() => openOverride(r)}>覆盖结论</Button>
+                      )}
                     </Space>
                   ),
                 },
@@ -187,6 +264,15 @@ export default function JudgeReview() {
                     <SafetyCertificateOutlined style={{ color: COLOR.success }} />{' '}
                     已确认：{r.confirmed.result} · 确认人 {r.confirmed.by} · {r.confirmed.at}
                     {r.confirmed.note && ` · 备注：${r.confirmed.note}`}
+                    {/* V6.0 CR-25：同时展示「原始结论 / 调整后结论」，不让覆盖抹掉事实 */}
+                    {(() => {
+                      const ov = lastOverride(r.id);
+                      return ov ? (
+                        <div style={{ marginTop: 4, color: '#B45309' }}>
+                          组织者已覆盖：{ov.original_result} → {ov.new_result}（{ov.operator} · {ov.created_at}）· 理由：{ov.reason}
+                        </div>
+                      ) : null;
+                    })()}
                   </div>
                 ) : <span style={{ fontSize: 12, color: COLOR.textMuted }}>尚未确认真实性</span>,
                 rowExpandable: (r) => confirmMode,
@@ -345,6 +431,42 @@ export default function JudgeReview() {
             不通过则取消评奖资格并标记，结果通知本人与其团队负责人。
           </Typography.Text>
         </Space>
+      </Modal>
+
+      {/* V6.0 CR-25：覆盖复核结论 —— 新增记录，不覆写原结论 */}
+      <Modal
+        open={!!overrideTarget}
+        title={`覆盖复核结论 · ${overrideTarget?.code}`}
+        onCancel={() => setOverrideTarget(null)}
+        onOk={doOverride}
+        okText="确认覆盖"
+        okButtonProps={{ danger: true }}
+        destroyOnClose
+      >
+        <Alert
+          type="warning" showIcon style={{ marginBottom: 12 }}
+          message="覆盖不覆写"
+          description="原复核记录保持不可变，本次操作以新记录追加；页面同时展示「原始结论 / 调整后结论」。覆盖后将通知原评委与作者。"
+        />
+        <div style={{ fontSize: 12, color: COLOR.textSub, marginBottom: 12 }}>
+          原始结论：{overrideTarget?.confirmed?.result ?? overrideTarget?.status}
+          （{overrideTarget?.final_score ?? overrideTarget?.judge_score ?? '—'} 分）
+          {overrideTarget?.confirmed?.by ? ` · 确认人 ${overrideTarget.confirmed.by}` : ''}
+        </div>
+        <Form form={overrideForm} layout="vertical" preserve={false}>
+          <Form.Item name="new_result" label="调整后结论" rules={[{ required: true }]}>
+            <Select options={['真实', '存疑', '通过', '不通过'].map((v) => ({ value: v, label: v }))} />
+          </Form.Item>
+          <Form.Item name="new_score" label="调整后分数" rules={[{ required: true }]}>
+            <InputNumber min={0} max={100} step={0.5} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item
+            name="reason" label="覆盖理由"
+            rules={[{ required: true, message: '请填写理由' }, { min: 10, message: '不少于 10 字' }]}
+          >
+            <Input.TextArea rows={3} placeholder="说明为什么要调整（≥10 字，写入审计日志）" maxLength={200} showCount />
+          </Form.Item>
+        </Form>
       </Modal>
     </Space>
   );

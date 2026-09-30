@@ -7,12 +7,20 @@ import { PageHeader, StatCard } from '@/components/ui';
 import { SubmitStatusTag } from '@/pages/c/WorkList';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import ScopePicker, { ScopeText, useScopeCommit } from '@/components/ScopePicker';
-import type { AssignmentType, ScopeSubject } from '@/mock/types';
+import type { AssignmentType, ScopeSubject, SubmitStatus } from '@/mock/types';
+
+/** V6.0 CR-23：流程编排的操作对象（最小必要字段） */
+type BountyFlowTarget = {
+  id: string; code: string; status: SubmitStatus; final_score?: number;
+} | null;
 import { useSkillAdminConverge } from '@/auth/converge';
 import { ScopeNotice } from '@/components/ScopeNotice';
 
 export default function AssignmentAdmin() {
-  const { db, setDb, log, campaign, scopeRows, me } = useStore();
+  const { db, setDb, log, campaign, scopeRows, me, flags } = useStore();
+  /** V6.0 CR-19：状态机 V2 开关（关闭=不出现 COMPLETED / CONSENSUS 与公示标记位） */
+  const flowV2 = flags.submitFlowV2 !== false;
+  const [selected, setSelected] = useState<string[]>([]);
   const { message, modal } = AntApp.useApp();
   /** V4.0 CR-09：技能管理员在本页为只读浏览者（§6.2 矩阵 ◐） */
   const readOnly = useSkillAdminConverge().isReadOnly('/admin/assignment');
@@ -86,9 +94,125 @@ export default function AssignmentAdmin() {
     });
   };
 
-  const toStatus = (id: string, next: 'AI_SCORED' | 'REVIEWING' | 'PUBLISHED') => {
+  const toStatus = (id: string, next: SubmitStatus) => {
     setDb((p) => ({ ...p, submits: p.submits.map((s) => (s.id === id ? { ...s, status: next } : s)) }));
     message.success('状态已流转');
+  };
+
+  /** 公示口径兼容：新标记位优先，旧 PUBLISHED 状态仍算已公示（历史数据） */
+  const isPublished = (s: { status: SubmitStatus; is_published?: boolean }) => s.is_published === true || s.status === 'PUBLISHED';
+
+  /**
+   * V6.0 CR-19：批量公示 / 取消公示（公示与状态机解耦后的逐条动作）
+   * 约束：公示总闸关闭时逐条公示不生效（Q9），避免「组织者以为公示了其实没生效」。
+   */
+  const batchPublish = (publish: boolean) => {
+    if (selected.length === 0) { message.warning('请先勾选要操作的提报'); return; }
+    if (publish && campaign.publicSwitch === false) {
+      message.error('公示总闸已关闭，逐条公示不生效（请先在「届次与配置」开启公示总闸）');
+      return;
+    }
+    const at = `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`;
+    setDb((p) => ({
+      ...p,
+      submits: p.submits.map((s) => (selected.includes(s.id)
+        ? {
+          ...s,
+          is_published: publish,
+          published_by: publish ? me.name : undefined,
+          published_at: publish ? at : undefined,
+        }
+        : s)),
+    }));
+    log(publish ? '批量公示' : '批量取消公示', `${selected.length} 条`, `U-6 口径：组织者手动标记 + 留痕，无自动触发条件（操作人 ${me.name}）`);
+    message.success(publish ? `已公示 ${selected.length} 条（即时生效并留痕）` : `已取消公示 ${selected.length} 条`);
+  };
+
+  /** V6.0 CR-19：批量标记「已完成 / 已共识」—— 公示不再是前置条件 */
+  const batchStatus = (next: 'COMPLETED' | 'CONSENSUS') => {
+    if (selected.length === 0) { message.warning('请先勾选要操作的提报'); return; }
+    const label = next === 'COMPLETED' ? '已完成' : '已共识';
+    setDb((p) => ({
+      ...p,
+      submits: p.submits.map((s) => (selected.includes(s.id)
+        ? {
+          ...s,
+          status: next,
+          consensus_by: next === 'CONSENSUS' ? me.name : s.consensus_by,
+          consensus_at: next === 'CONSENSUS' ? `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}` : s.consensus_at,
+        }
+        : s)),
+    }));
+    log(`批量标记${label}`, `${selected.length} 条`, `组织者手动标记，未设自动触发条件（操作人 ${me.name}）`);
+    message.success(`已标记 ${selected.length} 条为「${label}」`);
+  };
+
+  /** V6.0 CR-19：统计口径同步改造 —— 已公示 = 标记位 ∪ 旧 PUBLISHED 状态 */
+  const publishedCount = inScope.filter(isPublished).length;
+
+  /* ---------- V6.0 CR-23：流程编排（退回 / 转移，白名单约束 + 理由必填 + 留痕） ---------- */
+  const flowControlOn = flags.submitFlowControl !== false;
+  const [flowTarget, setFlowTarget] = useState<BountyFlowTarget>(null);
+  const [flowForm] = Form.useForm();
+
+  /** 白名单：只允许规则表里登记的转移路径，杜绝「草稿直接跳到入库」这类越级 */
+  const allowedTargets = (from: SubmitStatus) =>
+    db.submitFlowRules.find((r) => r.enabled && r.from_status === from)?.to_status ?? [];
+
+  const openFlow = (s: { id: string; code: string; status: SubmitStatus; final_score?: number }) => {
+    setFlowTarget(s);
+    flowForm.resetFields();
+    flowForm.setFieldsValue({ to_status: undefined, reason: '' });
+  };
+
+  const doFlow = async () => {
+    const s = flowTarget!;
+    let vals: { to_status?: SubmitStatus; reason?: string };
+    try {
+      vals = await flowForm.validateFields();
+    } catch {
+      message.error('请选择目标环节并填写理由');
+      return;
+    }
+    const to = vals.to_status!;
+    const reason = (vals.reason ?? '').trim();
+    if (!allowedTargets(s.status).includes(to)) {
+      message.error('该流转路径不在白名单内，已拒绝（请在「系统管理 · 流程规则」中确认）');
+      return;
+    }
+    if (reason.length < 10) { message.error('理由必填且不少于 10 字'); return; }
+
+    const commit = () => {
+      const at = `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`;
+      setDb((p) => ({
+        ...p,
+        submits: p.submits.map((x) => (x.id === s.id ? { ...x, status: to } : x)),
+        /** 只增不改：流转日志独立实体，便于外置与审计 */
+        submitFlowLogs: [{
+          id: `FL${Date.now()}`, submit_id: s.id,
+          from_status: s.status, to_status: to,
+          operator: me.name, reason, created_at: at,
+        }, ...p.submitFlowLogs],
+      }));
+      log('流程编排', `${s.code} ${s.status} → ${to}`, `理由：${reason}（白名单校验通过，操作人 ${me.name}）`);
+      message.success(`已流转：${s.status} → ${to}（已留痕）`);
+      setFlowTarget(null);
+      flowForm.resetFields();
+    };
+
+    /** 已完成作业退回 / 涉及已入账积分 → 二次确认并提示积分回退 */
+    const risky = s.status === 'COMPLETED' || s.status === 'CONSENSUS' || (s.final_score ?? 0) > 0;
+    if (risky) {
+      modal.confirm({
+        title: '确认退回该作业？',
+        content: `该作业已完成（或已有评分记录 ${s.final_score ?? '—'}），退回后需重新走流程，积分将同步回退。`,
+        okText: '确认退回',
+        okButtonProps: { danger: true },
+        onOk: commit,
+      });
+      return;
+    }
+    commit();
   };
 
   return (
@@ -136,9 +260,30 @@ export default function AssignmentAdmin() {
                   <Input.Search placeholder="搜索姓名 / 标题 / 编号" style={{ width: 220 }} value={kw} onChange={(e) => setKw(e.target.value)} allowClear />
                   <Select
                     value={status} onChange={setStatus} style={{ width: 150 }}
-                    options={['全部', 'SUBMITTED', 'AI_SCORED', 'REVIEWING', 'REVIEWED', 'PASSED', 'PUBLISHED', 'ASSET_APPLYING', 'ASSET_ONLINE', 'SCORE_FAILED']
-                      .map((v) => ({ value: v, label: v }))}
+                    options={[
+                      '全部', 'SUBMITTED', 'AI_SCORED', 'REVIEWING', 'REVIEWED', 'PASSED', 'PUBLISHED',
+                      'ASSET_APPLYING', 'ASSET_ONLINE', 'SCORE_FAILED',
+                      /* V6.0 CR-19 新增两态（开关关闭时不出现在筛选项里） */
+                      ...(flowV2 ? ['COMPLETED', 'CONSENSUS'] : []),
+                    ].map((v) => ({ value: v, label: v }))}
                   />
+                  {/* V6.0 CR-19：公示与状态机解耦后的批量动作 */}
+                  {flowV2 && (
+                    <>
+                      <Button disabled={readOnly || selected.length === 0} onClick={() => batchPublish(true)}>
+                        批量公示{selected.length ? `（${selected.length}）` : ''}
+                      </Button>
+                      <Button disabled={readOnly || selected.length === 0} onClick={() => batchPublish(false)}>
+                        取消公示
+                      </Button>
+                      <Button disabled={readOnly || selected.length === 0} onClick={() => batchStatus('COMPLETED')}>
+                        标记已完成
+                      </Button>
+                      <Button disabled={readOnly || selected.length === 0} onClick={() => batchStatus('CONSENSUS')}>
+                        标记已共识
+                      </Button>
+                    </>
+                  )}
                   <Button disabled={readOnly} icon={<DownloadOutlined />} onClick={triggerAi}>评分模板导出 / 批量导入（Q1）</Button>
                   <Button disabled={readOnly} icon={<UploadOutlined />} onClick={() => {
                     setDb((p) => ({
@@ -152,6 +297,10 @@ export default function AssignmentAdmin() {
                 </Space>
                 <Table
                   size="small" rowKey="id" dataSource={submits} pagination={{ pageSize: 8 }}
+                  rowSelection={{
+                    selectedRowKeys: selected,
+                    onChange: (keys) => setSelected(keys as string[]),
+                  }}
                   columns={[
                     { title: '编号', dataIndex: 'code', width: 150 },
                     { title: '姓名', dataIndex: 'name', width: 80 },
@@ -160,17 +309,32 @@ export default function AssignmentAdmin() {
                     { title: '赛道', dataIndex: 'track', render: (v: string) => <Tag color={TRACK_COLOR[v]} style={{ border: 'none' }}>{v}</Tag> },
                     { title: 'AI 分', dataIndex: 'ai_score', width: 70, render: (v?: number) => <span className="num">{v ?? '—'}</span> },
                     { title: '最终分', dataIndex: 'final_score', width: 80, render: (v?: number) => <span className="num" style={{ color: COLOR.primary }}>{v ?? '—'}</span> },
-                    { title: '状态', dataIndex: 'status', render: (v) => <SubmitStatusTag status={v} /> },
+                    { title: '状态', dataIndex: 'status', render: (v, r) => <SubmitStatusTag status={v} published={isPublished(r)} /> },
                     {
-                      title: '操作', width: 130,
+                      title: '操作', width: 150,
                       render: (_, r) => (readOnly
                         ? <Typography.Text type="secondary" style={{ fontSize: 12 }}>只读</Typography.Text>
                         : (
                           <Space size={4}>
                             {r.status === 'SUBMITTED' && <Button size="small" type="link" onClick={() => toStatus(r.id, 'AI_SCORED')}>标记已跑分</Button>}
                             {r.status === 'AI_SCORED' && <Button size="small" type="link" onClick={() => toStatus(r.id, 'REVIEWING')}>送复核</Button>}
-                            {r.status === 'PASSED' && <Button size="small" type="link" onClick={() => toStatus(r.id, 'PUBLISHED')}>公示</Button>}
+                            {/* V6.0 CR-19：复核完 → 已完成（公示不再是前置条件）→ 可选标记已共识 */}
+                            {flowV2 && r.status === 'REVIEWED' && <Button size="small" type="link" onClick={() => toStatus(r.id, 'COMPLETED')}>标记已完成</Button>}
+                            {flowV2 && r.status === 'COMPLETED' && <Button size="small" type="link" onClick={() => toStatus(r.id, 'CONSENSUS')}>标记已共识</Button>}
+                            {!flowV2 && r.status === 'PASSED' && <Button size="small" type="link" onClick={() => toStatus(r.id, 'PUBLISHED')}>公示</Button>}
+                            {flowV2 && (
+                              <Button
+                                size="small" type="link"
+                                onClick={() => { setSelected([r.id]); batchPublish(!isPublished(r)); }}
+                              >
+                                {isPublished(r) ? '取消公示' : '公示'}
+                              </Button>
+                            )}
                             {r.status === 'SCORE_FAILED' && <Button size="small" type="link" onClick={() => message.info('单条重试，不影响其他提报')}>重试</Button>}
+                            {/* V6.0 CR-23：流程编排（白名单约束，禁止任意跳转） */}
+                            {flowControlOn && allowedTargets(r.status).length > 0 && (
+                              <Button size="small" type="link" onClick={() => openFlow(r)}>流转</Button>
+                            )}
                           </Space>
                         )),
                     },
@@ -188,7 +352,9 @@ export default function AssignmentAdmin() {
                   { t: '待评分', v: inScope.filter((s) => s.status === 'SUBMITTED').length },
                   { t: '已跑分', v: inScope.filter((s) => s.ai_score !== undefined).length },
                   { t: '待复核', v: inScope.filter((s) => s.status === 'AI_SCORED').length },
-                  { t: '已公示', v: inScope.filter((s) => s.status === 'PUBLISHED').length },
+                  { t: '已完成', v: inScope.filter((s) => s.status === 'COMPLETED' || s.status === 'CONSENSUS').length },
+                  /* V6.0 CR-19：已公示口径 = 标记位 ∪ 旧 PUBLISHED 状态，防止「作业完成了但看板显示未公示」 */
+                  { t: '已公示', v: publishedCount },
                   { t: '迟交', v: inScope.filter((s) => s.late).length },
                 ].map((m) => (
                   <Col xs={12} sm={4} key={m.t}>
@@ -200,6 +366,38 @@ export default function AssignmentAdmin() {
           },
         ]}
       />
+
+      {/* V6.0 CR-23：流程编排弹窗 —— 目标环节只给白名单内的选项，理由必填 */}
+      <Modal
+        open={!!flowTarget}
+        title={`流程编排 · ${flowTarget?.code}`}
+        onCancel={() => setFlowTarget(null)}
+        onOk={doFlow}
+        okText="确认流转"
+        destroyOnClose
+      >
+        <Form form={flowForm} layout="vertical" preserve={false}>
+          <Form.Item label="当前环节">
+            <Tag color="blue">{flowTarget?.status}</Tag>
+          </Form.Item>
+          <Form.Item
+            name="to_status" label="目标环节"
+            rules={[{ required: true, message: '请选择目标环节' }]}
+            extra="仅显示白名单内允许的路径，未登记的路径无法流转"
+          >
+            <Select
+              placeholder={allowedTargets(flowTarget?.status ?? 'DRAFT').length ? '选择目标环节' : '当前环节没有允许的流转路径'}
+              options={allowedTargets(flowTarget?.status ?? 'DRAFT').map((v) => ({ value: v, label: v }))}
+            />
+          </Form.Item>
+          <Form.Item
+            name="reason" label="流转理由"
+            rules={[{ required: true, message: '请填写理由' }, { min: 10, message: '不少于 10 字' }]}
+          >
+            <Input.TextArea rows={3} placeholder="说明为什么要退回或转移（≥10 字，写入流转日志）" maxLength={200} showCount />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       <Modal
         open={open} title="新建作业类型" width={680}

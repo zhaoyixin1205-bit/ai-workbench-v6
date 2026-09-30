@@ -1,11 +1,11 @@
-import { Button, Card, Col, Empty, Input, Row, Segmented, Space, Tag, Typography, Tabs, App as AntApp, Select } from 'antd';
-import { SearchOutlined, FireOutlined, EyeOutlined, ThunderboltOutlined, BulbOutlined } from '@ant-design/icons';
+import { Button, Card, Col, Empty, Form, Input, Modal, Row, Segmented, Space, Tag, Typography, Tabs, App as AntApp, Select } from 'antd';
+import { SearchOutlined, FireOutlined, EyeOutlined, ThunderboltOutlined, BulbOutlined, PlusOutlined } from '@ant-design/icons';
 import { Link, useNavigate } from 'react-router-dom';
 import { useMemo, useState } from 'react';
 import { useStore } from '@/store/store';
 import { COLOR } from '@/theme';
 import { TRACKS } from '@/mock/types';
-import type { Topic } from '@/mock/types';
+import type { Topic, Track } from '@/mock/types';
 import { CoverBlock, PageHeader, TrackTag, HoverCard } from '@/components/ui';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 
@@ -13,9 +13,11 @@ import { DEMO_TODAY } from '@/mock/seedBiz';
 type TagMode = 'ANY' | 'ALL';
 
 export default function CaseList() {
-  const { db, me, setDb, log, flags } = useStore();
+  const { db, me, setDb, log, flags, hasRole } = useStore();
   const nav = useNavigate();
   const { message } = AntApp.useApp();
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customForm] = Form.useForm();
   const [track, setTrack] = useState<string>('全部');
   const [kw, setKw] = useState('');
   const [tab, setTab] = useState('case');
@@ -61,15 +63,62 @@ export default function CaseList() {
     [db.cases, track, kw, tagFilter, tagMode, resFilter, skillOn, attachOn]
   );
 
+  /** V6.0 CR-17：自定义选题开关（关闭=选题池不出现「其他·自定义」入口） */
+  const topicCustomOn = flags.topicCustom !== false;
+
+  /**
+   * V6.0 CR-17：可见性口径 —— 私有自定义选题仅本人与组织者可见。
+   * 边界：他人看不到（不是置灰），避免暴露「存在但不可见」。
+   */
+  const canSeeTopic = (t: Topic) => {
+    if (t.visibility !== 'PRIVATE') return true;
+    return t.created_by === me.union_id || hasRole('ORGANIZER') || hasRole('ADMIN');
+  };
+
   const topicList = useMemo(
     () => db.topics.filter((t) => {
+      if (!canSeeTopic(t)) return false;
       if (track !== '全部' && t.track !== track) return false;
       if (kw && !`${t.title}${t.expected_output}${(t.tags ?? []).join()}`.includes(kw)) return false;
       if (!matchTags(t.tags ?? [])) return false;
       return true;
     }),
-    [db.topics, track, kw, tagFilter, tagMode]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [db.topics, track, kw, tagFilter, tagMode, me.union_id]
   );
+
+  /** V6.0 CR-17：新建自定义选题 —— 默认私有，组织者可在内容管理公开 */
+  const createCustomTopic = (vals: { title: string; track: Track; expected_output?: string }) => {
+    const id = `T-CUSTOM-${Date.now()}`;
+    const topic: Topic = {
+      id,
+      /** 自定义选题不挂在具体案例下 */
+      case_id: '',
+      title: vals.title,
+      difficulty: '中',
+      expected_output: vals.expected_output ?? '（自定义选题，产出形式自拟）',
+      suggest_level: '骨干层',
+      track: vals.track,
+      status: '可选',
+      tags: ['自定义'],
+      is_custom: true,
+      created_by: me.union_id,
+      visibility: 'PRIVATE',
+    };
+    setDb((p) => ({
+      ...p,
+      topics: [topic, ...p.topics],
+      topicSelections: [{
+        id: `TS${Date.now()}`, topic_id: id, union_id: me.union_id,
+        selected_at: `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`, status: '已选',
+      }, ...p.topicSelections],
+    }));
+    log('新建自定义选题', vals.title, 'V6.0 CR-17：默认仅本人与组织者可见，组织者可公开至全员');
+    message.success('自定义选题已创建，默认仅你与组织者可见（组织者可公开给全员）');
+    setCustomOpen(false);
+    customForm.resetFields();
+    nav(`/work/submit/${db.assignmentTypes[0]?.id ?? 'AT1'}?topic=${id}`);
+  };
 
   const pickedCount = (topicId: string) => db.topicSelections.filter((s) => s.topic_id === topicId).length;
   const mineSelected = (topicId: string) => db.topicSelections.some((s) => s.topic_id === topicId && s.union_id === me.union_id);
@@ -115,7 +164,8 @@ export default function CaseList() {
               <div style={{ fontSize: 11, color: COLOR.textMuted }}>场景案例</div>
             </div>
             <div style={{ textAlign: 'right' }}>
-              <div className="num" style={{ fontSize: 22, fontWeight: 800, color: COLOR.primary }}>{db.topics.length}</div>
+              {/* V6.0 CR-17：计数改用「本人可见」口径，避免私有选题被计入他人可见数 */}
+              <div className="num" style={{ fontSize: 22, fontWeight: 800, color: COLOR.primary }}>{topicList.length}</div>
               <div style={{ fontSize: 11, color: COLOR.textMuted }}>可选选题</div>
             </div>
           </Space>
@@ -255,6 +305,15 @@ export default function CaseList() {
         )
       ) : (
         <Card styles={{ body: { padding: '8px 20px' } }}>
+          {/* V6.0 CR-17：选题池顶部「其他·自定义」入口 */}
+          {topicCustomOn && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 0', borderBottom: `1px dashed ${COLOR.borderLight}`, flexWrap: 'wrap' }}>
+              <div style={{ fontSize: 12, color: COLOR.textMuted }}>
+                没有合适的选题？自己填一个 —— <b>默认仅你与组织者可见</b>，组织者可公开给全员
+              </div>
+              <Button size="small" icon={<PlusOutlined />} onClick={() => setCustomOpen(true)}>其他·自定义选题</Button>
+            </div>
+          )}
           {topicList.length === 0 ? (
             <Empty description="没有匹配的选题，试试清空筛选">
               <Button type="primary" onClick={resetFilter}>清空筛选</Button>
@@ -290,6 +349,14 @@ export default function CaseList() {
                       </Typography.Text>
                     )}
                   </div>
+                  {/* V6.0 CR-17：私有自定义选题给出可见性标识，避免误以为别人也能看到 */}
+                  <div style={{ marginTop: 6 }}>
+                    {t.is_custom && (
+                      <Tag color={t.visibility === 'PRIVATE' ? 'orange' : 'green'} style={{ marginInlineEnd: 0 }}>
+                        {t.visibility === 'PRIVATE' ? '自定义 · 仅本人与组织者可见' : '自定义 · 已公开'}
+                      </Tag>
+                    )}
+                  </div>
                 </div>
                 {t.status === '已关闭' ? (
                   <Tag>已关闭</Tag>
@@ -307,6 +374,39 @@ export default function CaseList() {
           })}
         </Card>
       )}
+
+      {/* V6.0 CR-17：自定义选题弹窗 */}
+      <Modal
+        open={customOpen}
+        title="其他 · 自定义选题"
+        okText="创建并去提报"
+        onCancel={() => setCustomOpen(false)}
+        onOk={() => customForm.submit()}
+        destroyOnClose
+      >
+        <Form form={customForm} layout="vertical" onFinish={createCustomTopic} preserve={false}
+          initialValues={{ track: TRACKS[0] }}>
+          <Form.Item
+            name="title" label="选题名称"
+            rules={[
+              { required: true, message: '请填写选题名称' },
+              { max: 30, message: '不超过 30 字' },
+            ]}
+            extra="写清楚你要解决的场景，≤30 字"
+          >
+            <Input placeholder="如：客户拜访前的 5 分钟准备卡" maxLength={30} showCount />
+          </Form.Item>
+          <Form.Item name="track" label="赛道" rules={[{ required: true }]}>
+            <Select options={TRACKS.map((t) => ({ value: t, label: t }))} />
+          </Form.Item>
+          <Form.Item name="expected_output" label="预期产出（选填）">
+            <Input placeholder="如：一页纸准备卡 / 一段可直接复用的提示词" />
+          </Form.Item>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            创建后默认仅你与组织者可见；组织者可在「内容管理 · 选题池」公开给全员，公开后才进入公共统计。
+          </Typography.Text>
+        </Form>
+      </Modal>
     </Space>
   );
 }

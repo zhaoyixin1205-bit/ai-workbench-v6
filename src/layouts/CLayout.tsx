@@ -21,6 +21,8 @@ const NAV: { key: string; icon: React.ReactNode; label: string; mobile?: string 
   { key: '/bounty', icon: <TrophyOutlined />, label: '悬赏榜' },
   { key: '/work', icon: <FormOutlined />, label: '作业提报', mobile: '交作业' },
   { key: '/clinic', icon: <MedicineBoxOutlined />, label: '专家门诊', mobile: '问诊' },
+  /* V6.0 CR-30：负责人团队视图（非负责人由守卫表自动过滤，不会出现在菜单里） */
+  { key: '/team', icon: <TeamOutlined />, label: '我的团队', mobile: '团队' },
   { key: '/community', icon: <TeamOutlined />, label: '社区' },
   { key: '/assets', icon: <AppstoreOutlined />, label: '资产库' },
   { key: '/shop', icon: <GiftOutlined />, label: '积分商城' },
@@ -37,8 +39,14 @@ export default function CLayout() {
   const unread = db.messages.filter((m) => m.status === '未读' && (m.union_id === 'all' || m.union_id === me.union_id)).length;
   const currentPath = '/' + (loc.pathname.split('/')[1] ?? '');
 
-  /** 与页级守卫共用同一份授权表：菜单可见 ⇔ 页面可达 */
-  const subject = useMemo(() => ({ roles: me.roles, flags }), [me.roles, flags]);
+  /**
+   * 与页级守卫共用同一份授权表：菜单可见 ⇔ 页面可达。
+   * V6.0 CR-30：subject 带上 isDeptLeader，供 /team 的属性型守卫判定（纯增量字段）。
+   */
+  const subject = useMemo(
+    () => ({ roles: me.roles, flags, isDeptLeader: me.is_dept_leader }),
+    [me.roles, me.is_dept_leader, flags]
+  );
   const navItems = useMemo(() => NAV.filter((n) => checkCAccess(n.key, subject).ok), [subject]);
   const guard = useMemo(() => checkCAccess(loc.pathname, subject), [loc.pathname, subject]);
   const canAdmin = canEnterAdmin({ ...subject, isDeptLeader: me.is_dept_leader });

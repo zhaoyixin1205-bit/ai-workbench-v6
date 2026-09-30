@@ -1,12 +1,14 @@
 import { Button, Card, Checkbox, Divider, Form, Input, Radio, Space, Steps, Tag, Typography, Upload, App as AntApp, Alert, Select } from 'antd';
-import { ArrowLeftOutlined, InboxOutlined, SaveOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, DownloadOutlined, InboxOutlined, SaveOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useStore } from '@/store/store';
 import { COLOR, GRADIENT, SHADOW } from '@/theme';
 import { TRACKS } from '@/mock/types';
+import type { Attachment, Topic } from '@/mock/types';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import type { UploadFile } from 'antd';
+import { useFileUpload } from '@/service/useFileUpload';
 
 const ALLOW_EXT = ['zip', 'md', 'yaml', 'pdf', 'docx', 'xlsx', 'png', 'jpg'];
 
@@ -27,21 +29,39 @@ function StepTitle({ n, text }: { n: string; text: string }) {
 export default function WorkSubmit() {
   const { typeId } = useParams();
   const [qs] = useSearchParams();
-  const { db, me, setDb, log } = useStore();
+  const { db, me, setDb, log, flags, hasRole } = useStore();
   const nav = useNavigate();
   const { message } = AntApp.useApp();
   const [form] = Form.useForm();
   const [channel, setChannel] = useState<string>('通道一·用现成 Skill');
   const [files, setFiles] = useState<UploadFile[]>([]);
+  /** V6.0 CR-31：真实附件元数据（提交时落库，带 file_id 可下载） */
+  const [atts, setAtts] = useState<Attachment[]>([]);
   const [savedAt, setSavedAt] = useState<string>('');
+  /** V6.0 CR-18：选题形态 —— 关联既有 / 其他·自定义 / 不选选题 */
+  const [topicMode, setTopicMode] = useState<'EXISTING' | 'CUSTOM' | 'NONE'>('NONE');
 
   const type = db.assignmentTypes.find((t) => t.id === typeId) ?? db.assignmentTypes[0];
   const presetCase = db.cases.find((c) => c.id === qs.get('case'));
   const presetTopic = db.topics.find((t) => t.id === qs.get('topic'));
   const period = db.periods.find((p) => p.type_id === type.id && p.status === 'OPEN')!;
 
+  /** V6.0 CR-18 开关：topicCustom 控制「其他」，workNoTopic 控制「不选选题」 */
+  const topicCustomOn = flags.topicCustom !== false;
+  const noTopicOn = flags.workNoTopic !== false;
+
+  /** V6.0 CR-17：私有自定义选题仅本人与组织者可选（与选题池同一口径） */
+  const selectableTopics = db.topics.filter(
+    (t) => t.visibility !== 'PRIVATE' || t.created_by === me.union_id || hasRole('ORGANIZER') || hasRole('ADMIN')
+  );
+
   useEffect(() => {
+    /** V6.0 CR-18：带 topic 参数进来时自动落在「关联既有选题」形态 */
+    const mode: 'EXISTING' | 'CUSTOM' | 'NONE' = presetTopic ? 'EXISTING' : 'NONE';
+    setTopicMode(mode);
     form.setFieldsValue({
+      topic_mode: mode,
+      topic_id: presetTopic?.id,
       track: presetCase?.track ?? presetTopic?.track ?? TRACKS[0],
       title: presetTopic?.title ?? presetCase?.title ?? '',
       scene_desc: presetCase ? `痛点：${presetCase.pain_point}` : '',
@@ -52,25 +72,24 @@ export default function WorkSubmit() {
     });
   }, [presetCase, presetTopic, form]);
 
-  const beforeUpload = (file: File) => {
-    const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
-    if (!ALLOW_EXT.includes(ext)) {
-      message.error(`不支持的文件类型 .${ext}（白名单：${ALLOW_EXT.join(' / ')}）`);
-      return Upload.LIST_IGNORE;
-    }
-    if (file.size > 50 * 1024 * 1024) {
-      message.error('单个文件不得超过 50MB');
-      return Upload.LIST_IGNORE;
-    }
-    if (files.length >= 5) {
-      message.error('最多上传 5 个附件');
-      return Upload.LIST_IGNORE;
-    }
-    if (ext === 'zip') {
-      message.info('zip 将校验包内是否含 SKILL.md 与 manifest.yaml（模拟校验通过）');
-    }
-    return false; // 阻止真实上传，仅前端演示
+  /** V6.0 CR-18：切换形态时清掉另一种形态的残留值，避免脏数据落库 */
+  const switchTopicMode = (m: 'EXISTING' | 'CUSTOM' | 'NONE') => {
+    setTopicMode(m);
+    form.setFieldsValue({ topic_mode: m });
+    if (m !== 'EXISTING') form.setFieldsValue({ topic_id: undefined });
+    if (m !== 'CUSTOM') form.setFieldsValue({ custom_topic: undefined });
   };
+
+  /**
+   * V6.0 CR-31：附件改走真实文件服务（此前只登记文件名，无法下载 —— A-39 遗留项结案）。
+   * 校验口径（白名单 / 50MB / 最多 5 个）与服务端一致；zip 由服务端解包真实校验
+   * 是否含 SKILL.md 与 manifest.yaml，不再是「模拟校验通过」。
+   */
+  const { beforeUpload, uploading } = useFileUpload('SUBMIT', `SUBMIT-${me.union_id}`, {
+    count: atts.length,
+    max: 5,
+    onDone: (a) => setAtts((p) => [...p, a]),
+  });
 
   const saveDraft = () => {
     setSavedAt(new Date().toTimeString().slice(0, 5));
@@ -79,50 +98,96 @@ export default function WorkSubmit() {
 
   const submit = (vals: Record<string, unknown>) => {
     if (!vals.desensitized) { message.error('未勾选脱敏声明，禁止提交'); return; }
+    /** V6.0 CR-18：三种选题形态互斥校验 */
+    const mode = (vals.topic_mode as 'EXISTING' | 'CUSTOM' | 'NONE') ?? 'NONE';
+    if (mode === 'EXISTING' && !vals.topic_id) { message.error('选择了「关联既有选题」，请先指定选题'); return; }
+    if (mode === 'CUSTOM' && !(vals.custom_topic as string)?.trim()) { message.error('选择了「其他·自定义」，请填写选题名称'); return; }
+    if (mode === 'NONE' && !(vals.title as string)?.trim()) { message.error('不选选题时，场景标题必填'); return; }
+
     const seq = db.submits.filter((s) => s.union_id === me.union_id && s.period_id === period.id).length + 1;
     const id = `S${Date.now()}`;
-    /** V4.0 CR-04：提报回写选题记录状态（已选 → 已提报） */
-    const topicId = presetTopic?.id;
-    setDb((p) => ({
-      ...p,
-      submits: [
-        {
-          id,
-          code: `${type.code}-P${period.seq}-${String(p.submits.length + 1).padStart(4, '0')}`,
-          type_id: type.id,
-          period_id: period.id,
-          union_id: me.union_id,
-          name: me.name,
-          dept_name: me.dept_names[0],
-          seq_no: seq,
-          track: vals.track as never,
-          channel: vals.channel as never,
-          title: vals.title as string,
-          scene_desc: vals.scene_desc as string,
-          before_after: vals.before_after as string,
-          output_sample: vals.output_sample as string,
-          skill_used: vals.skill_used as string,
-          attachments: files.map((f) => ({ name: f.name, size: `${Math.round((f.size ?? 0) / 1024)}KB` })),
-          desensitized: true,
-          visible_scope: vals.visible_scope as never,
-          /** V4.0 CR-04：关联选题，供「我的选题」按状态机驱动下一步 */
-          topic_id: topicId,
-          status: 'SUBMITTED',
-          score_card_version: type.score_card_version,
-          submitted_at: DEMO_TODAY + ' ' + new Date().toTimeString().slice(0, 5),
-          late: false,
-        },
-        ...p.submits,
-      ],
-      pointRecords: [
-        { id: `PR${Date.now()}`, union_id: me.union_id, name: me.name, source: '完成提报', points: 30, campaign_id: 'C2026Q4', remark: type.name, created_at: DEMO_TODAY },
-        ...p.pointRecords,
-      ],
-      topicSelections: topicId
-        ? p.topicSelections.map((s) => (s.topic_id === topicId && s.union_id === me.union_id ? { ...s, status: '已提报' } : s))
-        : p.topicSelections,
-    }));
-    log('提交提报', `${type.name} 第 ${period.seq} 期`, '状态 DRAFT → SUBMITTED，已生成积分记录');
+    const now = `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`;
+
+    const topicId = mode === 'EXISTING' ? (vals.topic_id as string) : undefined;
+    const customTopic = mode === 'CUSTOM' ? (vals.custom_topic as string).trim() : undefined;
+
+    /** V6.0 CR-18：「其他·自定义」落一条私有选题记录，供后续统计与组织者公开 */
+    const newTopic: Topic | null = mode === 'CUSTOM' && customTopic
+      ? {
+        id: `T-CUSTOM-${Date.now()}`,
+        case_id: '',
+        title: customTopic,
+        difficulty: '中',
+        expected_output: '（自定义选题，产出形式自拟）',
+        suggest_level: '骨干层',
+        track: vals.track as Topic['track'],
+        status: '可选',
+        tags: ['自定义'],
+        is_custom: true,
+        created_by: me.union_id,
+        visibility: 'PRIVATE',
+      }
+      : null;
+
+    const targetTopicId = newTopic?.id ?? topicId;
+
+    setDb((p) => {
+      /** 边界：不选选题的提报不生成「我的选题」条目，避免流程断层提示误报 */
+      let nextSelections = p.topicSelections;
+      if (targetTopicId) {
+        const exists = nextSelections.some((s) => s.topic_id === targetTopicId && s.union_id === me.union_id);
+        nextSelections = exists
+          ? nextSelections.map((s) => (s.topic_id === targetTopicId && s.union_id === me.union_id ? { ...s, status: '已提报' } : s))
+          : [{ id: `TS${Date.now()}`, topic_id: targetTopicId, union_id: me.union_id, selected_at: now, status: '已提报' }, ...nextSelections];
+      }
+      return {
+        ...p,
+        topics: newTopic ? [newTopic, ...p.topics] : p.topics,
+        submits: [
+          {
+            id,
+            code: `${type.code}-P${period.seq}-${String(p.submits.length + 1).padStart(4, '0')}`,
+            type_id: type.id,
+            period_id: period.id,
+            union_id: me.union_id,
+            name: me.name,
+            dept_name: me.dept_names[0],
+            seq_no: seq,
+            track: vals.track as never,
+            channel: vals.channel as never,
+            title: (vals.title as string) || customTopic || '未命名场景',
+            scene_desc: vals.scene_desc as string,
+            before_after: vals.before_after as string,
+            output_sample: vals.output_sample as string,
+            skill_used: vals.skill_used as string,
+            /** V6.0 CR-31：附件带 file_id / url，下载走服务端代理 */
+            attachments: atts,
+            desensitized: true,
+            visible_scope: vals.visible_scope as never,
+            /** V4.0 CR-04：关联选题；V6.0 CR-18：自定义选题名 / 不选选题 */
+            topic_id: topicId,
+            custom_topic: customTopic,
+            status: 'SUBMITTED',
+            score_card_version: type.score_card_version,
+            submitted_at: DEMO_TODAY + ' ' + new Date().toTimeString().slice(0, 5),
+            late: false,
+          },
+          ...p.submits,
+        ],
+        pointRecords: [
+          { id: `PR${Date.now()}`, union_id: me.union_id, name: me.name, source: '完成提报', points: 30, campaign_id: 'C2026Q4', remark: type.name, created_at: DEMO_TODAY },
+          ...p.pointRecords,
+        ],
+        topicSelections: nextSelections,
+      };
+    });
+    log(
+      '提交提报',
+      `${type.name} 第 ${period.seq} 期`,
+      `状态 DRAFT → SUBMITTED，已生成积分记录；选题形态：${
+        mode === 'EXISTING' ? '关联既有选题' : mode === 'CUSTOM' ? `其他·自定义（${customTopic}）` : '不选选题直提'
+      }`
+    );
     message.success('提报成功！已触发组织者待办提醒，评分结果将通知你');
     nav('/work');
   };
@@ -161,6 +226,57 @@ export default function WorkSubmit() {
               <Alert type="success" showIcon style={{ marginBottom: 16 }}
                 message={`已从${presetCase ? '案例' : '选题池'}预填：${presetCase?.title ?? presetTopic?.title}，可修改`} />
             )}
+            {/* V6.0 CR-18：三种选题形态（关联既有 / 其他·自定义 / 不选选题），均不消耗额外提报次数 */}
+            <Form.Item name="topic_mode" label="选题形态" rules={[{ required: true }]}>
+              <Radio.Group
+                optionType="button"
+                value={topicMode}
+                onChange={(e) => switchTopicMode(e.target.value)}
+                options={[
+                  { label: '关联既有选题', value: 'EXISTING' },
+                  ...(topicCustomOn ? [{ label: '其他 · 自定义', value: 'CUSTOM' }] : []),
+                  ...(noTopicOn ? [{ label: '不选选题，直接提', value: 'NONE' }] : []),
+                ]}
+              />
+            </Form.Item>
+
+            {topicMode === 'EXISTING' && (
+              <Form.Item
+                name="topic_id" label="选择选题"
+                extra="私有自定义选题仅本人与组织者可见；列表与你可见范围一致"
+              >
+                <Select
+                  showSearch allowClear placeholder="从选题池中选择（可搜索）"
+                  optionFilterProp="label"
+                  options={selectableTopics.map((t) => ({
+                    value: t.id,
+                    label: `${t.title}${t.is_custom ? '（自定义）' : ''}`,
+                  }))}
+                />
+              </Form.Item>
+            )}
+
+            {topicMode === 'CUSTOM' && (
+              <Form.Item
+                name="custom_topic" label="自定义选题名称"
+                rules={[
+                  { required: true, message: '请填写自定义选题名称' },
+                  { max: 30, message: '不超过 30 字' },
+                ]}
+                extra="默认仅你与组织者可见；组织者可在内容管理公开给全员"
+              >
+                <Input placeholder="如：客户拜访前的 5 分钟准备卡" maxLength={30} showCount />
+              </Form.Item>
+            )}
+
+            {topicMode === 'NONE' && (
+              <Alert
+                type="info" showIcon style={{ marginBottom: 16 }}
+                message="不选选题直接提报"
+                description="不占用选题池名额，也不会在「我的选题」中生成条目；标题写清楚场景即可，后续照常进入评分与复核。"
+              />
+            )}
+
             <Form.Item name="track" label="赛道" rules={[{ required: true }]}>
               <Radio.Group options={TRACKS.map((t) => ({ label: t, value: t }))} optionType="button" />
             </Form.Item>
@@ -214,7 +330,7 @@ export default function WorkSubmit() {
 
             <Form.Item
               label="附件"
-              extra={`白名单 ${ALLOW_EXT.join(' / ')}，单文件 ≤50MB，最多 5 个；zip 需含 SKILL.md + manifest.yaml`}
+              extra={`白名单 ${ALLOW_EXT.join(' / ')}，单文件 ≤50MB，最多 5 个；zip 由服务端解包校验是否含 SKILL.md + manifest.yaml${uploading > 0 ? ` · 上传中 ${uploading}` : ''}`}
             >
               <Upload.Dragger
                 multiple
@@ -228,6 +344,28 @@ export default function WorkSubmit() {
                 <p className="ant-upload-text">点击或拖拽上传附件</p>
                 <p className="ant-upload-hint">支持 zip / md / yaml / pdf / docx / xlsx / png / jpg</p>
               </Upload.Dragger>
+              {/* V6.0 CR-31：真实文件可下载；演示态如实说明，不给假下载按钮 */}
+              {atts.length > 0 && (
+                <Space direction="vertical" size={4} style={{ width: '100%', marginTop: 8 }}>
+                  {atts.map((a) => (
+                    <Space key={a.id} size={6}>
+                      <span style={{ fontSize: 13 }}>{a.name}</span>
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>{a.size}</Typography.Text>
+                      {a.url ? (
+                        <a href={a.url} target="_blank" rel="noreferrer">
+                          <Button size="small" type="link" icon={<DownloadOutlined />}>下载</Button>
+                        </a>
+                      ) : (
+                        <Tag>演示态·未落真实文件</Tag>
+                      )}
+                      <Button size="small" type="link" danger onClick={() => {
+                        setAtts((p) => p.filter((x) => x.id !== a.id));
+                        setFiles((p) => p.filter((x) => x.name !== a.name));
+                      }}>移除</Button>
+                    </Space>
+                  ))}
+                </Space>
+              )}
             </Form.Item>
           </Card>
 

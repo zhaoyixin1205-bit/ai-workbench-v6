@@ -122,7 +122,26 @@ export default function BountyReview() {
               { title: '悬赏', dataIndex: 'title' },
               { title: '认领人', dataIndex: 'claimant_name', width: 90 },
               { title: '积分', dataIndex: 'points', width: 70, render: (v: number) => <span className="num">{v}</span> },
-              { title: '方案', dataIndex: 'solution', ellipsis: true },
+              {
+                title: '方案', dataIndex: 'solution', ellipsis: true,
+                /* V6.0 CR-20：结构化字段优先，旧单文本框数据仍可读 */
+                render: (_, r) => r.solution_fields?.scene_desc ?? r.solution ?? '—',
+              },
+              {
+                title: '版本', width: 140,
+                /* V6.0 CR-21：让组织者一眼看出「这是改过的第几版 / 有没有补充」 */
+                render: (_, r) => {
+                  const v = r.solution_versions?.length ?? 0;
+                  const s = r.supplements?.length ?? 0;
+                  if (v <= 1 && s === 0) return <Typography.Text type="secondary" style={{ fontSize: 12 }}>首版</Typography.Text>;
+                  return (
+                    <Space size={4}>
+                      {v > 1 && <Tag color="orange" style={{ marginInlineEnd: 0 }}>修改 {v - 1} 次</Tag>}
+                      {s > 0 && <Tag color="blue" style={{ marginInlineEnd: 0 }}>补充 {s}</Tag>}
+                    </Space>
+                  );
+                },
+              },
               {
                 title: '操作', width: 140,
                 render: (_, r) => (readOnly

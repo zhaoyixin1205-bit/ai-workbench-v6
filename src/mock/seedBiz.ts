@@ -2,7 +2,7 @@ import type {
   CaseItem, Topic, Bounty, AssignmentType, AssignmentPeriod, AssignmentSubmit,
   ScoreCard, ScoreResult, Expert, ExpertSchedule, Booking, ExpertReview,
   AssetApply, Asset, PointRecord, ShopItem, ShopOrder, Board, Post, PostComment, WbUsage,
-  TopicSelection, BoardConfig, SkillPackage, Attachment,
+  TopicSelection, BoardConfig, SkillPackage, Attachment, Announcement, SceneCard,
 } from './types';
 import { USERS, mulberry32, deptName } from './seedOrg';
 
@@ -636,6 +636,58 @@ export const COMMENTS: PostComment[] = [
   { id: 'C15', post_id: 'PT06', union_id: u('于海燕').union_id, author_name: '于海燕', content: '同感，我们也是从小场景切入才起来的。', anonymous: true, created_at: '2026-09-25 16:20' },
   { id: 'C16', post_id: 'PT11', union_id: u('马晓峰').union_id, author_name: '马晓峰', content: '华南这边也同步传达了，本周开始推。', anonymous: false, created_at: '2026-09-25 17:05' },
 ];
+
+/* ============ V6.0 CR-13 公告（独立实体，与社区帖子解耦） ============ */
+/**
+ * 迁移映射：社区 BD4「公告区」帖子 → announcement（按帖子 id 去重，帖子本身不删）。
+ * CR-28 落地后由内容管理直接新建的公告无 source_post_id，两类共存于同一实体。
+ * 注：首页公告条以本实体为唯一数据源，不再直接读 posts。
+ */
+export const ANNOUNCEMENTS: Announcement[] = [
+  ...POSTS.filter((p) => p.board_id === 'BD4').map<Announcement>((p) => ({
+    id: `AN-${p.id}`,
+    title: p.title.replace(/^【公告】/, ''),
+    content: p.content,
+    status: 'PUBLISHED',
+    pinned: p.pinned,
+    published_at: p.created_at,
+    created_by: p.author_name,
+    source_post_id: p.id,
+    created_at: p.created_at,
+  })),
+  {
+    id: 'AN-9001',
+    title: '第 1 期作业提报截止前 48 小时提醒',
+    content: '请在 10-13 18:00 前完成提报；逾期视为本期不参与，不影响下期参与资格。',
+    status: 'PUBLISHED',
+    pinned: true,
+    published_at: '2026-09-24 09:00',
+    created_by: '赵冰艳',
+    created_at: '2026-09-24 09:00',
+  },
+];
+
+/**
+ * V6.0 CR-28：每周场景卡（此前由 `cases.slice(0,6)` 派生，无实体无法 CRUD）。
+ * 种子数据由首页原本展示的前 6 条案例迁移而来并保留 `source_case_id`，
+ * 保证改造前后首页场景卡区块的观感完全一致（只增不改）。
+ */
+export const SCENE_CARDS: SceneCard[] = CASES.slice(0, 6).map<SceneCard>((c, i) => ({
+  id: `SC${i + 1}`,
+  title: c.title,
+  summary: c.summary || `${c.track}场景 · ${c.duration}上手`,
+  content: c.prompt || `${c.pain_point}\n\n输入：${c.input}\n\n产出：${c.output}`,
+  track: c.track,
+  emoji: c.cover || '💡',
+  status: 'PUBLISHED',
+  tags: c.tags,
+  week: '2026-W39',
+  view_count: c.view_count,
+  published_at: `${DEMO_TODAY} 09:00`,
+  created_by: c.author_name,
+  created_at: c.created_at,
+  source_case_id: c.id,
+}));
 
 /* ============ M12 管理员数据 ============ */
 export const WB_USAGE: WbUsage[] = USERS.map((usr, i) => {

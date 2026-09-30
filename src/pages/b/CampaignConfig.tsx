@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Col, DatePicker, InputNumber, Row, Segmented, Space, Steps, Switch, Table, Tag, Typography, App as AntApp, message as staticMsg } from 'antd';
+import { Alert, Button, Card, Col, DatePicker, Divider, InputNumber, Row, Segmented, Space, Steps, Switch, Table, Tag, Typography, App as AntApp, message as staticMsg } from 'antd';
 import { useState } from 'react';
 import { useStore } from '@/store/store';
 import { COLOR } from '@/theme';
@@ -118,8 +118,44 @@ export default function CampaignConfig() {
                 { k: 'clinic' as const, label: '专家门诊 M4' },
                 { k: 'wbAdmin' as const, label: '管理员数据 M12' },
                 { k: 'anonymousPost' as const, label: '社区匿名发帖（特性级）' },
+                { k: 'homeAnnounceTicker' as const, label: 'V6.0 CR-13 首页公告条置顶轮播（关闭=公告回右下角 ≡ V5.0）' },
               ].map((f) => (
                 <div key={f.k} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 13 }}>{f.label}</span>
+                  <Space>
+                    <Tag color={flags[f.k] ? 'green' : 'default'}>{flags[f.k] ? 'ON' : 'OFF'}</Tag>
+                    <Switch size="small" checked={flags[f.k]} onChange={() => toggleFlag(f.k, f.label)} />
+                  </Space>
+                </div>
+              ))}
+
+              <Divider style={{ margin: '10px 0' }} />
+              <div style={{ fontSize: 12, fontWeight: 700, color: COLOR.textSub }}>V6.0 增量开关（关闭即回 V5.0 行为）</div>
+              {[
+                { k: 'topicCustom' as const, label: 'CR-17 选题「其他·自定义」与私有可见' },
+                { k: 'workNoTopic' as const, label: 'CR-18 提报支持「不选选题」直提' },
+                { k: 'submitFlowV2' as const, label: 'CR-19 状态机 V2（已完成/已共识 + 公示解耦）' },
+                { k: 'bountySolutionV2' as const, label: 'CR-20/21 悬赏方案结构化 + 修改/补充双通道' },
+                { k: 'homeJudgeEntry' as const, label: 'CR-15 首页评委复核入口（仅 JUDGE）' },
+                { k: 'clinicWorkbench' as const, label: 'CR-16 专家工作台下沉 /clinic/workbench' },
+                {
+                  k: 'adminCoreConverge' as const,
+                  label: 'CR-22 后台三板块收窄为组织者/管理员（⚠ 必须与 CR-30 团队视图同批）',
+                },
+                { k: 'teamView' as const, label: 'CR-30 负责人团队视图 /team（收窄后的补偿入口）' },
+                { k: 'submitFlowControl' as const, label: 'CR-23 作业流转编排（白名单 + 理由必填 + 二次确认）' },
+                { k: 'scoreCardLifecycle' as const, label: 'CR-24 评分卡生命周期（新建/复制/停用/删除）' },
+                { k: 'judgeOverride' as const, label: 'CR-25 组织者覆盖评委复核（覆盖非覆写）' },
+                { k: 'expertScheduleBatch' as const, label: 'CR-26 专家排班批量导入与直接改约' },
+                { k: 'assetLedgerBatch' as const, label: 'CR-27 资产台账批量导入 / 批量调整 / 软删' },
+                { k: 'contentFullCrud' as const, label: 'CR-28 内容管理四 Tab 全维度 CRUD' },
+                { k: 'shopBatch' as const, label: 'CR-29 商城商品批量导入与批量软删' },
+                {
+                  k: 'realFileService' as const,
+                  label: 'CR-31 真实文件服务（关闭 ≡ A-39 演示态：只登记文件名，无法下载）',
+                },
+              ].map((f) => (
+                <div key={f.k} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 13 }}>{f.label}</span>
                   <Space>
                     <Tag color={flags[f.k] ? 'green' : 'default'}>{flags[f.k] ? 'ON' : 'OFF'}</Tag>

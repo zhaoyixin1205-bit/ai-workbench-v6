@@ -54,8 +54,9 @@ export default function BLayout() {
   const path = loc.pathname;
 
   const subject = useMemo(
-    () => ({ roles: me.roles, flags }),
-    [me.roles, flags]
+    /** V6.0：带上 isDeptLeader（/team 属性型守卫）；不声明该字段的路由判定不受影响 */
+    () => ({ roles: me.roles, flags, isDeptLeader: me.is_dept_leader }),
+    [me.roles, me.is_dept_leader, flags]
   );
 
   /** V4.0 CR-09：技能管理员权限收敛（不改 access.ts，只在其结果之上收敛） */

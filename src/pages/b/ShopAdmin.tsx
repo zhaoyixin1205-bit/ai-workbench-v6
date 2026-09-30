@@ -6,6 +6,7 @@ import { PageHeader, StatCard } from '@/components/ui';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import ScopePicker, { ScopeText, useScopeCommit } from '@/components/ScopePicker';
 import type { ScopeSubject, ShopItem } from '@/mock/types';
+import BatchImport from '@/components/BatchImport';
 
 /** '待核销'/'已核销'/'已取消' 为 V3.0 原值；'已发货'/'已完成' 为 V4.0 CR-05 新增 */
 const STATUS_COLOR: Record<string, string> = {
@@ -17,6 +18,33 @@ export default function ShopAdmin() {
   const { message, modal } = AntApp.useApp();
   /** V4.0 CR-05：兑换四段闭环（下单 → 核销 → 发货 → 完成） */
   const shopV2 = flags.shopV2Flow !== false;
+  /** V6.0 CR-29：批量导入 / 批量删除 */
+  const shopBatchOn = flags.shopBatch !== false;
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+
+  /** V6.0 CR-29：删除为软删（status=下架）；已产生兑换订单的商品禁止删除，仅可下架 */
+  const batchDeleteItems = () => {
+    const blocked = db.shopItems.filter((i) => selectedItemIds.includes(i.id) && i.exchanged_count > 0);
+    if (blocked.length) {
+      message.error(`${blocked.length} 件商品已产生兑换订单，禁止删除，仅可下架：${blocked.map((b) => b.name).join('、')}`);
+      return;
+    }
+    modal.confirm({
+      title: `删除 ${selectedItemIds.length} 件商品？`,
+      content: '删除为软删（置为「下架」），记录保留可追溯。',
+      okText: '确认删除',
+      okButtonProps: { danger: true },
+      onOk: () => {
+        setDb((p) => ({
+          ...p,
+          shopItems: p.shopItems.map((i) => (selectedItemIds.includes(i.id) ? { ...i, status: '下架' } : i)),
+        }));
+        log('批量删除商品', `${selectedItemIds.length} 件`, 'V6.0 CR-29：软删（置为下架），已产生兑换订单的商品不在内');
+        message.success(`已删除 ${selectedItemIds.length} 件（软删）`);
+        setSelectedItemIds([]);
+      },
+    });
+  };
   const [open, setOpen] = useState(false);
   const [form] = Form.useForm();
   const [verifyCode, setVerifyCode] = useState('');
@@ -130,12 +158,75 @@ export default function ShopAdmin() {
               key: 'items', label: `商品管理（${db.shopItems.length}）`,
               children: (
                 <>
-                  <Space style={{ marginBottom: 12 }}>
+                  <Space style={{ marginBottom: 12 }} wrap>
                     <Button type="primary" disabled={!isAdmin} onClick={() => { form.resetFields(); setScopeSubjects([]); setOpen(true); }}>新建商品</Button>
+                    {/* V6.0 CR-29：批量上传（模板下载 + 三态回执）与批量删除（软删） */}
+                    {shopBatchOn && (
+                      <>
+                        <BatchImport
+                          title="商品批量导入"
+                          disabled={!isAdmin}
+                          columns={['商品名称', '所需积分', '库存', '每人限兑', '核销方式']}
+                          hint={`口径：库存为「总量」不是增量；导入后需人工确认上架，避免批量误上架导致超卖（模板日期 ${DEMO_TODAY}）`}
+                          sample={[['无线降噪耳机', '3200', '20', '1', '线下领取'], ['机械键盘', '2800', '15', '1', '邮寄']]}
+                          validate={(rows) => rows.map((r, i) => {
+                            const [name, points, stock, limit, verify] = r;
+                            if (!name) return { row: i + 2, name: `第 ${i + 2} 行`, result: '失败' as const, reason: '商品名称为空' };
+                            if (!Number.isFinite(Number(points)) || Number(points) <= 0) {
+                              return { row: i + 2, name, result: '失败' as const, reason: '所需积分必须为正数' };
+                            }
+                            const verifyType = (['线下领取', '邮寄', '线上发放'] as const).find((v) => v === verify);
+                            if (!verifyType) {
+                              return { row: i + 2, name, result: '失败' as const, reason: `核销方式「${verify || '空'}」不在枚举内` };
+                            }
+                            return {
+                              row: i + 2, name, result: '成功' as const,
+                              data: {
+                                name,
+                                points: Number(points),
+                                stock: Number(stock) || 0,
+                                limit_per_user: Number(limit) || 1,
+                                verify_type: verifyType,
+                              },
+                            };
+                          })}
+                          onCommit={(items) => {
+                            const list = items.map((it) => it.data!).filter(Boolean);
+                            setDb((p) => ({
+                              ...p,
+                              /** 导入后统一为「草稿」，需人工确认上架 */
+                              shopItems: [
+                                ...list.map((d, i) => ({
+                                  id: `SI-${Date.now()}-${i}`,
+                                  name: d.name, cover: '🎁',
+                                  desc: '批量导入商品（待组织者补充描述与适用人群）',
+                                  points: d.points, stock: d.stock, limit_per_user: d.limit_per_user,
+                                  scope: '全员', on_sale_at: DEMO_TODAY, off_sale_at: '2026-12-31',
+                                  status: '草稿' as const, verify_type: d.verify_type, exchanged_count: 0,
+                                })),
+                                ...p.shopItems,
+                              ],
+                            }));
+                            log('批量导入商品', `${list.length} 件`, 'V6.0 CR-29：三态回执；导入后为草稿态，需人工确认上架（防超卖）');
+                            message.success(`已导入 ${list.length} 件商品（草稿态，需逐件确认上架）`);
+                          }}
+                        />
+                        <Button
+                          danger disabled={!isAdmin || selectedItemIds.length === 0}
+                          onClick={batchDeleteItems}
+                        >
+                          批量删除{selectedItemIds.length ? `（${selectedItemIds.length}）` : ''}
+                        </Button>
+                      </>
+                    )}
                     {!isAdmin && <Typography.Text type="secondary" style={{ fontSize: 12 }}>商品编辑需 ADMIN 权限</Typography.Text>}
                   </Space>
                   <Table
                     size="small" rowKey="id" pagination={false} dataSource={db.shopItems}
+                    rowSelection={shopBatchOn ? {
+                      selectedRowKeys: selectedItemIds,
+                      onChange: (keys) => setSelectedItemIds(keys as string[]),
+                    } : undefined}
                     columns={[
                       { title: '商品', render: (_, r) => <Space><span style={{ fontSize: 20 }}>{r.cover}</span>{r.name}</Space> },
                       { title: '所需积分', dataIndex: 'points', width: 90, render: (v: number) => <span className="num">{v}</span> },

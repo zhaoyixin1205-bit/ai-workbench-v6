@@ -17,8 +17,11 @@ const SLOT_STATUS: Record<ExpertSchedule['status'], { text: string; color: strin
 };
 
 export default function Clinic() {
-  const { db, me, setDb, log } = useStore();
+  const { db, me, setDb, log, flags } = useStore();
   const { message } = AntApp.useApp();
+  /** V6.0 CR-16：专家工作台入口开关 + 仅问诊专家可见 */
+  const clinicWorkbenchOn = flags.clinicWorkbench !== false;
+  const isExpert = db.experts.some((e) => e.union_id === me.union_id);
   const [kw, setKw] = useState('');
   const [sort, setSort] = useState('评分');
   const [expertId, setExpertId] = useState(db.experts[0].id);
@@ -60,7 +63,15 @@ export default function Clinic() {
       <PageHeader
         title="专家门诊"
         desc="医院专家门诊模式：看专家 → 看排班 → 约号源 → 就诊 → 评价，卡点不过夜"
-        extra={<Link to="/clinic/mine"><Button>我的预约</Button></Link>}
+        extra={
+          <Space>
+            {/* V6.0 CR-16：专家工作台下沉入口，仅问诊专家可见（非专家不渲染，避免无效点击） */}
+            {clinicWorkbenchOn && isExpert && (
+              <Link to="/clinic/workbench"><Button type="primary">我的专家工作台</Button></Link>
+            )}
+            <Link to="/clinic/mine"><Button>我的预约</Button></Link>
+          </Space>
+        }
       />
 
       <div className="wb-card" style={{ padding: 14, background: GRADIENT.subtle }}>

@@ -1,6 +1,7 @@
 import { Alert, Button, Card, Col, Progress, Row, Select, Space, Table, Tag, Typography, App as AntApp } from 'antd';
-import { TeamOutlined, BellOutlined, DownloadOutlined } from '@ant-design/icons';
+import { TeamOutlined, BellOutlined, DownloadOutlined, ArrowRightOutlined } from '@ant-design/icons';
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useStore } from '@/store/store';
 import { COLOR } from '@/theme';
 import { StatCard } from '@/components/ui';
@@ -98,6 +99,12 @@ export default function TeamBoard({ compact = false }: { compact?: boolean }) {
           )}
           <Button size="small" icon={<BellOutlined />} onClick={urge}>催办（{undone.length}）</Button>
           <Button size="small" icon={<DownloadOutlined />} onClick={exportCsv}>导出</Button>
+          {/* V6.0 CR-30：权限收窄后的替代入口 —— 负责人看团队进度走这里，不进后台 */}
+          {flags.teamView !== false && (
+            <Link to="/team">
+              <Button size="small" type="primary">团队视图 <ArrowRightOutlined /></Button>
+            </Link>
+          )}
         </Space>
       }
     >

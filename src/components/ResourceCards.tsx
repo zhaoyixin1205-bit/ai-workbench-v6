@@ -61,6 +61,12 @@ export function SkillCard({
   /* Moka §5：文案要说「怎么办」，不假装成功。演示环境没有文件服务，就直说，
      并告诉用户正式环境点这里会发生什么 —— 而不是弹一句「已开始下载」让人干等。 */
   const act = () => {
+    /* V6.0 CR-31：上传型 Skill 已落真实文件（item.url 为服务端代理地址）→ 真下载；
+       仍为演示态（无 url）时保留诚实文案，不给假按钮 */
+    if (isUpload && item.url) {
+      window.open(item.url, '_blank', 'noopener');
+      return;
+    }
     if (isUpload) {
       onAct?.(`演示环境未接入文件服务：${item.file_name ?? 'Skill 包'} 只登记了名称与体积，正式环境点此直接下载`);
       return;
@@ -145,10 +151,21 @@ export function AttachCard({
             <div style={{ fontSize: 12, color: COLOR.textSub, marginTop: 6, lineHeight: 1.6 }}>{item.note}</div>
           )}
           <Space size={8} style={{ marginTop: 10 }}>
-            <Button
-              size="small" shape="round" icon={<DownloadOutlined />}
-              onClick={() => onAct?.(`演示环境未接入文件服务：${item.name} 只登记了名称与体积，正式环境点此直接下载`)}
-            >下载</Button>
+            {/* V6.0 CR-31：有真实 url 就真下载（走服务端代理）；没有就如实说明，不给假按钮 */}
+            {item.url ? (
+              <a href={item.url} target="_blank" rel="noreferrer">
+                <Button size="small" shape="round" icon={<DownloadOutlined />}>下载</Button>
+              </a>
+            ) : (
+              <Tooltip title={item.driver === 'demo'
+                ? '未接入文件服务：该文件只登记了名称与体积，无法下载'
+                : '文件尚未上传成功'}>
+                <Button
+                  size="small" shape="round" icon={<DownloadOutlined />} disabled
+                  onClick={() => onAct?.(`演示环境未接入文件服务：${item.name} 只登记了名称与体积`)}
+                >下载</Button>
+              </Tooltip>
+            )}
             {onRemove && (
               <Tooltip title="移除该附件">
                 <Button size="small" shape="circle" icon={<DeleteOutlined />} onClick={() => onRemove(item.id)} />

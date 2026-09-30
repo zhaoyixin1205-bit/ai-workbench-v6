@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { HashRouter, Route, Routes, Navigate } from 'react-router-dom';
 import { ConfigProvider, App as AntApp } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
@@ -22,6 +23,8 @@ import PostDetail from '@/pages/c/PostDetail';
 import AssetLibrary from '@/pages/c/AssetLibrary';
 import Shop from '@/pages/c/Shop';
 import Profile from '@/pages/c/Profile';
+/* V6.0 CR-30：负责人团队视图 */
+import TeamView from '@/pages/c/TeamView';
 
 import ExpertWorkbench from '@/pages/e/ExpertWorkbench';
 
@@ -39,8 +42,19 @@ import UserAdmin from '@/pages/b/UserAdmin';
 import CampaignConfig from '@/pages/b/CampaignConfig';
 import SystemAdmin from '@/pages/b/SystemAdmin';
 import WBAdminData from '@/pages/b/WBAdminData';
+import { probeFileBackend } from '@/service/fileService';
+
+/**
+ * V6.0 CR-31：应用启动时静默探测文件服务一次。
+ * 有后端 → 真实上传下载；无后端（静态托管）→ 自动降级到 A-39 演示态。
+ * 提前探测是为了让首次上传不必等待探测超时。
+ */
+function useFileBackendProbe() {
+  useEffect(() => { void probeFileBackend(); }, []);
+}
 
 export default function App() {
+  useFileBackendProbe();
   return (
     <ConfigProvider theme={theme} locale={zhCN}>
       <AntApp>
@@ -59,6 +73,10 @@ export default function App() {
                 <Route path="/clinic" element={<Clinic />} />
                 <Route path="/clinic/expert/:id" element={<ExpertDetail />} />
                 <Route path="/clinic/mine" element={<MyBooking />} />
+                {/* V6.0 CR-16：专家工作台下沉至 C 端，与 /admin/expert-workbench 共用同一组件实例 */}
+                <Route path="/clinic/workbench" element={<ExpertWorkbench />} />
+                {/* V6.0 CR-30：负责人团队视图 */}
+                <Route path="/team" element={<TeamView />} />
                 <Route path="/community" element={<Community />} />
                 <Route path="/community/:id" element={<PostDetail />} />
                 <Route path="/assets" element={<AssetLibrary />} />
@@ -81,9 +99,10 @@ export default function App() {
                 <Route path="campaign" element={<CampaignConfig />} />
                 <Route path="system" element={<SystemAdmin />} />
                 <Route path="wb" element={<WBAdminData />} />
-                <Route path="expert-workbench" element={<ExpertWorkbench />} />
+                {/* V6.0 CR-16：入口已下沉至 /clinic/workbench，旧路由保留重定向（@deprecated） */}
+                <Route path="expert-workbench" element={<Navigate to="/clinic/workbench" replace />} />
               </Route>
-              <Route path="/expert" element={<Navigate to="/admin/expert-workbench" replace />} />
+              <Route path="/expert" element={<Navigate to="/clinic/workbench" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </HashRouter>
