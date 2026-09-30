@@ -8,6 +8,10 @@ import { SubmitStatusTag } from '@/pages/c/WorkList';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import ScopePicker, { ScopeText, useScopeCommit } from '@/components/ScopePicker';
 import type { AssignmentType, ScopeSubject, SubmitStatus } from '@/mock/types';
+/* V7.0 CR-33：状态文案走唯一真源（B 端不再显示裸英文） */
+import { statusText, statusOptions, TYPE_STATUS_TEXT } from '@/constants/statusMeta';
+/* V7.0 CR-35：评分结果回写改为真实「下载模板 → 上传解析 → 三态回执」 */
+import BatchImport from '@/components/BatchImport';
 
 /** V6.0 CR-23：流程编排的操作对象（最小必要字段） */
 type BountyFlowTarget = {
@@ -40,6 +44,14 @@ export default function AssignmentAdmin() {
     return true;
   });
   const scopeIds = new Set(inScope.map((s) => s.id));
+
+  /**
+   * V7.0 CR-35：当前生效评分卡（与评委复核页同一口径：启用的卡优先，其次未软删的卡）。
+   * 评分模板的列由此卡维度动态生成，保证「模板列」与「评分卡配置」同源。
+   */
+  const scoreCard = db.scoreCards.find((c) => c.status === '启用' && !c.is_deleted)
+    ?? db.scoreCards.find((c) => !c.is_deleted)
+    ?? db.scoreCards[0];
 
   /** V4.0 CR-08：真正创建作业类型，并落库 target_subjects（保存前回读校验，不一致则阻断） */
   const createType = async () => {
@@ -82,16 +94,34 @@ export default function AssignmentAdmin() {
     }
   };
 
-  const triggerAi = () => {
-    modal.confirm({
-      title: '触发 AI 评分',
-      content: 'Q1 决策：本期走「模板下载 + 批量导入」。将导出评分模板（含评分卡维度与标准），外部跑分后再上传 CSV/XLSX 回写。',
-      okText: '下载评分模板',
-      onOk: () => {
-        log('导出评分模板', inScope.filter((s) => s.status === 'SUBMITTED').length + ' 条待评分', '含评分卡维度与标准');
-        message.success('评分模板已导出（含大赛四维评分卡 v2 的维度、权重与档位标准）');
-      },
-    });
+  /**
+   * V7.0 CR-35：修复假按钮 —— 原实现只有 modal.confirm + message.success，
+   * 点完「下载评分模板」后**没有任何文件产出**。改为真实生成 CSV 并触发下载。
+   */
+  const csvCell = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+
+  const scoreCols = () => [
+    '提报编号', '提报标题',
+    ...scoreCard.dimensions.map((d) => `${d.name}(0-${d.max_score})`),
+    '评分说明',
+  ];
+
+  const downloadScoreTemplate = () => {
+    const rows = inScope.filter((s) => s.status === 'SUBMITTED');
+    if (rows.length === 0) { message.info('当前没有「已提交」状态的作业需要评分'); return; }
+    const csv = [
+      `# 口径：按评分卡「${scoreCard.name} ${scoreCard.version}」逐维度打分（填 0-满分 的数字）；导入后状态流转为「${statusText('AI_SCORED')}」`,
+      scoreCols().map(csvCell).join(','),
+      ...rows.map((s) => [s.code, s.title, ...scoreCard.dimensions.map(() => ''), ''].map(csvCell).join(',')),
+    ].join('\r\n');
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `AI评分模板-${DEMO_TODAY}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    log('导出评分模板', `${rows.length} 条待评分`, `含评分卡 ${scoreCard.name} ${scoreCard.version} 的 ${scoreCard.dimensions.length} 个维度与满分`);
+    message.success(`评分模板已下载：${rows.length} 条待评分 × ${scoreCard.dimensions.length} 个维度`);
   };
 
   const toStatus = (id: string, next: SubmitStatus) => {
@@ -244,7 +274,8 @@ export default function AssignmentAdmin() {
                     { title: '次数/期', render: (_, r) => <span className="num">{r.max_times}{r.allow_multi ? '（可多期）' : ''}</span> },
                     { title: '评分卡', render: (_, r) => `${db.scoreCards.find((c) => c.id === r.score_card_id)?.name} ${r.score_card_version}` },
                     { title: '版本', dataIndex: 'version', render: (v: number) => <Tag>v{v}</Tag> },
-                    { title: '状态', dataIndex: 'status', render: (v: string) => <Tag color={v === 'PUBLISHED' ? 'green' : 'default'}>{v}</Tag> },
+                    /* V7.0 CR-33：作业类型状态列显示中文（DRAFT → 草稿 等） */
+                    { title: '状态', dataIndex: 'status', render: (v: string) => <Tag color={v === 'PUBLISHED' ? 'green' : 'default'}>{TYPE_STATUS_TEXT[v] ?? v}</Tag> },
                   ]}
                 />
                 <Alert style={{ marginTop: 12 }} type="info" showIcon
@@ -258,14 +289,14 @@ export default function AssignmentAdmin() {
               <Card size="small">
                 <Space wrap style={{ marginBottom: 12 }}>
                   <Input.Search placeholder="搜索姓名 / 标题 / 编号" style={{ width: 220 }} value={kw} onChange={(e) => setKw(e.target.value)} allowClear />
+                  {/* V7.0 CR-33：筛选项显示中文（value 仍为枚举，筛选逻辑零变化） */}
                   <Select
-                    value={status} onChange={setStatus} style={{ width: 150 }}
+                    value={status} onChange={setStatus} style={{ width: 180 }}
                     options={[
-                      '全部', 'SUBMITTED', 'AI_SCORED', 'REVIEWING', 'REVIEWED', 'PASSED', 'PUBLISHED',
-                      'ASSET_APPLYING', 'ASSET_ONLINE', 'SCORE_FAILED',
-                      /* V6.0 CR-19 新增两态（开关关闭时不出现在筛选项里） */
-                      ...(flowV2 ? ['COMPLETED', 'CONSENSUS'] : []),
-                    ].map((v) => ({ value: v, label: v }))}
+                      { value: '全部', label: '全部状态' },
+                      /** V6.0 CR-19 新增两态（开关关闭时不出现在筛选项里） */
+                      ...statusOptions(flowV2 ? (['COMPLETED', 'CONSENSUS'] as SubmitStatus[]) : []),
+                    ]}
                   />
                   {/* V6.0 CR-19：公示与状态机解耦后的批量动作 */}
                   {flowV2 && (
@@ -284,16 +315,63 @@ export default function AssignmentAdmin() {
                       </Button>
                     </>
                   )}
-                  <Button disabled={readOnly} icon={<DownloadOutlined />} onClick={triggerAi}>评分模板导出 / 批量导入（Q1）</Button>
-                  <Button disabled={readOnly} icon={<UploadOutlined />} onClick={() => {
-                    setDb((p) => ({
-                      ...p,
-                      submits: p.submits.map((s) => (s.status === 'SUBMITTED' && scopeIds.has(s.id)
-                        ? { ...s, status: 'AI_SCORED', ai_score: Math.round((18 + Math.random() * 12) * 10) / 10 } : s)),
-                    }));
-                    log('批量导入评分', 'CSV 回写', '单维分数校验 + 档位匹配校验通过');
-                    message.success('批量导入成功，已按双轨权重合成最终分');
-                  }}>模拟导入跑分结果</Button>
+                  {/* V7.0 CR-35：模板导出改为真实下载 CSV（原为无文件产出的假按钮） */}
+                  <Button disabled={readOnly} icon={<DownloadOutlined />} onClick={downloadScoreTemplate}>
+                    下载评分模板（Q1）
+                  </Button>
+                  {/* V7.0 CR-35：模拟导入改为真实解析上传（原为 Math.random 造分的假按钮） */}
+                  <BatchImport
+                    title="AI 评分回写"
+                    disabled={readOnly}
+                    buttonText="导入跑分结果"
+                    columns={scoreCols()}
+                    hint={`口径：按提报编号定位；每列填 0-满分的数字；仅「${statusText('SUBMITTED')}」状态的作业可回写`}
+                    validate={(rows) => rows.map((r, i) => {
+                      const [code, title, ...rest] = r;
+                      const dimCount = scoreCard.dimensions.length;
+                      const dims = rest.slice(0, dimCount);
+                      const s = inScope.find((x) => x.code === code);
+                      if (!s) return { row: i + 2, name: code || `第 ${i + 2} 行`, result: '失败' as const, reason: `提报编号「${code || '空'}」不存在或不在数据范围内` };
+                      if (s.status !== 'SUBMITTED') {
+                        return { row: i + 2, name: `${s.code} ${title ?? ''}`, result: '跳过' as const, reason: `当前状态为「${statusText(s.status)}」，仅「${statusText('SUBMITTED')}」可回写` };
+                      }
+                      const vals: Record<string, number> = {};
+                      for (let k = 0; k < dimCount; k += 1) {
+                        const d = scoreCard.dimensions[k];
+                        const n = Number(dims[k]);
+                        if (!Number.isFinite(n) || n < 0 || n > d.max_score) {
+                          return { row: i + 2, name: s.code, result: '失败' as const, reason: `维度「${d.name}」分数须为 0-${d.max_score} 的数字（收到 ${dims[k] || '空'}）` };
+                        }
+                        vals[d.name] = n;
+                      }
+                      /** 百分制合成：Σ(得分/满分 × 权重)，与评委端「四维合计」口径一致 */
+                      const ai = Math.round(scoreCard.dimensions.reduce((a, d) => a + (vals[d.name] / Math.max(1, d.max_score)) * d.weight, 0) * 10) / 10;
+                      return {
+                        row: i + 2, name: `${s.code} ${s.title}`, result: '成功' as const,
+                        data: { id: s.id, ai, dims: vals },
+                      };
+                    })}
+                    onCommit={(items) => {
+                      const at = `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`;
+                      setDb((p) => ({
+                        ...p,
+                        submits: p.submits.map((s) => {
+                          const d = items.find((it) => it.data!.id === s.id);
+                          return d ? { ...s, status: 'AI_SCORED' as SubmitStatus, ai_score: d.data!.ai } : s;
+                        }),
+                        /** 回写同时留一份评分记录（含卡版本），便于事后追溯「按哪版标准评的」 */
+                        scoreResults: [...p.scoreResults, ...items.map((it) => ({
+                          id: `SR-${it.data!.id}-AI-${Date.now()}-${it.row}`,
+                          target_type: 'submit' as const, target_id: it.data!.id,
+                          card_id: scoreCard.id, card_version: scoreCard.version, source: 'AI' as const,
+                          dim_scores: it.data!.dims, total: it.data!.ai, reason: '批量导入回写',
+                          scorer_union_id: me.union_id, scorer_name: me.name, created_at: at,
+                        }))],
+                      }));
+                      log('批量导入评分', `${items.length} 条`, `按评分卡 ${scoreCard.name} ${scoreCard.version} 逐维校验后回写，状态流转为「${statusText('AI_SCORED')}」`);
+                      message.success(`已回写 ${items.length} 条（逐维度校验通过，含评分卡版本留痕）`);
+                    }}
+                  />
                 </Space>
                 <Table
                   size="small" rowKey="id" dataSource={submits} pagination={{ pageSize: 8 }}

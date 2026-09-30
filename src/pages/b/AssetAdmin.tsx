@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Col, Modal, Row, Select, Space, Statistic, Steps, Table, Tag, Typography, App as AntApp, Input, InputNumber } from 'antd';
+import { Alert, Button, Card, Col, Form, Modal, Row, Select, Space, Statistic, Steps, Switch, Table, Tag, Typography, App as AntApp, Input, InputNumber } from 'antd';
 import { useState } from 'react';
 import { useStore } from '@/store/store';
 import { COLOR } from '@/theme';
@@ -8,6 +8,30 @@ import { DEMO_TODAY } from '@/mock/seedBiz';
 import ScopePicker, { ScopeText, parseScope, useScopeCommit } from '@/components/ScopePicker';
 import { ReuseLabel, sumReuse } from '@/components/ReuseStat';
 import BatchImport from '@/components/BatchImport';
+/* V7.0 CR-37：资产台账字段契约（模板与校验同源） */
+import { assetSchema, ASSET_TYPES, ASSET_STATUSES, parseYesNo, parseSubjects } from '@/constants/importSchemas';
+
+/**
+ * V7.0 CR-37：把模板里「;」分隔的主体文本转成 ScopeSubject[]。
+ * 「全员」映射为 ALL；其余主体名以 DEPT 作为载体类型（界面展示取 name）。
+ */
+const toSubjects = (raw: string): ScopeSubject[] =>
+  parseSubjects(raw).map((name) => (name === '全员'
+    ? { type: 'ALL' as const, id: 'ALL', name }
+    : { type: 'DEPT' as const, id: name, name }));
+
+/** V7.0 CR-37：台账导入行（显式泛型，避免 TS 从三态联合里推断成 {}） */
+interface AssetRow {
+  id?: string;
+  name: string;
+  type: Asset['type'];
+  author_name: string;
+  version: string;
+  visible_scope: string;
+  reuse?: number;
+  users?: number;
+  restricted: boolean;
+}
 
 export default function AssetAdmin() {
   const { db, setDb, me, log, flags } = useStore();
@@ -26,6 +50,69 @@ export default function AssetAdmin() {
   /** V6.0 CR-27：台账批量导入 / 批量调整可见范围 / 批量软删 */
   const batchOn = flags.assetLedgerBatch !== false;
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
+  /** V7.0 CR-37：台账单行直接修改（全字段） */
+  const [editAsset, setEditAsset] = useState<Asset | null>(null);
+  const [editSubjects, setEditSubjects] = useState<ScopeSubject[]>([]);
+  const [editForm] = Form.useForm();
+
+  const openEditAsset = (a: Asset) => {
+    setEditAsset(a);
+    setEditSubjects(parseScope(a.visible_subjects ?? a.visible_scope));
+    editForm.resetFields();
+    editForm.setFieldsValue({
+      name: a.name, type: a.type, author_name: a.author_name, version: a.version,
+      visible_scope: a.visible_scope,
+      reuse_count: a.reuse_count, reuse_user_count: a.reuse_user_count,
+      restricted: a.restricted, status: a.status,
+    });
+  };
+
+  /**
+   * V7.0 CR-37：提交修改（拍板 5-A）
+   * 复用次数/人数允许批量与单条修改，但一旦改动即强制标记来源为「手工维护」（MANUAL）
+   * 并写入同步时间，避免把后台同步来的真实值悄悄覆盖掉。
+   */
+  const commitEditAsset = async () => {
+    let vals: {
+      name?: string; type?: Asset['type']; author_name?: string; version?: string;
+      visible_scope?: string; reuse_count?: number; reuse_user_count?: number;
+      restricted?: boolean; status?: Asset['status'];
+    };
+    try {
+      vals = await editForm.validateFields();
+    } catch {
+      message.error('请填写完整');
+      return;
+    }
+    const a = editAsset!;
+    const at = `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`;
+    const reuseChanged = Number(vals.reuse_count) !== a.reuse_count || Number(vals.reuse_user_count) !== a.reuse_user_count;
+    const label = editSubjects.map((s) => s.name).join('、');
+
+    setDb((p) => ({
+      ...p,
+      assets: p.assets.map((x) => (x.id === a.id ? {
+        ...x,
+        name: vals.name ?? x.name,
+        type: vals.type ?? x.type,
+        author_name: vals.author_name ?? x.author_name,
+        version: vals.version ?? x.version,
+        visible_scope: label || vals.visible_scope || x.visible_scope,
+        visible_subjects: editSubjects.length ? editSubjects : x.visible_subjects,
+        reuse_count: Number(vals.reuse_count ?? x.reuse_count),
+        reuse_user_count: Number(vals.reuse_user_count ?? x.reuse_user_count),
+        restricted: vals.restricted ?? x.restricted,
+        status: vals.status ?? x.status,
+        /** 拍板 5-A：改动复用统计即强制 MANUAL + 留痕 */
+        reuse_source: reuseChanged ? 'MANUAL' as const : x.reuse_source,
+        reuse_synced_at: reuseChanged ? at : x.reuse_synced_at,
+      } : x)),
+    }));
+    log('修改资产台账', a.name,
+      `${vals.name ?? a.name}｜${vals.type ?? a.type}｜${vals.version ?? a.version}｜可见范围 ${label || '不变'}${reuseChanged ? '；复用统计已改为手工维护并覆盖后台同步值' : ''}`);
+    message.success(reuseChanged ? '已保存（复用统计标记为「手工维护」）' : '已保存');
+    setEditAsset(null);
+  };
 
   /** 批量调整可见范围（不改复用数据） */
   const batchScope = (scope: string) => {
@@ -197,47 +284,87 @@ export default function AssetAdmin() {
         extra={batchOn ? (
           <Space size={8} wrap>
             {/* V6.0 CR-27：台账批量导入 —— 字段 = asset_id + 可见范围 + 复用次数 + 复用人数，覆盖写入而非累加 */}
-            <BatchImport
+            <BatchImport<AssetRow>
               title="资产台账批量导入"
-              columns={['资产ID', '可见范围', '复用次数', '复用人数']}
-              hint="口径：复用次数为「总量」不是增量，导入后覆盖写入（U-3 口径）；可见范围填「全员/本部门/仅组织者」或指定主体名"
-              sample={[[db.assets[0]?.id ?? 'AS1', '全员', '128', '36']]}
+              /* V7.0 CR-37：模板与校验共用同一份字段契约（全字段，含新增/更新两种模式） */
+              schema={assetSchema}
               validate={(rows) => rows.map((r, i) => {
-                const [assetId, scope, reuse, users] = r;
-                const asset = db.assets.find((a) => a.id === assetId);
-                if (!asset) return { row: i + 2, name: assetId || `第 ${i + 2} 行`, result: '失败' as const, reason: '资产 ID 不存在（请从台账复制准确 ID）' };
-                if (!Number.isFinite(Number(reuse)) || Number(reuse) < 0) {
-                  return { row: i + 2, name: asset.name, result: '失败' as const, reason: '复用次数必须为 ≥0 的数字' };
+                const [assetId, name, type, author, version, scope, reuse, users, restricted] = r;
+                const display = name || assetId || `第 ${i + 2} 行`;
+                /** 填了 ID = 更新已有资产；留空 = 新增 */
+                const target = assetId ? db.assets.find((a) => a.id === assetId) : undefined;
+                if (assetId && !target) {
+                  return { row: i + 2, name: display, result: '失败' as const, reason: `资产ID「${assetId}」不存在（更新请填台账中的准确 ID，新增请留空）` };
                 }
-                if (!Number.isFinite(Number(users)) || Number(users) < 0) {
-                  return { row: i + 2, name: asset.name, result: '失败' as const, reason: '复用人数必须为 ≥0 的数字' };
+                const typeOk = ASSET_TYPES.find((v) => v === type);
+                if (!typeOk) {
+                  return { row: i + 2, name: display, result: '失败' as const, reason: `类型「${type || '空'}」不在可选项内（${ASSET_TYPES.join(' / ')}）` };
                 }
-                /** 已产生复用记录的资产允许覆盖更新（这是台账维护的本意），不做跳过 */
+                if (!author) return { row: i + 2, name: display, result: '失败' as const, reason: '作者为空' };
+                if (!version) return { row: i + 2, name: display, result: '失败' as const, reason: '版本为空' };
+                if (!scope) return { row: i + 2, name: display, result: '失败' as const, reason: '可见范围为空（全员 / 本部门 / 仅组织者，或多个主体用 ; 分隔）' };
+                const reuseN = reuse === '' ? undefined : Number(reuse);
+                const usersN = users === '' ? undefined : Number(users);
+                if (reuseN !== undefined && (!Number.isFinite(reuseN) || reuseN < 0)) {
+                  return { row: i + 2, name: display, result: '失败' as const, reason: '复用次数必须为 ≥0 的数字' };
+                }
+                if (usersN !== undefined && (!Number.isFinite(usersN) || usersN < 0)) {
+                  return { row: i + 2, name: display, result: '失败' as const, reason: '复用人数必须为 ≥0 的数字' };
+                }
                 return {
-                  row: i + 2, name: asset.name, result: '成功' as const,
-                  data: { id: asset.id, visible_scope: scope || asset.visible_scope, reuse_count: Number(reuse), reuse_user_count: Number(users) },
+                  row: i + 2, name: display, result: '成功' as const,
+                  data: {
+                    id: target?.id, name, type: typeOk, author_name: author, version,
+                    visible_scope: scope, reuse: reuseN, users: usersN,
+                    restricted: parseYesNo(restricted),
+                  },
                 };
               })}
               onCommit={(items) => {
                 const at = `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`;
-                const map = new Map(items.map((it) => [it.data!.id, it.data!]));
-                setDb((p) => ({
-                  ...p,
-                  assets: p.assets.map((a) => {
-                    const d = map.get(a.id);
-                    if (!d) return a;
-                    return {
-                      ...a,
-                      visible_scope: d.visible_scope,
-                      reuse_count: d.reuse_count,
-                      reuse_user_count: d.reuse_user_count,
-                      reuse_source: 'MANUAL' as const,
-                      reuse_synced_at: at,
-                    };
-                  }),
-                }));
-                log('批量导入资产台账', `${items.length} 条`, `覆盖写入而非累加（U-3 口径），来源 MANUAL，同步于 ${at}`);
-                message.success(`已覆盖更新 ${items.length} 条台账（复用次数为总量口径）`);
+                setDb((p) => {
+                  const updates = items.filter((it) => it.data!.id);
+                  const creates = items.filter((it) => !it.data!.id);
+                  const map = new Map(updates.map((it) => [it.data!.id!, it.data!]));
+                  return {
+                    ...p,
+                    assets: [
+                      /** 新增模式：ID 留空 */
+                      ...creates.map((it, idx) => {
+                        const d = it.data!;
+                        return {
+                          id: `AS-${Date.now()}-${idx}`,
+                          apply_id: '', name: d.name, type: d.type, version: d.version,
+                          author_name: d.author_name, author_dept: '',
+                          track: '客户赋能' as Asset['track'],
+                          visible_scope: d.visible_scope, visible_subjects: toSubjects(d.visible_scope),
+                          reuse_count: d.reuse ?? 0, reuse_user_count: d.users ?? 0,
+                          /** 拍板 5-A：填了复用数据即标记「手工维护」 */
+                          reuse_source: ((d.reuse !== undefined || d.users !== undefined) ? 'MANUAL' : 'LEGACY') as Asset['reuse_source'],
+                          reuse_synced_at: (d.reuse !== undefined || d.users !== undefined) ? at : undefined,
+                          online_at: DEMO_TODAY, status: '已上架' as Asset['status'], restricted: d.restricted,
+                        };
+                      }),
+                      ...p.assets.map((a) => {
+                        const d = map.get(a.id);
+                        if (!d) return a;
+                        const reuseChanged = d.reuse !== undefined || d.users !== undefined;
+                        return {
+                          ...a,
+                          name: d.name, type: d.type, author_name: d.author_name, version: d.version,
+                          visible_scope: d.visible_scope, visible_subjects: toSubjects(d.visible_scope),
+                          reuse_count: d.reuse ?? a.reuse_count,
+                          reuse_user_count: d.users ?? a.reuse_user_count,
+                          restricted: d.restricted,
+                          reuse_source: reuseChanged ? 'MANUAL' as const : a.reuse_source,
+                          reuse_synced_at: reuseChanged ? at : a.reuse_synced_at,
+                        };
+                      }),
+                    ],
+                  };
+                });
+                log('批量导入资产台账', `${items.length} 条`, '全字段契约校验；填 ID 更新 / 留空新增；改动复用统计的强制标记来源 MANUAL');
+                message.success(`已处理 ${items.length} 条台账（新增/更新按 ID 自动判定）`);
               }}
             />
             {/* V6.0 CR-27：批量调整可见范围 */}
@@ -276,6 +403,10 @@ export default function AssetAdmin() {
               title: '操作', width: 120,
               render: (_, r) => (
                 <Space size={4}>
+                  {/* V7.0 CR-37：台账直接修改（全字段） */}
+                  {batchOn && (
+                    <Button size="small" type="link" onClick={() => openEditAsset(r)}>修改</Button>
+                  )}
                   <Button size="small" type="link" onClick={() => { setImp(r); setCnt(r.reuse_count); setCntUsers(r.reuse_user_count); }}>
                     {external ? '导入复用台账' : '更新复用数据'}
                   </Button>
@@ -334,6 +465,52 @@ export default function AssetAdmin() {
             <InputNumber min={0} value={cntUsers} onChange={(v) => setCntUsers(Number(v ?? 0))} style={{ width: '100%' }} />
           </div>
         </Space>
+      </Modal>
+
+      {/* V7.0 CR-37：台账单行直接修改（全字段） */}
+      <Modal
+        open={!!editAsset} title={`修改资产台账 · ${editAsset?.name ?? ''}`}
+        onCancel={() => setEditAsset(null)} onOk={commitEditAsset}
+        okText="保存" destroyOnClose width={560}
+      >
+        <Form form={editForm} layout="vertical" preserve={false}>
+          <Form.Item name="name" label="资产名称" rules={[{ required: true, message: '请填写资产名称' }]}>
+            <Input maxLength={40} />
+          </Form.Item>
+          <Space size={12} wrap>
+            <Form.Item name="type" label="类型" rules={[{ required: true }]}>
+              <Select style={{ width: 150 }} options={ASSET_TYPES.map((v) => ({ value: v, label: v }))} />
+            </Form.Item>
+            <Form.Item name="author_name" label="作者" rules={[{ required: true }]}>
+              <Input style={{ width: 140 }} />
+            </Form.Item>
+            <Form.Item name="version" label="版本" rules={[{ required: true }]}>
+              <Input style={{ width: 100 }} placeholder="v1.0" />
+            </Form.Item>
+          </Space>
+          <Form.Item label="可见范围">
+            <ScopePicker value={editSubjects} onChange={setEditSubjects} />
+          </Form.Item>
+          <Space size={12} wrap>
+            <Form.Item name="reuse_count" label="复用次数" rules={[{ required: true }]}>
+              <InputNumber min={0} />
+            </Form.Item>
+            <Form.Item name="reuse_user_count" label="复用人数" rules={[{ required: true }]}>
+              <InputNumber min={0} />
+            </Form.Item>
+            <Form.Item name="status" label="状态" rules={[{ required: true }]}>
+              <Select style={{ width: 120 }} options={ASSET_STATUSES.map((v) => ({ value: v, label: v }))} />
+            </Form.Item>
+            <Form.Item name="restricted" label="受限" valuePropName="checked">
+              <Switch />
+            </Form.Item>
+          </Space>
+        </Form>
+        <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+          拍板 5-A：复用次数/人数可以改，但一旦改动该资产即标记为「手工维护（MANUAL）」并写入同步时间，
+          与后台同步来的真实值区分开，避免悄悄覆盖。当前来源：{editAsset?.reuse_source ?? 'LEGACY'}
+          {editAsset?.reuse_synced_at ? `（同步于 ${editAsset.reuse_synced_at}）` : ''}
+        </Typography.Text>
       </Modal>
     </Space>
   );

@@ -1,19 +1,36 @@
-import { Alert, Avatar, Button, Card, Col, DatePicker, Empty, Form, Input, InputNumber, List, Modal, Row, Select, Space, Statistic, Switch, Table, Tabs, Tag, Typography, App as AntApp } from 'antd';
+import { Alert, AutoComplete, Avatar, Button, Card, Col, DatePicker, Empty, Form, Input, InputNumber, List, Modal, Row, Select, Space, Statistic, Switch, Table, Tabs, Tag, Typography, App as AntApp } from 'antd';
 import { StarFilled } from '@ant-design/icons';
 import { useState } from 'react';
 import { useStore } from '@/store/store';
 import { COLOR } from '@/theme';
 import { PageHeader, StatCard } from '@/components/ui';
 import { DEMO_TODAY } from '@/mock/seedBiz';
-import type { ExpertSchedule } from '@/mock/types';
+import type { ExpertSchedule, ScheduleRequest } from '@/mock/types';
 import BatchImport from '@/components/BatchImport';
 import dayjs from 'dayjs';
+/* V7.0 CR-36：排班字段契约 + 时段预置枚举（拍板 8-C：预置优先、允许自定义） */
+import { scheduleSchema, SCHEDULE_SLOTS, SCHEDULE_TYPES } from '@/constants/importSchemas';
+
+/** V7.0 CR-36：排班导入行（显式泛型，避免 TS 从三态联合里推断成 {}） */
+interface ScheduleRow {
+  expert_id: string;
+  date: string;
+  slot: string;
+  capacity: number;
+  type: ExpertSchedule['type'];
+  place_or_link: string;
+  status: ExpertSchedule['status'];
+  /** 是否命中预置时段（拍板 8-C：允许自定义，仅作统计与提示） */
+  slotKnown: boolean;
+}
 
 export default function ExpertAdmin() {
   const { db, setDb, log, me, flags } = useStore();
   const { message, modal } = AntApp.useApp();
   /** V6.0 CR-26：排班批量维护与已发布排班直改 */
   const batchOn = flags.expertScheduleBatch !== false;
+  /** V7.0 CR-36：专家自助排班申请（拍板 7-C：提交为申请，组织者审核后生效） */
+  const selfScheduleOn = flags.expertSelfSchedule !== false;
   const [leadDays, setLeadDays] = useState(7);
   const [duration, setDuration] = useState(30);
   const [capacity, setCapacity] = useState(1);
@@ -85,6 +102,58 @@ export default function ExpertAdmin() {
       return;
     }
     write();
+  };
+
+  /**
+   * V7.0 CR-36：审核专家自助排班申请（拍板 7-C）。
+   * 通过 → 生成排班（source=EXPERT_APPLY，回写 request_id）并通知专家；
+   * 撞车 → 不静默覆盖，要求组织者先在下方的排班表里处理已有排班；
+   * 驳回 → 申请单只增不改，专家需重新提交。
+   */
+  const reviewRequest = (r: ScheduleRequest, pass: boolean) => {
+    const at = `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`;
+    const expert = db.experts.find((e) => e.id === r.expert_id);
+    const who = `${expert?.name ?? r.expert_id} ${r.date} ${r.slot}`;
+
+    if (pass) {
+      const exists = db.schedules.some((s) => s.expert_id === r.expert_id && s.date === r.date && s.slot === r.slot);
+      if (exists) {
+        message.error(`${who} 已有排班，请先在下方排班表中修改或删除后再通过（不覆盖已有预约）`);
+        return;
+      }
+      setDb((p) => ({
+        ...p,
+        schedules: [{
+          id: `SCH-REQ-${r.id}`, expert_id: r.expert_id, date: r.date, slot: r.slot,
+          capacity: r.capacity, booked: 0, type: r.type, place_or_link: r.place_or_link,
+          status: 'OPEN' as const, source: 'EXPERT_APPLY' as const, request_id: r.id,
+          updated_by: me.name, updated_at: at,
+        }, ...p.schedules],
+        scheduleRequests: p.scheduleRequests.map((x) => (x.id === r.id
+          ? { ...x, status: '已通过' as const, reviewed_by: me.name, reviewed_at: at } : x)),
+        messages: [{
+          id: `MSG-SR-${Date.now()}`, union_id: r.applicant_union_id ?? 'all', type: '排班申请',
+          title: '你提交的排班申请已通过', content: `${r.date} ${r.slot}（${r.type}）已开放预约。`,
+          channel: '站内' as const, status: '未读' as const, sent_at: at,
+        }, ...p.messages],
+      }));
+      log('审核排班申请', who, '通过并生成排班（来源 EXPERT_APPLY，已通知专家）');
+      message.success('已通过并生成排班');
+      return;
+    }
+
+    setDb((p) => ({
+      ...p,
+      scheduleRequests: p.scheduleRequests.map((x) => (x.id === r.id
+        ? { ...x, status: '已驳回' as const, reviewed_by: me.name, reviewed_at: at } : x)),
+      messages: [{
+        id: `MSG-SR-${Date.now()}`, union_id: r.applicant_union_id ?? 'all', type: '排班申请',
+        title: '你提交的排班申请未通过', content: `${r.date} ${r.slot} 已被组织者驳回，请重新选择时间提交。`,
+        channel: '站内' as const, status: '未读' as const, sent_at: at,
+      }, ...p.messages],
+    }));
+    log('审核排班申请', who, '驳回（申请单保留，需专家重新提交）');
+    message.success('已驳回并通知专家');
   };
 
   const hideReview = (id: string) => {
@@ -173,40 +242,51 @@ export default function ExpertAdmin() {
                   {batchOn && (
                     <Card size="small" title="排班批量维护">
                       <Space size={8} wrap>
-                        <BatchImport
+                        <BatchImport<ScheduleRow>
                           title="排班批量导入"
-                          columns={['专家ID', '日期', '时段', '容量', '形式', '地点或链接']}
-                          hint="口径：按 专家ID+日期+时段 去重，冲突行在回执中单列并跳过；导入失败不回滚已成功行（可重入）"
-                          sample={[[db.experts[0]?.id ?? 'E1', '2026-10-08', '09:00-10:00', '1', '1v1', '线上-钉钉']]}
+                          /* V7.0 CR-36：模板与校验共用同一份字段契约（含新增的「专家姓名」「状态」列） */
+                          schema={scheduleSchema}
                           maxRows={200}
                           validate={(rows) => rows.map((r, i) => {
-                            const [expertId, date, slot, cap, type, place] = r;
-                            const expert = db.experts.find((e) => e.id === expertId);
-                            if (!expert) return { row: i + 2, name: expertId || `第 ${i + 2} 行`, result: '失败' as const, reason: '专家 ID 不存在' };
+                            const [expertId, expertName, date, slot, type, cap, place, status] = r;
+                            /** 工号或姓名二选一定位专家 */
+                            const expert = db.experts.find((e) => e.id === expertId)
+                              ?? db.experts.find((e) => e.name === expertName);
+                            if (!expert) {
+                              return { row: i + 2, name: expertId || expertName || `第 ${i + 2} 行`, result: '失败' as const, reason: '专家工号/姓名均匹配不到（请从专家名录复制）' };
+                            }
                             if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
                               return { row: i + 2, name: expert.name, result: '失败' as const, reason: `日期格式应为 YYYY-MM-DD（收到 ${date || '空'}）` };
                             }
-                            const typeOk = (['1v1', '直播', '线下'] as const).find((v) => v === type);
+                            /** 拍板 8-C：时段预置枚举优先，允许自定义；此处只提醒不拦截 */
+                            const slotKnown = SCHEDULE_SLOTS.includes(slot);
+                            const typeOk = SCHEDULE_TYPES.find((v) => v === type);
                             if (!typeOk) {
-                              return { row: i + 2, name: expert.name, result: '失败' as const, reason: `形式「${type || '空'}」不在枚举内` };
+                              return { row: i + 2, name: expert.name, result: '失败' as const, reason: `形式「${type || '空'}」不在可选项内（${SCHEDULE_TYPES.join(' / ')}）` };
                             }
                             const capN = Number(cap);
                             if (!Number.isFinite(capN) || capN < 1) {
                               return { row: i + 2, name: expert.name, result: '失败' as const, reason: '容量必须 ≥1' };
                             }
                             /** 按 expert_id + date + slot 去重：已存在则跳过（不覆盖已有预约） */
-                            const dup = db.schedules.some((s) => s.expert_id === expertId && s.date === date && s.slot === slot);
+                            const dup = db.schedules.some((s) => s.expert_id === expert.id && s.date === date && s.slot === slot);
                             if (dup) {
                               return { row: i + 2, name: `${expert.name} ${date} ${slot}`, result: '跳过' as const, reason: '该专家该时段已有排班（未覆盖）' };
                             }
                             return {
                               row: i + 2, name: `${expert.name} ${date} ${slot}`, result: '成功' as const,
-                              data: { expert_id: expertId, date, slot, capacity: capN, type: typeOk, place_or_link: place ?? '' },
+                              data: {
+                                expert_id: expert.id, date, slot, capacity: capN, type: typeOk,
+                                place_or_link: place ?? '',
+                                status: (['OPEN', 'FULL', 'CLOSED', 'HOLIDAY'] as const).find((v) => v === status) ?? 'OPEN' as const,
+                                slotKnown,
+                              },
                             };
                           })}
                           onCommit={(items) => {
                             const batchId = `BS${Date.now()}`;
                             const list = items.map((it) => it.data!);
+                            const custom = list.filter((d) => !d.slotKnown).length;
                             setDb((p) => ({
                               ...p,
                               schedules: [
@@ -215,7 +295,7 @@ export default function ExpertAdmin() {
                                   expert_id: d.expert_id, date: d.date, slot: d.slot,
                                   capacity: d.capacity, booked: 0, type: d.type,
                                   place_or_link: d.place_or_link,
-                                  status: 'OPEN' as const,
+                                  status: d.status,
                                   source: 'BATCH' as const, batch_id: batchId,
                                   updated_by: me.name,
                                   updated_at: `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`,
@@ -223,13 +303,55 @@ export default function ExpertAdmin() {
                                 ...p.schedules,
                               ],
                             }));
-                            log('批量导入排班', `${list.length} 条`, `批次 ${batchId}；去重口径 专家+日期+时段，冲突行已跳过`);
-                            message.success(`已导入 ${list.length} 条排班（冲突行已跳过，可在回执中下载核对）`);
+                            log('批量导入排班', `${list.length} 条`, `批次 ${batchId}；去重口径 专家+日期+时段，冲突行已跳过${custom ? `；其中 ${custom} 行使用了自定义时段` : ''}`);
+                            message.success(`已导入 ${list.length} 条排班（冲突行已跳过，可在回执中下载核对）${custom ? `；${custom} 行为自定义时段` : ''}`);
                           }}
                         />
                       </Space>
                       <Typography.Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 8 }}>
                         单次导入上限 200 行；导入不覆盖已有排班，冲突行在回执中单列，可下载修正后重导。
+                      </Typography.Text>
+                    </Card>
+                  )}
+                  {/* V7.0 CR-36：专家自助排班申请审核（拍板 7-C） */}
+                  {selfScheduleOn && (
+                    <Card size="small" title={`专家排班申请（${db.scheduleRequests.filter((r) => r.status === '待审核').length} 待审核）`}>
+                      {db.scheduleRequests.length === 0 ? (
+                        <Empty description="暂无专家提交的排班申请" />
+                      ) : (
+                        <Table
+                          size="small" rowKey="id" pagination={{ pageSize: 5 }} dataSource={db.scheduleRequests}
+                          columns={[
+                            { title: '专家', render: (_, r: ScheduleRequest) => db.experts.find((e) => e.id === r.expert_id)?.name ?? r.expert_id },
+                            { title: '日期', dataIndex: 'date', width: 110 },
+                            { title: '时段', dataIndex: 'slot', width: 120 },
+                            { title: '形式', dataIndex: 'type', width: 80 },
+                            { title: '容量', dataIndex: 'capacity', width: 70, render: (v: number) => <span className="num">{v}</span> },
+                            { title: '地点/链接', dataIndex: 'place_or_link', ellipsis: true },
+                            {
+                              title: '冲突', width: 80,
+                              render: (_, r: ScheduleRequest) => (r.conflict
+                                ? <Tag color="red">撞车</Tag>
+                                : <Tag>无</Tag>),
+                            },
+                            {
+                              title: '状态', dataIndex: 'status', width: 90,
+                              render: (v: string) => <Tag color={v === '已通过' ? 'green' : v === '已驳回' ? 'red' : 'gold'}>{v}</Tag>,
+                            },
+                            {
+                              title: '操作', width: 140,
+                              render: (_, r: ScheduleRequest) => (r.status === '待审核' ? (
+                                <Space size={4}>
+                                  <Button size="small" type="link" onClick={() => reviewRequest(r, true)}>通过</Button>
+                                  <Button size="small" type="link" danger onClick={() => reviewRequest(r, false)}>驳回</Button>
+                                </Space>
+                              ) : <Typography.Text type="secondary" style={{ fontSize: 12 }}>{r.reviewed_by} {r.reviewed_at}</Typography.Text>),
+                            },
+                          ]}
+                        />
+                      )}
+                      <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                        拍板 7-C：专家自助选择的时段以「申请」形式提交，经组织者审核后才生成排班；与已有排班撞车的申请标红，需先处理原排班再通过（不静默覆盖）。
                       </Typography.Text>
                     </Card>
                   )}
@@ -337,8 +459,13 @@ export default function ExpertAdmin() {
           <Form.Item name="date" label="日期" rules={[{ required: true }]}>
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
+          {/* 拍板 8-C：时段预置枚举优先，同时允许手工输入 */}
           <Form.Item name="slot" label="时段" rules={[{ required: true }]}>
-            <Input placeholder="如 09:00-10:00" />
+            <AutoComplete
+              options={SCHEDULE_SLOTS.map((v) => ({ value: v }))}
+              placeholder="选择预置时段，或手工输入"
+              filterOption={(input, option) => String(option?.value ?? '').includes(input)}
+            />
           </Form.Item>
           <Form.Item name="capacity" label="容量" rules={[{ required: true }]}>
             <InputNumber min={1} max={20} style={{ width: '100%' }} />

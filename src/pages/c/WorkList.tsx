@@ -7,28 +7,15 @@ import { COLOR, GRADIENT, TRACK_COLOR } from '@/theme';
 import { PageHeader } from '@/components/ui';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import type { AssignmentSubmit, SubmitStatus } from '@/mock/types';
+import { STATUS_META } from '@/constants/statusMeta';
 import dayjs from 'dayjs';
 
-const STATUS_META: Record<SubmitStatus, { text: string; color: string }> = {
-  DRAFT: { text: '草稿', color: 'default' },
-  SUBMITTED: { text: '已提交', color: 'blue' },
-  SCORING_AI: { text: 'AI 评分中', color: 'cyan' },
-  AI_SCORED: { text: 'AI 已出分', color: 'cyan' },
-  REVIEWING: { text: '复核中', color: 'purple' },
-  REVIEWED: { text: '已复核', color: 'purple' },
-  SPOT_CHECK: { text: '抽查中', color: 'gold' },
-  PASSED: { text: '抽查通过', color: 'green' },
-  REJECTED: { text: '不通过', color: 'red' },
-  PUBLISHED: { text: '已公示', color: 'green' },
-  ASSET_APPLYING: { text: '入库申请中', color: 'geekblue' },
-  ASSET_ONLINE: { text: '已入库', color: 'green' },
-  ASSET_REJECTED: { text: '入库驳回', color: 'red' },
-  WITHDRAWN: { text: '已撤回', color: 'default' },
-  SCORE_FAILED: { text: '评分失败', color: 'red' },
-  /** V6.0 CR-19 新增两态 */
-  COMPLETED: { text: '已完成', color: 'green' },
-  CONSENSUS: { text: '已共识', color: 'geekblue' },
-};
+/**
+ * V7.0 CR-33：状态文案已上收为全站唯一真源（src/constants/statusMeta.ts），
+ * 供 B 端作业管理与本页共用，避免「同一状态两种叫法」。
+ * 此处 re-export 仅为保持既有导入路径（Profile / WorkDetail / AssignmentAdmin 仍从本页引入）。
+ */
+export { STATUS_META };
 
 /**
  * V6.0 CR-19：公示由「状态」降级为「标记位」，所以单独渲染一个附加标签。

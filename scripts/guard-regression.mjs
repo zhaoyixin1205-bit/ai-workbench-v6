@@ -156,6 +156,26 @@ check('[专家工作台] clinic 开关关闭后不可进', () => {
   return r.ok === false || '开关关闭后不应可进';
 });
 
+/* ---------- B4. V7.0 CR-32：/judge（C 端评委评分）仅评委可进 ---------- */
+for (const role of ROLES) {
+  const shouldPass = role === 'JUDGE';
+  check(`[评委评分] /judge · ${role} ${shouldPass ? '必须可进' : '必须 403'}`, () => {
+    const r = checkCAccess('/judge', { roles: [role], flags: { ...FLAGS_V6, cJudgeEntry: true } });
+    return r.ok === shouldPass || `ok=${r.ok}`;
+  });
+  check(`[开关] /judge · ${role} cJudgeEntry 关闭后不可进`, () => {
+    const r = checkCAccess('/judge', { roles: [role], flags: { ...FLAGS_V6, cJudgeEntry: false } });
+    return r.ok === false || '开关关闭后不应可进';
+  });
+  /** 403 必须带限制依据 */
+  if (!shouldPass) {
+    check(`[403] /judge · ${role} 的拒绝结果带限制依据`, () => {
+      const r = checkCAccess('/judge', { roles: [role], flags: { ...FLAGS_V6, cJudgeEntry: true } });
+      return (!r.ok && !!r.access.reason) || '缺少 reason';
+    });
+  }
+}
+
 /* ---------- C. 开关等价性：V6.0 全开 vs 全关，新增路由必须消失 ---------- */
 const NEW_ROUTES = ['/team', '/clinic/workbench'];
 for (const path of NEW_ROUTES) {

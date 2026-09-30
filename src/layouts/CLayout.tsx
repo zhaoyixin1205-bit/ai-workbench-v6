@@ -3,6 +3,7 @@ import {
   HomeOutlined, BulbOutlined, TrophyOutlined, FormOutlined, MedicineBoxOutlined,
   TeamOutlined, AppstoreOutlined, GiftOutlined, UserOutlined, SettingOutlined,
   BellOutlined, QuestionCircleOutlined, MessageOutlined, VerticalAlignTopOutlined,
+  SafetyCertificateOutlined,
 } from '@ant-design/icons';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useMemo, useState } from 'react';
@@ -18,6 +19,12 @@ const { Header, Content } = Layout;
 
 const NAV: { key: string; icon: React.ReactNode; label: string; mobile?: string }[] = [
   { key: '/', icon: <HomeOutlined />, label: '首页' },
+  /*
+   * V7.0 CR-32：评委评分入口，位置在「首页」与「案例与选题」之间。
+   * 非评委角色由守卫表（/judge 仅 JUDGE）自动过滤，不会出现在菜单里；
+   * cJudgeEntry 开关关闭时同样不可见。
+   */
+  { key: '/judge', icon: <SafetyCertificateOutlined />, label: '评委评分', mobile: '评分' },
   { key: '/cases', icon: <BulbOutlined />, label: '案例与选题' },
   { key: '/bounty', icon: <TrophyOutlined />, label: '悬赏榜' },
   { key: '/work', icon: <FormOutlined />, label: '作业提报', mobile: '交作业' },
@@ -52,7 +59,8 @@ export default function CLayout() {
   const guard = useMemo(() => checkCAccess(loc.pathname, subject), [loc.pathname, subject]);
   const canAdmin = canEnterAdmin({ ...subject, isDeptLeader: me.is_dept_leader });
 
-  const mobileItems = navItems.filter((n) => ['/', '/cases', '/work', '/clinic', '/me'].includes(n.key));
+  /** 拍板 2-A：评委入口同时进移动端 tabbar（白名单需显式登记，与桌面菜单是两套渲染） */
+  const mobileItems = navItems.filter((n) => ['/', '/judge', '/cases', '/work', '/clinic', '/me'].includes(n.key));
 
   return (
     <Layout style={{ minHeight: '100vh', background: COLOR.bg }}>

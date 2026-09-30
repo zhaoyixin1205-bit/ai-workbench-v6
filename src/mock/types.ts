@@ -498,6 +498,12 @@ export interface ScoreDimension {
   standard: string;
   levels: { level: string; range: string; desc: string }[];
   sort: number;
+  /**
+   * V7.0 CR-34：档位与标准的「纯文字说明」版本（确认项 1：档位与标准就是一段文字，可编辑即可）。
+   * 缺省时界面上以 levels 拼装展示（旧数据兼容），编辑后写入本字段；
+   * levels 保留不删（字段只增不删），历史评分结果仍按 card_id + version 追溯。
+   */
+  level_text?: string;
 }
 export interface ScoreCard {
   id: string;
@@ -592,11 +598,42 @@ export interface ExpertSchedule {
   type: '1v1' | '直播' | '线下';
   place_or_link: string;
   status: 'OPEN' | 'FULL' | 'CLOSED' | 'HOLIDAY';
-  /** V6.0 CR-26：排班来源（手工维护 / 批量导入）；缺省视为手工 */
-  source?: 'MANUAL' | 'BATCH';
+  /**
+   * V6.0 CR-26：排班来源（手工维护 / 批量导入）；缺省视为手工。
+   * V7.0 CR-36：新增 EXPERT_APPLY（专家自助申请经组织者审核后生成，拍板 7-C）。
+   * 枚举只增不删，旧值语义不变。
+   */
+  source?: 'MANUAL' | 'BATCH' | 'EXPERT_APPLY';
   batch_id?: string;
+  /** V7.0 CR-36：来源申请单号（审核通过后回填，便于追溯） */
+  request_id?: string;
   updated_by?: string;
   updated_at?: string;
+}
+
+/**
+ * V7.0 CR-36：专家自助排班申请（拍板 7-C）。
+ * 专家提交 → 组织者在「专家与排班 · 排班申请」审核 → 通过后生成 ExpertSchedule。
+ * 申请单只增不改：审核结论以新记录形式写在本单上，原申请内容不覆写。
+ */
+export interface ScheduleRequest {
+  id: string;
+  expert_id: string;
+  date: string;
+  slot: string;
+  capacity: number;
+  type: ExpertSchedule['type'];
+  place_or_link: string;
+  /** 待审核 / 已通过 / 已驳回；只增不改（驳回后不再复用本单，专家需重新提交） */
+  status: '待审核' | '已通过' | '已驳回';
+  /** 与已有排班撞车（同专家+同日期+同时段）时的标记，供组织者审核时识别 */
+  conflict?: boolean;
+  applicant_union_id?: string;
+  created_at: string;
+  /** 审核结论 */
+  reviewed_by?: string;
+  reviewed_at?: string;
+  review_note?: string;
 }
 
 export interface Booking {

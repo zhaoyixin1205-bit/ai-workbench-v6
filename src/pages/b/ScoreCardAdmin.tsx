@@ -3,10 +3,17 @@ import { useState } from 'react';
 import { useStore } from '@/store/store';
 import { COLOR } from '@/theme';
 import { PageHeader, StatCard } from '@/components/ui';
-import type { ScoreDimension } from '@/mock/types';
+import type { ScoreCard, ScoreDimension } from '@/mock/types';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import { useSkillAdminConverge } from '@/auth/converge';
 import { ScopeNotice } from '@/components/ScopeNotice';
+
+/** 由结构化档位回退拼装文字说明（历史数据没有 level_text 时用） */
+function levelTextOf(d: ScoreDimension): string {
+  if (d.level_text?.trim()) return d.level_text;
+  if (!d.levels.length) return '';
+  return d.levels.map((l) => `${l.level} ${l.range}：${l.desc}`).join('\n');
+}
 
 export default function ScoreCardAdmin() {
   const { db, setDb, log, scopeRows, flags } = useStore();
@@ -20,6 +27,18 @@ export default function ScoreCardAdmin() {
   const [dims, setDims] = useState<ScoreDimension[]>(db.scoreCards[0].dimensions);
   /** V6.0 CR-24 开关：关闭=只有「编辑维度→保存即新版本」，无新建/复制/启用/停用/删除 */
   const lifecycleOn = flags.scoreCardLifecycle !== false;
+  /** V7.0 CR-34 开关：关闭=回到 V6.2（名称/档位/权重均只读，保存即新版本） */
+  const editableOn = flags.scoreCardEditable !== false;
+  /** V7.0 CR-34：卡级元数据草稿（名称 / 计算方式 / 及格线 / 双轨权重） */
+  const [meta, setMeta] = useState<Pick<ScoreCard, 'name' | 'total_rule' | 'pass_line' | 'ai_weight' | 'judge_weight'>>({
+    name: db.scoreCards[0].name,
+    total_rule: db.scoreCards[0].total_rule,
+    pass_line: db.scoreCards[0].pass_line,
+    ai_weight: db.scoreCards[0].ai_weight,
+    judge_weight: db.scoreCards[0].judge_weight,
+  });
+  /** V7.0 CR-34：档位与标准的文字说明（确认项 1：就是一段文字，可编辑即可） */
+  const [levelText, setLevelText] = useState<Record<string, string>>({});
 
   /** V6.0 CR-24：列表只展示未软删的卡 */
   const cards = db.scoreCards.filter((c) => !c.is_deleted);
@@ -31,20 +50,98 @@ export default function ScoreCardAdmin() {
     db.assignmentTypes.filter((t) => t.score_card_id === c.id).length
     + db.scoreResults.filter((r) => r.card_id === c.id).length;
 
+  const enterEdit = () => {
+    setDims(card.dimensions);
+    setMeta({
+      name: card.name, total_rule: card.total_rule, pass_line: card.pass_line,
+      ai_weight: card.ai_weight, judge_weight: card.judge_weight,
+    });
+    setLevelText(Object.fromEntries(card.dimensions.map((d) => [d.id, levelTextOf(d)])));
+    setEditing(true);
+  };
+
+  /**
+   * V7.0 CR-34：保存策略（拍板 3-A）
+   *  - 草稿态：原地保存（同 id 同 version），随便改；
+   *  - 启用/停用态：修改自动升版本，旧版本连同其历史评分结果一并保留（拍板 4-A：历史结果仍指向旧版本）。
+   */
   const save = () => {
     if (weightSum !== 100) { message.error(`维度权重合计必须 = 100，当前 ${weightSum}`); return; }
+    if (meta.ai_weight + meta.judge_weight !== 100) {
+      message.error(`AI 权重 + 评委权重必须 = 100，当前 ${meta.ai_weight + meta.judge_weight}`);
+      return;
+    }
+    if (!meta.name.trim()) { message.error('评分卡名称不能为空'); return; }
+
+    const at = `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`;
+    const newDims = dims.map((d) => ({ ...d, level_text: levelText[d.id] ?? d.level_text }));
+    const patch = {
+      ...meta,
+      name: meta.name.trim(),
+      dimensions: newDims,
+      updated_at: at,
+    };
+
+    /** 草稿态：原地改（拍板 3-A 前半段） */
+    if (card.status === '草稿') {
+      if (!editableOn) { message.info('评分卡可编辑开关已关闭，当前为只读'); return; }
+      setDb((p) => ({
+        ...p,
+        scoreCards: p.scoreCards.map((c) => (`${c.id}-${c.version}` === `${card.id}-${card.version}` ? { ...c, ...patch } : c)),
+      }));
+      log('修改评分卡（草稿）', `${meta.name} ${card.version}`, '草稿态原地保存，不生成新版本');
+      message.success('已保存（草稿态原地修改）');
+      setEditing(false);
+      return;
+    }
+
+    /** 启用/停用态：改即升版本（拍板 3-A 后半段 + 4-A） */
     const newVersion = `v${Number(card.version.slice(1)) + 1}`;
     modal.confirm({
       title: '保存评分卡改版',
-      content: `保存即生成新版本 ${newVersion}；历史提报按提交时绑定的版本计算，改版不影响历史分数。影响约 ${inScope.filter((s) => s.ai_score === undefined).length} 个未评分提报（按当前数据范围统计）。`,
+      content: `「${card.name}」已${card.status}，本次修改将生成新版本 ${newVersion}：旧版本 ${card.version} 与其历史评分结果一并保留，历史分数不会因改版而变化。影响约 ${inScope.filter((s) => s.ai_score === undefined).length} 个未评分提报（按当前数据范围统计）。`,
       onOk: () => {
         setDb((p) => ({
           ...p,
-          scoreCards: [{ ...card, version: newVersion, dimensions: dims, updated_at: '2026-09-25 12:00' }, ...p.scoreCards],
+          scoreCards: [{ ...card, ...patch, version: newVersion }, ...p.scoreCards],
         }));
-        log('评分卡改版', `${card.name} ${card.version} → ${newVersion}`, '维度权重已更新，历史结果按旧版本计算');
-        message.success(`已生成 ${newVersion}`);
+        log('评分卡改版', `${card.name} ${card.version} → ${newVersion}`, '启用态修改自动升版本；历史结果仍按旧版本计算');
+        message.success(`已生成 ${newVersion}（旧版本 ${card.version} 保留）`);
+        setCardId(`${card.id}-${newVersion}`);
         setEditing(false);
+      },
+    });
+  };
+
+  /** V7.0 CR-34：改名（独立入口，草稿态原地改；启用态随下次保存一起升版本） */
+  const renameCard = () => {
+    if (card.status !== '草稿') {
+      modal.info({
+        title: '启用中的评分卡改名',
+        content: `「${card.name}」已${card.status}，改名会随下一次保存生成新版本；如需立即生效，请在右侧点「编辑」后保存。`,
+      });
+      return;
+    }
+    modal.confirm({
+      title: '修改评分卡名称',
+      content: (
+        <Input
+          id="wb-card-rename"
+          defaultValue={card.name}
+          maxLength={30}
+          onChange={(e) => setMeta((m) => ({ ...m, name: e.target.value }))}
+        />
+      ),
+      onOk: () => {
+        const name = (meta.name || '').trim();
+        if (!name) { message.error('名称不能为空'); return; }
+        setDb((p) => ({
+          ...p,
+          scoreCards: p.scoreCards.map((c) => (`${c.id}-${c.version}` === `${card.id}-${card.version}`
+            ? { ...c, name, updated_at: `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}` } : c)),
+        }));
+        log('修改评分卡名称', `${card.name} → ${name}`, '草稿态原地改名');
+        message.success('名称已更新');
       },
     });
   };
@@ -136,6 +233,12 @@ export default function ScoreCardAdmin() {
       {/* U-2 结案：范围受限提示（含专家身份说明），四个后台页共用同一套口径 */}
       <ScopeNotice count={inScope.length} unit="条提报" />
 
+      {editableOn && (
+        <Alert type="info" showIcon
+          message="V7.0 CR-34：评分卡可编辑与版本策略"
+          description="草稿态可原地修改（不生成新版本）；一旦启用，任何修改都会自动升版本，历史评分结果仍按当时的版本计算，不会被追溯改写。" />
+      )}
+
       <Row gutter={16}>
         <Col xs={24} lg={8}>
           <Card size="small" title="评分卡列表">
@@ -171,6 +274,15 @@ export default function ScoreCardAdmin() {
                     >
                       删除{refCount(c) > 0 ? `（引用 ${refCount(c)}）` : ''}
                     </Button>
+                    {/* V7.0 CR-34：改名（草稿态立即生效；启用态随下次保存升版本） */}
+                    {editableOn && (
+                      <Button
+                        size="small" type="link" disabled={readOnly}
+                        onClick={(e) => { e.stopPropagation(); setCardId(`${c.id}-${c.version}`); setMeta((m) => ({ ...m, name: c.name })); renameCard(); }}
+                      >
+                        改名
+                      </Button>
+                    )}
                   </Space>
                 )}
               </div>
@@ -187,15 +299,23 @@ export default function ScoreCardAdmin() {
         <Col xs={24} lg={16}>
           <Card
             size="small"
-            title={`${card.name} ${card.version} · 维度与权重`}
+            title={editing
+              ? <Input
+                  size="small" style={{ width: 260 }} disabled={!editableOn} value={meta.name}
+                  onChange={(e) => setMeta((m) => ({ ...m, name: e.target.value }))}
+                  placeholder="评分卡名称"
+                />
+              : `${card.name} ${card.version} · 维度与权重`}
             extra={<Space>
               {editing ? (
                 <>
                   <Button onClick={() => { setEditing(false); setDims(card.dimensions); }}>取消</Button>
-                  <Button type="primary" onClick={save}>保存并生成新版本</Button>
+                  <Button type="primary" onClick={save}>
+                    {card.status === '草稿' ? '保存（草稿原地修改）' : '保存并生成新版本'}
+                  </Button>
                 </>
               ) : (
-                <Button disabled={readOnly} onClick={() => setEditing(true)}>编辑维度</Button>
+                <Button disabled={readOnly} onClick={enterEdit}>编辑</Button>
               )}
             </Space>}
           >
@@ -209,7 +329,12 @@ export default function ScoreCardAdmin() {
               size="small" rowKey="id" pagination={false} dataSource={dims}
               columns={[
                 { title: '排序', dataIndex: 'sort', width: 60 },
-                { title: '维度名称', dataIndex: 'name', render: (v: string) => <b>{v}</b> },
+                {
+                  title: '维度名称', dataIndex: 'name',
+                  render: (v: string, r) => editing && editableOn
+                    ? <Input size="small" value={v} onChange={(e) => setDims(dims.map((d) => (d.id === r.id ? { ...d, name: e.target.value } : d)))} />
+                    : <b>{v}</b>,
+                },
                 {
                   title: '权重（%）', dataIndex: 'weight', width: 120,
                   render: (v: number, r) => editing
@@ -239,16 +364,19 @@ export default function ScoreCardAdmin() {
                 {dims.map((d) => (
                   <div key={d.id} style={{ marginTop: 8 }}>
                     <div style={{ fontSize: 13, fontWeight: 600 }}>{d.name}</div>
-                    {d.levels.length === 0 ? (
-                      <Typography.Text type="secondary" style={{ fontSize: 11 }}>未配置档位（历史版本 / 待补充）</Typography.Text>
+                    {editing && editableOn ? (
+                      /* V7.0 CR-34（确认项 1）：档位与标准就是一段文字说明，用文本框录入即可 */
+                      <Input.TextArea
+                        rows={3} value={levelText[d.id] ?? ''}
+                        placeholder={`例如：优秀 9-10：xxx\n良好 7-8：yyy\n合格 6：zzz`}
+                        onChange={(e) => setLevelText({ ...levelText, [d.id]: e.target.value })}
+                      />
+                    ) : levelTextOf(d) ? (
+                      <div style={{ fontSize: 12, color: COLOR.textSub, whiteSpace: 'pre-wrap', marginTop: 4 }}>
+                        {levelTextOf(d)}
+                      </div>
                     ) : (
-                      <Space wrap size={4}>
-                        {d.levels.map((l) => (
-                          <Tag key={l.level} color={l.level === '优秀' ? 'green' : l.level === '良好' ? 'blue' : l.level === '合格' ? 'gold' : 'red'}>
-                            {l.level} {l.range}：{l.desc}
-                          </Tag>
-                        ))}
-                      </Space>
+                      <Typography.Text type="secondary" style={{ fontSize: 11 }}>未配置档位（历史版本 / 待补充）</Typography.Text>
                     )}
                   </div>
                 ))}
@@ -256,12 +384,55 @@ export default function ScoreCardAdmin() {
               <Col xs={24} sm={12}>
                 <Typography.Text strong>双轨权重与计算方式</Typography.Text>
                 <div style={{ marginTop: 8, fontSize: 13 }}>
-                  <div>总分计算：{card.total_rule}</div>
-                  <div>及格线：{card.pass_line} 分</div>
-                  <div style={{ marginTop: 8 }}>AI 分权重 {card.ai_weight}%</div>
-                  <Progress percent={card.ai_weight} strokeColor={COLOR.primary} size="small" />
-                  <div>评委分权重 {card.judge_weight}%</div>
-                  <Progress percent={card.judge_weight} strokeColor="#7C3AED" size="small" />
+                  {editing && editableOn ? (
+                    <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                      <Space>
+                        <span>总分计算</span>
+                        <select
+                          value={meta.total_rule}
+                          onChange={(e) => setMeta((m) => ({ ...m, total_rule: e.target.value as ScoreCard['total_rule'] }))}
+                          style={{ padding: '4px 8px', borderRadius: 6, border: `1px solid ${COLOR.border}` }}
+                        >
+                          {(['加权求和', '去极值平均', '归一化百分制'] as const).map((v) => (
+                            <option key={v} value={v}>{v}</option>
+                          ))}
+                        </select>
+                      </Space>
+                      <Space>
+                        <span>及格线</span>
+                        <InputNumber
+                          min={0} max={100} value={meta.pass_line}
+                          onChange={(v) => setMeta((m) => ({ ...m, pass_line: Number(v ?? 0) }))}
+                        />
+                      </Space>
+                      <Space>
+                        <span>AI 权重（%）</span>
+                        <InputNumber
+                          min={0} max={100} value={meta.ai_weight}
+                          onChange={(v) => setMeta((m) => ({ ...m, ai_weight: Number(v ?? 0) }))}
+                        />
+                      </Space>
+                      <Space>
+                        <span>评委权重（%）</span>
+                        <InputNumber
+                          min={0} max={100} value={meta.judge_weight}
+                          onChange={(v) => setMeta((m) => ({ ...m, judge_weight: Number(v ?? 0) }))}
+                        />
+                      </Space>
+                      <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                        AI 权重 + 评委权重必须 = 100（当前 {meta.ai_weight + meta.judge_weight}）
+                      </Typography.Text>
+                    </Space>
+                  ) : (
+                    <>
+                      <div>总分计算：{card.total_rule}</div>
+                      <div>及格线：{card.pass_line} 分</div>
+                      <div style={{ marginTop: 8 }}>AI 分权重 {card.ai_weight}%</div>
+                      <Progress percent={card.ai_weight} strokeColor={COLOR.primary} size="small" />
+                      <div>评委分权重 {card.judge_weight}%</div>
+                      <Progress percent={card.judge_weight} strokeColor="#7C3AED" size="small" />
+                    </>
+                  )}
                 </div>
                 <Alert style={{ marginTop: 12 }} type="warning" showIcon
                   message="Q11 待补充：终端平台 AI 评分口径" description="拿到口径后由组织者在后台配置「终端评分卡」即可，无需改动代码。" />

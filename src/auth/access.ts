@@ -8,7 +8,10 @@
  */
 import type { Role } from '@/mock/types';
 
-export type FlagKey = 'community' | 'shop' | 'clinic' | 'wbAdmin' | 'adminCoreConverge' | 'teamView';
+export type FlagKey =
+  | 'community' | 'shop' | 'clinic' | 'wbAdmin' | 'adminCoreConverge' | 'teamView'
+  /** V7.0 CR-32：C 端评委评分入口 /judge */
+  | 'cJudgeEntry';
 
 export interface RouteAccess {
   /** 路由路径（支持前缀匹配，如 /cases 覆盖 /cases/:id） */
@@ -129,6 +132,16 @@ export const ADMIN_ACCESS: RouteAccess[] = [
 export const C_ACCESS: RouteAccess[] = [
   { key: '/', label: '首页', reason: '' },
   { key: '/cases', label: '案例与选题', reason: '', children: true },
+  {
+    /**
+     * V7.0 CR-32：C 端「评委评分」—— 复用后台评委复核的业务能力，
+     * 但入口下沉到员工端（CLayout），菜单位置在「首页」与「案例与选题」之间。
+     * 仅评委（JUDGE）可见；受 cJudgeEntry 开关控制（关闭 ≡ V6.2 无此入口）。
+     */
+    key: '/judge', label: '评委评分',
+    roles: ['JUDGE'], flag: 'cJudgeEntry',
+    reason: 'V7.0 CR-32：评委评分仅评委可见；页面能力复用后台「评委复核」，入口下沉至员工端，默认展示待我评分并可查看历史评分。',
+  },
   {
     key: '/bounty/create', label: '发布悬赏', denyRoles: ['VIEWER'], children: true,
     reason: 'PRD V3.0 §3.2：观众仅可浏览公示内容与作品展示，不参与发布与提交。',

@@ -1,14 +1,21 @@
-import { Avatar, Button, Card, Col, Empty, List, Progress, Row, Space, Statistic, Table, Tabs, Tag, Typography, App as AntApp, Rate, Popconfirm } from 'antd';
-import { CalendarOutlined, CheckCircleOutlined, StarFilled, TeamOutlined } from '@ant-design/icons';
+import { Avatar, AutoComplete, Button, Card, Col, DatePicker, Empty, Form, Input, InputNumber, List, Modal, Progress, Row, Select, Space, Statistic, Table, Tabs, Tag, Typography, App as AntApp, Rate, Popconfirm } from 'antd';
+import { CalendarOutlined, CheckCircleOutlined, StarFilled, TeamOutlined, PlusOutlined } from '@ant-design/icons';
 import { Link } from 'react-router-dom';
+import { useState } from 'react';
 import { useStore } from '@/store/store';
 import { COLOR, GRADIENT, SHADOW } from '@/theme';
 import { SoftTag, StatCard } from '@/components/ui';
 import { DEMO_TODAY } from '@/mock/seedBiz';
+/* V7.0 CR-36：时段预置枚举 + 三种形式（拍板 8-C / 确认项 4） */
+import { SCHEDULE_SLOTS, SCHEDULE_TYPES } from '@/constants/importSchemas';
 
 export default function ExpertWorkbench() {
-  const { db, me, setDb, log } = useStore();
+  const { db, me, setDb, log, flags } = useStore();
   const { message } = AntApp.useApp();
+  /** V7.0 CR-36：专家自助排班申请（拍板 7-C） */
+  const selfScheduleOn = flags.expertSelfSchedule !== false;
+  const [applyOpen, setApplyOpen] = useState(false);
+  const [applyForm] = Form.useForm();
   const expert = db.experts.find((e) => e.union_id === me.union_id);
 
   if (!expert) {
@@ -27,6 +34,44 @@ export default function ExpertWorkbench() {
   const reviews = db.reviews.filter((r) => r.expert_id === expert.id);
   const openSlots = schedules.filter((s) => s.status === 'OPEN').length;
   const doneRate = Math.round((bookings.filter((b) => b.status === '已完成').length / Math.max(1, bookings.length)) * 100);
+
+  /**
+   * V7.0 CR-36：专家自助选择开放时段 —— 拍板 7-C：提交为「申请」，组织者审核后生效。
+   * 与已有排班撞车时不静默覆盖，标记 conflict 交给组织者处理。
+   */
+  const myRequests = db.scheduleRequests.filter((r) => r.expert_id === expert.id);
+
+  const submitApply = async () => {
+    let vals: {
+      date?: { format: (f: string) => string }; slot?: string; capacity?: number;
+      type?: '1v1' | '直播' | '线下'; place_or_link?: string;
+    };
+    try {
+      vals = await applyForm.validateFields();
+    } catch {
+      message.error('请填写完整后再提交');
+      return;
+    }
+    const date = vals.date?.format('YYYY-MM-DD') ?? DEMO_TODAY;
+    const slot = vals.slot ?? '';
+    const conflict = db.schedules.some((s) => s.expert_id === expert.id && s.date === date && s.slot === slot)
+      || myRequests.some((r) => r.date === date && r.slot === slot && r.status === '待审核');
+    const at = `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`;
+    setDb((p) => ({
+      ...p,
+      scheduleRequests: [{
+        id: `SRQ${Date.now()}`, expert_id: expert.id, date, slot,
+        capacity: Number(vals.capacity ?? 1), type: vals.type ?? '1v1',
+        place_or_link: vals.place_or_link ?? '',
+        status: '待审核' as const, conflict,
+        applicant_union_id: me.union_id, created_at: at,
+      }, ...p.scheduleRequests],
+    }));
+    log('提交排班申请', `${date} ${slot}`, conflict ? '与已有排班撞车，已标记待组织者处理' : '待组织者审核后生效');
+    message.success(conflict ? '已提交（该时段已有排班，已标记撞车待组织者处理）' : '已提交，组织者审核通过后开放预约');
+    setApplyOpen(false);
+    applyForm.resetFields();
+  };
 
   const finish = (bookingId: string) => {
     setDb((p) => ({
@@ -120,7 +165,43 @@ export default function ExpertWorkbench() {
             {
               key: 'schedule', label: `我的排班与号源（${schedules.length}）`,
               children: (
-                <Table
+                <>
+                  {/* V7.0 CR-36：专家自助申请开放时段（拍板 7-C：提交为申请，组织者审核后生效） */}
+                  {selfScheduleOn && (
+                    <Space direction="vertical" size={8} style={{ width: '100%', marginBottom: 12 }}>
+                      <Space wrap>
+                        <Button type="primary" icon={<PlusOutlined />} onClick={() => setApplyOpen(true)}>
+                          申请开放时段
+                        </Button>
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                          自行选择日期、时段、形式与容量；提交后由组织者审核，通过后才会开放预约。
+                        </Typography.Text>
+                      </Space>
+                      {myRequests.length > 0 && (
+                        <Table
+                          size="small" rowKey="id" pagination={false} dataSource={myRequests}
+                          columns={[
+                            { title: '申请日期', dataIndex: 'date', width: 110 },
+                            { title: '时段', dataIndex: 'slot', width: 120 },
+                            { title: '形式', dataIndex: 'type', width: 80 },
+                            { title: '容量', dataIndex: 'capacity', width: 70, render: (v: number) => <span className="num">{v}</span> },
+                            { title: '地点/链接', dataIndex: 'place_or_link', ellipsis: true },
+                            {
+                              title: '状态', dataIndex: 'status', width: 120,
+                              render: (v: string, r: { conflict?: boolean; review_note?: string }) => (
+                                <Space size={4}>
+                                  <Tag color={v === '已通过' ? 'green' : v === '已驳回' ? 'red' : 'gold'}>{v}</Tag>
+                                  {r.conflict && <Tag color="red">撞车</Tag>}
+                                </Space>
+                              ),
+                            },
+                            { title: '提交时间', dataIndex: 'created_at', width: 150 },
+                          ]}
+                        />
+                      )}
+                    </Space>
+                  )}
+                  <Table
                   size="small" rowKey="id" pagination={{ pageSize: 8 }} dataSource={schedules}
                   columns={[
                     { title: '日期', dataIndex: 'date' },
@@ -149,7 +230,8 @@ export default function ExpertWorkbench() {
                       ),
                     },
                   ]}
-                />
+                  />
+                </>
               ),
             },
             {
@@ -222,6 +304,40 @@ export default function ExpertWorkbench() {
       <Typography.Text type="secondary" style={{ fontSize: 11 }}>
         演示日期 {DEMO_TODAY} · 专家不可接诊本人作业相关评分场景（回避原则）
       </Typography.Text>
+
+      {/* V7.0 CR-36：专家自助排班申请（拍板 7-C） */}
+      <Modal
+        open={applyOpen} title="申请开放时段" onCancel={() => setApplyOpen(false)}
+        onOk={submitApply} okText="提交申请" destroyOnClose
+      >
+        <Form form={applyForm} layout="vertical" preserve={false}
+          initialValues={{ capacity: 1, type: '1v1' }}>
+          <Form.Item name="date" label="日期" rules={[{ required: true, message: '请选择日期' }]}>
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+          {/* 拍板 8-C：预置时段优先，允许手工输入 */}
+          <Form.Item name="slot" label="时段" rules={[{ required: true, message: '请选择或填写时段' }]}>
+            <AutoComplete
+              options={SCHEDULE_SLOTS.map((v) => ({ value: v }))}
+              placeholder="选择预置时段，或手工输入"
+              filterOption={(input, option) => String(option?.value ?? '').includes(input)}
+            />
+          </Form.Item>
+          {/* 确认项 4：形式仅保留 3 种 */}
+          <Form.Item name="type" label="形式" rules={[{ required: true }]}>
+            <Select options={SCHEDULE_TYPES.map((v) => ({ value: v, label: v }))} />
+          </Form.Item>
+          <Form.Item name="capacity" label="容量" rules={[{ required: true }]}>
+            <InputNumber min={1} max={20} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="place_or_link" label="地点/链接">
+            <Input placeholder="线上填会议链接，线下填地点" />
+          </Form.Item>
+        </Form>
+        <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+          提交后进入组织者审核队列；通过后才会开放预约。与该时段已有排班撞车时会标记「撞车」，由组织者决定如何处理。
+        </Typography.Text>
+      </Modal>
     </Space>
   );
 }

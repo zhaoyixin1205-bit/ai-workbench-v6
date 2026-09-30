@@ -5,6 +5,8 @@ import { COLOR } from '@/theme';
 import { PageHeader, StatCard } from '@/components/ui';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import BoardConfigPanel from '@/components/BoardConfigPanel';
+/* V7.0 CR-33：枚举字典展示中文，与 C 端页面口径一致 */
+import { statusText } from '@/constants/statusMeta';
 
 export default function SystemAdmin() {
   const { db, log } = useStore();
@@ -64,13 +66,14 @@ export default function SystemAdmin() {
                       deprecated: ['LEADER'],
                     },
                     { title: '数据范围', values: ['SELF', 'DEPT_TREE', 'ALL'] },
-                    { title: '提报状态', values: ['DRAFT', 'SUBMITTED', 'AI_SCORED', 'REVIEWED', 'PASSED', 'PUBLISHED', 'ASSET_ONLINE', 'WITHDRAWN'] },
+                    /* V7.0 CR-33：提报状态走中文真源（title 保留原枚举，便于对照代码） */
+                    { title: '提报状态', values: ['DRAFT', 'SUBMITTED', 'AI_SCORED', 'REVIEWED', 'PASSED', 'PUBLISHED', 'ASSET_ONLINE', 'WITHDRAWN'], zh: true },
                     { title: '悬赏状态', values: ['PENDING_REVIEW', 'PUBLISHED', 'CLAIMED', 'SUBMITTED', 'APPROVED', 'REJECTED', 'EXPIRED'] },
-                  ] as { title: string; values: string[]; deprecated?: string[] }[]).map((d) => (
+                  ] as { title: string; values: string[]; deprecated?: string[]; zh?: boolean }[]).map((d) => (
                     <Col xs={24} sm={12} lg={8} key={d.title}>
                       <Card size="small" title={d.title} style={{ marginBottom: 12 }}>
                         <Space wrap>
-                          {d.values.map((v) => <Tag key={v}>{v}</Tag>)}
+                          {d.values.map((v) => <Tag key={v} title={v}>{d.zh ? statusText(v) : v}</Tag>)}
                           {(d.deprecated ?? []).map((v) => (
                             <Tag key={v} style={{ opacity: 0.55, textDecoration: 'line-through' }}>{v} · 已废弃</Tag>
                           ))}

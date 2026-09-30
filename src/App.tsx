@@ -25,6 +25,8 @@ import Shop from '@/pages/c/Shop';
 import Profile from '@/pages/c/Profile';
 /* V6.0 CR-30：负责人团队视图 */
 import TeamView from '@/pages/c/TeamView';
+/* V7.0 CR-32：C 端评委评分（复用后台评委复核业务组件） */
+import JudgeScore from '@/pages/c/JudgeScore';
 
 import ExpertWorkbench from '@/pages/e/ExpertWorkbench';
 
@@ -65,6 +67,8 @@ export default function App() {
                 <Route path="/" element={<Home />} />
                 <Route path="/cases" element={<CaseList />} />
                 <Route path="/cases/:id" element={<CaseDetail />} />
+                {/* V7.0 CR-32：C 端评委评分（菜单位置在「首页」与「案例与选题」之间，仅评委可见） */}
+                <Route path="/judge" element={<JudgeScore />} />
                 <Route path="/bounty" element={<BountyList />} />
                 <Route path="/bounty/create" element={<BountyCreate />} />
                 <Route path="/work" element={<WorkList />} />

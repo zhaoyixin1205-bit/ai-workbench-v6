@@ -10,7 +10,9 @@
     "preview": "vite preview --host 0.0.0.0 --port 4173",
     "typecheck": "tsc --noEmit",
     "server": "node server/index.mjs",
-    "smoke:files": "node scripts/file-service-smoke.mjs"
+    "smoke:files": "node scripts/file-service-smoke.mjs",
+    "guard": "node scripts/guard-regression.mjs",
+    "smoke:v7": "node scripts/v7-smoke.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "^5.5.1",

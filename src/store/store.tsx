@@ -8,7 +8,7 @@ import type {
   ScoreCard, ScoreResult, Expert, ExpertSchedule, Booking, ExpertReview, AssetApply, Asset,
   PointRecord, ShopItem, ShopOrder, Board, Post, PostComment, WbUsage, AuditLog, AppMessage,
   Campaign, Tag, Dept, TopicSelection, BoardConfig, ImportJob, ImportJobItem, Announcement,
-  SubmitFlowRule, SubmitFlowLog, ReviewOverride, SceneCard, AttachmentFile,
+  SubmitFlowRule, SubmitFlowLog, ReviewOverride, SceneCard, AttachmentFile, ScheduleRequest,
 } from '@/mock/types';
 
 export interface DB {
@@ -58,6 +58,8 @@ export interface DB {
   sceneCards: SceneCard[];
   /** V6.0 CR-31 真实文件记录（上传落真实存储后的元数据） */
   attachmentFiles: AttachmentFile[];
+  /** V7.0 CR-36 专家自助排班申请（拍板 7-C：提交为申请，组织者审核后生效） */
+  scheduleRequests: ScheduleRequest[];
 }
 
 /**
@@ -94,6 +96,7 @@ function initialDB(): DB {
     submitFlowLogs: [], reviewOverrides: [],
     sceneCards: biz.SCENE_CARDS,
     attachmentFiles: [],
+    scheduleRequests: [],
   };
 }
 
@@ -113,6 +116,7 @@ function hydrate(raw: unknown): DB {
     reviewOverrides: p.reviewOverrides ?? [],
     sceneCards: p.sceneCards ?? base.sceneCards,
     attachmentFiles: p.attachmentFiles ?? [],
+    scheduleRequests: p.scheduleRequests ?? [],
   };
 }
 
@@ -198,6 +202,22 @@ export interface FeatureFlags {
    * 另：后端不可达时前端自动降级到演示态，不需要人工关开关。
    */
   realFileService: boolean;
+  /* ---- V7.0 新增开关（关闭 ≡ 回到 V6.2 行为） ---- */
+  /** CR-32 C 端评委评分入口 /judge（关闭=不渲染入口且不可进入） */
+  cJudgeEntry: boolean;
+  /** CR-33 作业状态文案统一（关闭=B 端回到裸英文） */
+  statusMetaUnified: boolean;
+  /** CR-34 评分卡可编辑（关闭=回到只读 + 保存即新版本） */
+  scoreCardEditable: boolean;
+  /** CR-35 导入字段契约（关闭=模板与校验回到旧逻辑） */
+  importSchema: boolean;
+  /** CR-36 专家自助排班申请（关闭=专家端回到只能开放/停诊） */
+  expertSelfSchedule: boolean;
+  /**
+   * CR-38 商城组织者编辑权（拍板 6-B：默认关闭 = 维持 ADMIN-only）。
+   * 开启后组织者可编辑已发布商品，并写入审计日志。
+   */
+  shopOrgEditable: boolean;
 }
 
 /** 开关默认值：新增能力默认 ON（演示可见），风险类默认 OFF */
@@ -216,6 +236,9 @@ export const DEFAULT_FLAGS: FeatureFlags = {
   submitFlowControl: true, scoreCardLifecycle: true, judgeOverride: true,
   expertScheduleBatch: true, assetLedgerBatch: true, contentFullCrud: true, shopBatch: true,
   realFileService: true,
+  /* V7.0：新增能力默认 ON；权限放开类（shopOrgEditable）默认 OFF，符合拍板 6-B */
+  cJudgeEntry: true, statusMetaUnified: true, scoreCardEditable: true,
+  importSchema: true, expertSelfSchedule: true, shopOrgEditable: false,
 };
 
 /** V6.1：数据同步状态（前端据此告诉用户「现在是共享数据还是只有你一个人看得见」） */

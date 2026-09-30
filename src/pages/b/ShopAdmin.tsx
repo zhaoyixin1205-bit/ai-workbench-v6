@@ -4,9 +4,29 @@ import { useStore } from '@/store/store';
 import { COLOR } from '@/theme';
 import { PageHeader, StatCard } from '@/components/ui';
 import { DEMO_TODAY } from '@/mock/seedBiz';
-import ScopePicker, { ScopeText, useScopeCommit } from '@/components/ScopePicker';
+import ScopePicker, { ScopeText, parseScope, useScopeCommit } from '@/components/ScopePicker';
 import type { ScopeSubject, ShopItem } from '@/mock/types';
 import BatchImport from '@/components/BatchImport';
+/* V7.0 CR-38：商品字段契约（模板与校验同源） */
+import { shopSchema, VERIFY_TYPES, SHOP_STATUSES, parseSubjects } from '@/constants/importSchemas';
+
+/** V7.0 CR-38：商品导入行（显式泛型，避免 TS 从三态联合里推断成 {}） */
+interface ShopRow {
+  id?: string;
+  name: string;
+  points: number;
+  stock: number;
+  limit_per_user: number;
+  scope: string;
+  verify_type: ShopItem['verify_type'];
+  status: ShopItem['status'];
+}
+
+/** 把模板里「;」分隔的主体文本转成 ScopeSubject[]（全员 → ALL，其余以 DEPT 作载体） */
+const toSubjects = (raw: string): ScopeSubject[] =>
+  parseSubjects(raw).map((name) => (name === '全员'
+    ? { type: 'ALL' as const, id: 'ALL', name }
+    : { type: 'DEPT' as const, id: name, name }));
 
 /** '待核销'/'已核销'/'已取消' 为 V3.0 原值；'已发货'/'已完成' 为 V4.0 CR-05 新增 */
 const STATUS_COLOR: Record<string, string> = {
@@ -56,7 +76,60 @@ export default function ShopAdmin() {
   const commitScope = useScopeCommit();
 
   const isAdmin = hasRole('ADMIN');
+  /**
+   * V7.0 CR-38：拍板 6-B —— 默认维持「商品编辑仅 ADMIN」（与既有对账口径一致）。
+   * 开关 shopOrgEditable 打开后，组织者也可编辑已发布商品，并在审计日志中标明身份。
+   */
+  const orgEditable = flags.shopOrgEditable === true;
+  const canEdit = isAdmin || (orgEditable && hasRole('ORGANIZER'));
   const orders = db.shopOrders;
+
+  /** V7.0 CR-38：商品全字段编辑（原「编辑」按钮只有提示、无实际弹窗） */
+  const [editItem, setEditItem] = useState<ShopItem | null>(null);
+  const [editForm] = Form.useForm();
+
+  const openEditItem = (it: ShopItem) => {
+    setEditItem(it);
+    setScopeSubjects(parseScope(it.scope_subjects ?? it.scope));
+    editForm.resetFields();
+    editForm.setFieldsValue({
+      name: it.name, points: it.points, stock: it.stock,
+      limit_per_user: it.limit_per_user, verify_type: it.verify_type, status: it.status,
+    });
+  };
+
+  const commitEditItem = async () => {
+    let vals: {
+      name?: string; points?: number; stock?: number; limit_per_user?: number;
+      verify_type?: ShopItem['verify_type']; status?: ShopItem['status'];
+    };
+    try {
+      vals = await editForm.validateFields();
+    } catch {
+      message.error('请填写完整');
+      return;
+    }
+    const it = editItem!;
+    const label = scopeSubjects.map((s) => s.name).join('、');
+    setDb((p) => ({
+      ...p,
+      shopItems: p.shopItems.map((x) => (x.id === it.id ? {
+        ...x,
+        name: vals.name ?? x.name,
+        points: Number(vals.points ?? x.points),
+        stock: Number(vals.stock ?? x.stock),
+        limit_per_user: Number(vals.limit_per_user ?? x.limit_per_user),
+        scope: label || x.scope,
+        scope_subjects: scopeSubjects.length ? scopeSubjects : x.scope_subjects,
+        verify_type: vals.verify_type ?? x.verify_type,
+        status: vals.status ?? x.status,
+      } : x)),
+    }));
+    log('修改商品', it.name,
+      `积分 ${vals.points ?? it.points}｜库存 ${vals.stock ?? it.stock}｜限购 ${vals.limit_per_user ?? it.limit_per_user}｜适用人群 ${label || '不变'}｜核销 ${vals.verify_type ?? it.verify_type}｜状态 ${vals.status ?? it.status}${!isAdmin ? '（组织者编辑，shopOrgEditable 已开启）' : ''}`);
+    message.success('商品信息已更新');
+    setEditItem(null);
+  };
 
   /** V4.0 CR-08：新建商品，落库 scope_subjects 并在保存前回读校验 */
   const createItem = async () => {
@@ -163,52 +236,80 @@ export default function ShopAdmin() {
                     {/* V6.0 CR-29：批量上传（模板下载 + 三态回执）与批量删除（软删） */}
                     {shopBatchOn && (
                       <>
-                        <BatchImport
+                        <BatchImport<ShopRow>
                           title="商品批量导入"
-                          disabled={!isAdmin}
-                          columns={['商品名称', '所需积分', '库存', '每人限兑', '核销方式']}
-                          hint={`口径：库存为「总量」不是增量；导入后需人工确认上架，避免批量误上架导致超卖（模板日期 ${DEMO_TODAY}）`}
-                          sample={[['无线降噪耳机', '3200', '20', '1', '线下领取'], ['机械键盘', '2800', '15', '1', '邮寄']]}
+                          disabled={!canEdit}
+                          /* V7.0 CR-38：模板补齐「适用人群」「状态」「商品ID」三列，与上传校验同源 */
+                          schema={shopSchema}
                           validate={(rows) => rows.map((r, i) => {
-                            const [name, points, stock, limit, verify] = r;
-                            if (!name) return { row: i + 2, name: `第 ${i + 2} 行`, result: '失败' as const, reason: '商品名称为空' };
-                            if (!Number.isFinite(Number(points)) || Number(points) <= 0) {
-                              return { row: i + 2, name, result: '失败' as const, reason: '所需积分必须为正数' };
+                            const [itemId, name, points, stock, limit, scope, verify, status] = r;
+                            const display = name || itemId || `第 ${i + 2} 行`;
+                            /** 填了 ID = 更新已有商品；留空 = 新增 */
+                            const target = itemId ? db.shopItems.find((x) => x.id === itemId) : undefined;
+                            if (itemId && !target) {
+                              return { row: i + 2, name: display, result: '失败' as const, reason: `商品ID「${itemId}」不存在（更新请填准确 ID，新增请留空）` };
                             }
-                            const verifyType = (['线下领取', '邮寄', '线上发放'] as const).find((v) => v === verify);
+                            const verifyType = VERIFY_TYPES.find((v) => v === verify);
                             if (!verifyType) {
-                              return { row: i + 2, name, result: '失败' as const, reason: `核销方式「${verify || '空'}」不在枚举内` };
+                              return { row: i + 2, name: display, result: '失败' as const, reason: `核销方式「${verify || '空'}」不在可选项内（${VERIFY_TYPES.join(' / ')}）` };
+                            }
+                            if (!scope) {
+                              return { row: i + 2, name: display, result: '失败' as const, reason: '适用人群为空（全员 / 本部门，或多个主体用 ; 分隔）' };
+                            }
+                            const statusOk = status ? SHOP_STATUSES.find((v) => v === status) : '草稿';
+                            if (!statusOk) {
+                              return { row: i + 2, name: display, result: '失败' as const, reason: `状态「${status}」不在可选项内（${SHOP_STATUSES.join(' / ')}）` };
                             }
                             return {
-                              row: i + 2, name, result: '成功' as const,
+                              row: i + 2, name: display, result: '成功' as const,
                               data: {
-                                name,
+                                id: target?.id, name,
                                 points: Number(points),
                                 stock: Number(stock) || 0,
                                 limit_per_user: Number(limit) || 1,
+                                scope,
                                 verify_type: verifyType,
+                                /** 新增一律草稿（防超卖）；更新时按模板指定状态 */
+                                status: (statusOk ?? '草稿') as ShopItem['status'],
                               },
                             };
                           })}
                           onCommit={(items) => {
-                            const list = items.map((it) => it.data!).filter(Boolean);
-                            setDb((p) => ({
-                              ...p,
-                              /** 导入后统一为「草稿」，需人工确认上架 */
-                              shopItems: [
-                                ...list.map((d, i) => ({
-                                  id: `SI-${Date.now()}-${i}`,
-                                  name: d.name, cover: '🎁',
-                                  desc: '批量导入商品（待组织者补充描述与适用人群）',
-                                  points: d.points, stock: d.stock, limit_per_user: d.limit_per_user,
-                                  scope: '全员', on_sale_at: DEMO_TODAY, off_sale_at: '2026-12-31',
-                                  status: '草稿' as const, verify_type: d.verify_type, exchanged_count: 0,
-                                })),
-                                ...p.shopItems,
-                              ],
-                            }));
-                            log('批量导入商品', `${list.length} 件`, 'V6.0 CR-29：三态回执；导入后为草稿态，需人工确认上架（防超卖）');
-                            message.success(`已导入 ${list.length} 件商品（草稿态，需逐件确认上架）`);
+                            setDb((p) => {
+                              const creates = items.filter((it) => !it.data!.id);
+                              const updates = items.filter((it) => it.data!.id);
+                              const map = new Map(updates.map((it) => [it.data!.id!, it.data!]));
+                              return {
+                                ...p,
+                                shopItems: [
+                                  ...creates.map((it, i) => ({
+                                    id: `SI-${Date.now()}-${i}`,
+                                    name: it.data!.name, cover: '🎁',
+                                    desc: '批量导入商品（待组织者补充描述）',
+                                    points: it.data!.points, stock: it.data!.stock,
+                                    limit_per_user: it.data!.limit_per_user,
+                                    scope: it.data!.scope, scope_subjects: toSubjects(it.data!.scope),
+                                    on_sale_at: DEMO_TODAY, off_sale_at: '2026-12-31',
+                                    /** 导入新增统一为「草稿」，需人工确认上架（防超卖） */
+                                    status: '草稿' as const,
+                                    verify_type: it.data!.verify_type, exchanged_count: 0,
+                                  })),
+                                  ...p.shopItems.map((x) => {
+                                    const d = map.get(x.id);
+                                    if (!d) return x;
+                                    return {
+                                      ...x,
+                                      name: d.name, points: d.points, stock: d.stock,
+                                      limit_per_user: d.limit_per_user,
+                                      scope: d.scope, scope_subjects: toSubjects(d.scope),
+                                      verify_type: d.verify_type, status: d.status,
+                                    };
+                                  }),
+                                ],
+                              };
+                            });
+                            log('批量导入商品', `${items.length} 件`, 'V7.0 CR-38：全字段契约校验；新增为草稿态（防超卖），更新按模板状态写入');
+                            message.success(`已处理 ${items.length} 件商品（新增为草稿态，需逐件确认上架）`);
                           }}
                         />
                         <Button
@@ -219,7 +320,11 @@ export default function ShopAdmin() {
                         </Button>
                       </>
                     )}
-                    {!isAdmin && <Typography.Text type="secondary" style={{ fontSize: 12 }}>商品编辑需 ADMIN 权限</Typography.Text>}
+                    {!canEdit && (
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        商品编辑当前仅系统管理员可用（拍板 6-B）；如需放开给组织者，请在系统管理开启开关 shopOrgEditable。
+                      </Typography.Text>
+                    )}
                   </Space>
                   <Table
                     size="small" rowKey="id" pagination={false} dataSource={db.shopItems}
@@ -242,8 +347,9 @@ export default function ShopAdmin() {
                         title: '操作', width: 120,
                         render: (_, r) => (
                           <Space size={4}>
-                            <Button size="small" type="link" disabled={!isAdmin} onClick={() => message.info('库存扣减使用原子操作（乐观锁），防止并发超卖')}>编辑</Button>
-                            <Button size="small" type="link" disabled={!isAdmin} onClick={() => {
+                            {/* V7.0 CR-38：编辑改为真实弹窗（原实现只有一句提示，改不了任何字段） */}
+                            <Button size="small" type="link" disabled={!canEdit} onClick={() => openEditItem(r)}>编辑</Button>
+                            <Button size="small" type="link" disabled={!canEdit} onClick={() => {
                               setDb((p) => ({ ...p, shopItems: p.shopItems.map((x) => (x.id === r.id ? { ...x, status: x.status === '上架' ? '下架' : '上架' } : x)) }));
                               message.success('上下架状态已更新（不影响已生成订单）');
                             }}>{r.status === '上架' ? '下架' : '上架'}</Button>
@@ -360,6 +466,44 @@ export default function ShopAdmin() {
           兑换人：<b>{shipOrder?.name}</b>；发货后订单进入「已发货」，物流单号回写到用户「我的兑换」，用户确认收货或管理员点「完成」后闭环。
         </Typography.Paragraph>
         <Input placeholder="物流单号（≥6 位）" value={shipNo} onChange={(e) => setShipNo(e.target.value)} />
+      </Modal>
+
+      {/* V7.0 CR-38：商品全字段编辑（含适用人群、核销方式、状态） */}
+      <Modal
+        open={!!editItem} title={`修改商品 · ${editItem?.name ?? ''}`}
+        onCancel={() => setEditItem(null)} onOk={commitEditItem}
+        okText="保存" destroyOnClose width={560}
+      >
+        <Form form={editForm} layout="vertical" preserve={false}>
+          <Form.Item name="name" label="商品名称" rules={[{ required: true, message: '请填写商品名称' }]}>
+            <Input maxLength={30} />
+          </Form.Item>
+          <Space size={12} wrap>
+            <Form.Item name="points" label="所需积分" rules={[{ required: true }]}>
+              <InputNumber min={1} />
+            </Form.Item>
+            <Form.Item name="stock" label="库存" rules={[{ required: true }]}>
+              <InputNumber min={0} />
+            </Form.Item>
+            <Form.Item name="limit_per_user" label="限购（每人限兑）" rules={[{ required: true }]}>
+              <InputNumber min={1} />
+            </Form.Item>
+          </Space>
+          <Form.Item name="verify_type" label="核销方式" rules={[{ required: true }]}>
+            <Select options={VERIFY_TYPES.map((v) => ({ value: v, label: v }))} />
+          </Form.Item>
+          <Form.Item name="status" label="状态" rules={[{ required: true }]}>
+            <Select options={SHOP_STATUSES.map((v) => ({ value: v, label: v }))} />
+          </Form.Item>
+          <Form.Item label="适用人群">
+            <ScopePicker value={scopeSubjects} onChange={setScopeSubjects} />
+          </Form.Item>
+        </Form>
+        <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+          {isAdmin
+            ? '库存扣减使用原子操作（乐观锁），防止并发超卖。'
+            : '拍板 6-B：当前由组织者编辑（shopOrgEditable 已开启），本次修改会写入审计日志。'}
+        </Typography.Text>
       </Modal>
     </Space>
   );

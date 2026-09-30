@@ -16,14 +16,14 @@ import type { AssignmentSubmit, SubmitStatus, User } from '@/mock/types';
  * 本页**不展示**「已公示 / 已共识 / 入库」三类环节 —— 这些是组织者的运营后动作，
  * 不是团队进度的一部分。五档进度止于「已完成」，页面内不读取 is_published / ASSET_* 任何字段。
  */
-type Tier = '未提报' | '已提交' | '评分中' | '已复核' | '已完成';
+type Tier = '未提报' | '已提交' | '评分与复核中' | '已复核' | '已完成';
 
-const TIER_ORDER: Tier[] = ['未提报', '已提交', '评分中', '已复核', '已完成'];
+const TIER_ORDER: Tier[] = ['未提报', '已提交', '评分与复核中', '已复核', '已完成'];
 
 const TIER_COLOR: Record<Tier, string> = {
   未提报: 'default',
   已提交: 'blue',
-  评分中: 'cyan',
+  评分与复核中: 'cyan',
   已复核: 'purple',
   已完成: 'green',
 };
@@ -42,7 +42,7 @@ function tierOf(status?: SubmitStatus): Tier {
       return '已提交';
     case 'AI_SCORED':
     case 'REVIEWING':
-      return '评分中';
+      return '评分与复核中';
     case 'REVIEWED':
     case 'SPOT_CHECK':
     case 'PASSED':

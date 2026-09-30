@@ -1,11 +1,22 @@
-import { Button, Card, Col, Form, Input, InputNumber, Modal, Progress, Radio, Row, Select, Slider, Space, Table, Tag, Typography, App as AntApp, Alert, Divider } from 'antd';
+import { Button, Card, Col, Form, Input, InputNumber, Modal, Progress, Radio, Row, Select, Slider, Space, Table, Tabs, Tag, Typography, App as AntApp, Alert, Divider, Empty } from 'antd';
 import { SafetyCertificateOutlined } from '@ant-design/icons';
 import { useState } from 'react';
 import { useStore } from '@/store/store';
 import { COLOR } from '@/theme';
 import { PageHeader } from '@/components/ui';
-import type { AssignmentSubmit } from '@/mock/types';
+import type { AssignmentSubmit, ScoreCard, ScoreResult } from '@/mock/types';
 import { DEMO_TODAY } from '@/mock/seedBiz';
+import { statusText, statusColor } from '@/constants/statusMeta';
+
+/**
+ * V7.0 CR-32：兜底空卡。原实现对 SC1 用了非空断言（`!`），一旦没有启用的卡就白屏；
+ * 改为回退到本对象，页面照常渲染并提示「未配置评分卡」，不再崩溃。
+ */
+const EMPTY_CARD: ScoreCard = {
+  id: '—', name: '未配置评分卡', version: 'v0', total_rule: '加权求和', pass_line: 60,
+  ai_weight: 40, judge_weight: 60, status: '草稿', bind_target: '未绑定',
+  dimensions: [], updated_at: '',
+};
 
 /** V4.0 CR-07：抽查三问 → 一次「真实性确认」 */
 interface ConfirmDraft {
@@ -18,7 +29,14 @@ interface ConfirmDraft {
   q3?: string;
 }
 
-export default function JudgeReview() {
+/**
+ * V7.0 CR-32：本组件被两处复用 ——
+ *  - variant='admin'（默认）：后台「评委复核」，自带 PageHeader；
+ *  - variant='c'：C 端「评委评分」（/judge），由外层页面提供标题，
+ *    且按确认项 5 拆成「待我评分」+「我的历史评分（可修改）」两个 Tab。
+ */
+export default function JudgeReview({ variant = 'admin' }: { variant?: 'admin' | 'c' }) {
+  const isC = variant === 'c';
   const { db, me, setDb, log, hasRole, flags } = useStore();
   const { message } = AntApp.useApp();
   const [current, setCurrent] = useState<AssignmentSubmit | null>(null);
@@ -26,6 +44,9 @@ export default function JudgeReview() {
   const [opinion, setOpinion] = useState('');
   const [spot, setSpot] = useState<{ q1: string; q2: string; q3: string } | null>(null);
   const [confirm, setConfirm] = useState<ConfirmDraft | null>(null);
+  /** V7.0 CR-32：历史评分修订目标（确认项 5：能看到历史评分并进行修改） */
+  const [reviseTarget, setReviseTarget] = useState<ScoreResult | null>(null);
+  const [cTab, setCTab] = useState<'pending' | 'history'>('pending');
 
   /** PRD V4.0 §6.2：ADMIN 可进入本页查看（菜单可见），但无业务审批权，操作入口禁用 */
   const canOperate = hasRole('JUDGE', 'ORGANIZER');
@@ -34,18 +55,74 @@ export default function JudgeReview() {
   const deepSpot = flags.judgeDeepSpotCheck === true;
 
   /** V4.0 CR-07：已做真实性确认的作业保留在队列内（便于截止前撤回重评），仅本开关路径下才会出现 confirmed 字段 */
-  const card = db.scoreCards.find((c) => c.id === 'SC1' && c.status === '启用')!;
-  const queue = db.submits.filter(
+  /**
+   * V7.0 CR-32：去掉对 SC1 的硬编码非空断言 —— 原写法在未启用 SC1 时会直接白屏，
+   * C 端复用后触发概率更高。改为「启用的卡 → 任意未软删的卡」两级回退。
+   */
+  const card = db.scoreCards.find((c) => c.id === 'SC1' && c.status === '启用' && !c.is_deleted)
+    ?? db.scoreCards.find((c) => c.status === '启用' && !c.is_deleted)
+    ?? db.scoreCards.find((c) => !c.is_deleted)
+    ?? EMPTY_CARD;
+
+  /** 我已评分过的提报（用于 C 端区分「待我评分」与「已评分」） */
+  const myJudgedIds = new Set(
+    db.scoreResults.filter((r) => r.source === 'JUDGE' && r.scorer_union_id === me.union_id).map((r) => r.target_id),
+  );
+  /** V7.0 CR-32：我的历史评分记录（最新在前），供 C 端「历史评分」Tab 展示与修改 */
+  const myHistory = db.scoreResults
+    .filter((r) => r.source === 'JUDGE' && r.scorer_union_id === me.union_id)
+    .sort((a, b) => b.created_at.localeCompare(a.created_at));
+
+  const baseQueue = db.submits.filter(
     (s) => (['AI_SCORED', 'REVIEWING', 'REVIEWED', 'SPOT_CHECK'].includes(s.status) || !!s.confirmed)
       && s.union_id !== me.union_id,
   );
+  /** C 端「待我评分」= 队列里我还没打过分的；后台保持原口径不变（兼容既有行为） */
+  const queue = isC ? baseQueue.filter((s) => !myJudgedIds.has(s.id)) : baseQueue;
 
   const total = card.dimensions.reduce((a, d) => a + (scores[d.name] ?? 0), 0);
   const now = () => `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`;
 
+  /** V7.0 CR-32：历史评分修订入口（确认项 5）—— 预填原分与原意见 */
+  const openRevise = (r: ScoreResult) => {
+    const s = db.submits.find((x) => x.id === r.target_id);
+    if (!s) { message.error('原提报不存在，无法修订'); return; }
+    setReviseTarget(r);
+    setCurrent(s);
+    setScores({ ...r.dim_scores });
+    setOpinion(r.reason ?? '');
+  };
+
+  /**
+   * V7.0 CR-32：提交修订 —— 遵循项目「覆盖不覆写」原则：
+   * 原评分记录保持不可变，修订以**新记录**追加，提报上的分数指向最新一次。
+   */
+  const submitRevise = () => {
+    const r = reviseTarget!;
+    const s = current!;
+    const final = Math.round(((s.ai_score ?? 0) * card.ai_weight / 100 + total * card.judge_weight / 100) * 10) / 10;
+    setDb((p) => ({
+      ...p,
+      submits: p.submits.map((x) => (x.id === s.id ? { ...x, judge_score: total, final_score: final } : x)),
+      scoreResults: [...p.scoreResults, {
+        id: `SR-${s.id}-JD-RV-${Date.now()}`, target_type: 'submit', target_id: s.id,
+        card_id: card.id, card_version: card.version, source: 'JUDGE',
+        dim_scores: scores, total, reason: opinion,
+        scorer_union_id: me.union_id, scorer_name: me.name, created_at: now(),
+      }],
+    }));
+    log('修订历史评分', s.code,
+      `原 ${r.total} 分（${r.created_at}）→ 现 ${total} 分；修订不覆写，原记录保留可追溯`);
+    message.success(`已修订为 ${total} 分（原 ${r.total} 分记录保留）`);
+    setReviseTarget(null); setCurrent(null); setScores({}); setOpinion('');
+  };
+
   const submitScore = () => {
+    if (card.dimensions.length === 0) { message.warning('评分卡未配置维度，请先到「评分卡管理」配置'); return; }
     if (Object.keys(scores).length < card.dimensions.length) { message.warning('请完成所有维度打分'); return; }
     if (opinion.trim().length < 10) { message.warning('复核意见至少 10 字'); return; }
+    /** 修订态走另一条分支：新增记录而非覆写 */
+    if (reviseTarget) { submitRevise(); return; }
     setDb((p) => ({
       ...p,
       submits: p.submits.map((s) => (s.id === current!.id
@@ -198,26 +275,8 @@ export default function JudgeReview() {
     overrideForm.resetFields();
   };
 
-  return (
-    <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <PageHeader title="评委复核" desc="AI 预评分 + 评委复核，最终分按权重合成" />
-      {!canOperate && (
-        <Alert type="warning" showIcon
-          message="当前身份为只读浏览"
-          description="PRD V3.0 §3.2：系统管理员无业务数据审批权，仅可查看复核队列与进度；打分、抽查与真实性确认需评委（JUDGE）或组织者（ORGANIZER）身份。" />
-      )}
-      <Alert type="info" showIcon
-        message={`最终分 = AI 分 × ${card.ai_weight}% + 评委均分 × ${card.judge_weight}%（多评委取均值，公式后台可配置）`}
-        description="评委姓名从钉钉读取、不可编辑；评委不能复核自己的作业，系统自动过滤。" />
-      {confirmMode && (
-        <Alert type="success" showIcon
-          message="V4.0 CR-07：抽查已简化为一次「真实性确认」"
-          description="确认人取钉钉身份不可编辑，确认即代表复核结束；评分截止前可撤回重评（全程留痕）。原三问字段保留为可选高级项，由开关 judge.deepSpotCheck 控制。" />
-      )}
-
-      <Row gutter={16}>
-        <Col xs={24} lg={14}>
-          <Card size="small" title={`待复核队列（${queue.length}）`}>
+  /** V7.0 CR-32：待我评分队列（后台=待复核队列；C 端=我还没评过的） */
+  const queueTable = (
             <Table
               size="small" rowKey="id" pagination={{ pageSize: 6 }} dataSource={queue}
               columns={[
@@ -225,12 +284,13 @@ export default function JudgeReview() {
                 { title: '姓名', dataIndex: 'name', width: 80 },
                 { title: '作业', dataIndex: 'title', ellipsis: true },
                 { title: 'AI 分', dataIndex: 'ai_score', width: 70, render: (v?: number) => <span className="num">{v ?? '—'}</span> },
-                { title: '状态', dataIndex: 'status', render: (v: string) => <Tag color={v === 'REVIEWED' ? 'green' : 'purple'}>{v}</Tag> },
+                /* V7.0 CR-33：状态列走唯一真源，不再显示裸英文 */
+                { title: '状态', dataIndex: 'status', render: (v: string) => <Tag color={statusColor(v)}>{statusText(v)}</Tag> },
                 {
                   title: '操作', width: confirmMode ? 180 : 140,
                   render: (_, r) => (
                     <Space size={4}>
-                      <Button size="small" type="link" disabled={!canOperate} onClick={() => setCurrent(r)}>打分</Button>
+                      <Button size="small" type="link" disabled={!canOperate} onClick={() => { setReviseTarget(null); setScores({}); setOpinion(''); setCurrent(r); }}>打分</Button>
                       {confirmMode ? (
                         r.confirmed ? (
                           <Button size="small" type="link" disabled={!canOperate} onClick={() => retractConfirm(r)}>撤回确认</Button>
@@ -278,7 +338,80 @@ export default function JudgeReview() {
                 rowExpandable: (r) => confirmMode,
               } : undefined}
             />
-          </Card>
+  );
+
+  /** V7.0 CR-32：我的历史评分（确认项 5：能看到历史评分并进行修改） */
+  const historyTable = (
+    <Table
+      size="small" rowKey="id" pagination={{ pageSize: 6 }} dataSource={myHistory}
+      locale={{ emptyText: <Empty description="还没有评分记录" /> }}
+      columns={[
+        {
+          title: '提报', width: 140,
+          render: (_, r: ScoreResult) => db.submits.find((s) => s.id === r.target_id)?.code ?? r.target_id,
+        },
+        {
+          title: '作业', ellipsis: true,
+          render: (_, r: ScoreResult) => db.submits.find((s) => s.id === r.target_id)?.title ?? '—',
+        },
+        { title: '我的评分', dataIndex: 'total', width: 90, render: (v: number) => <span className="num">{v}</span> },
+        { title: '评分卡', width: 120, render: (_, r: ScoreResult) => `${r.card_id} ${r.card_version}` },
+        { title: '评分时间', dataIndex: 'created_at', width: 150 },
+        {
+          title: '操作', width: 100,
+          render: (_, r: ScoreResult) => (
+            <Button size="small" type="link" disabled={!canOperate} onClick={() => openRevise(r)}>修改评分</Button>
+          ),
+        },
+      ]}
+      expandable={{
+        expandedRowRender: (r: ScoreResult) => (
+          <div style={{ fontSize: 12, color: COLOR.textSub }}>
+            <Space size={12} wrap>
+              {Object.entries(r.dim_scores).map(([k, v]) => (
+                <span key={k}>{k}：{v}</span>
+              ))}
+            </Space>
+            {r.reason && <div style={{ marginTop: 4 }}>意见：{r.reason}</div>}
+          </div>
+        ),
+      }}
+    />
+  );
+
+  return (
+    <Space direction="vertical" size={16} style={{ width: '100%' }}>
+      <PageHeader title="评委复核" desc="AI 预评分 + 评委复核，最终分按权重合成" />
+      {!canOperate && (
+        <Alert type="warning" showIcon
+          message="当前身份为只读浏览"
+          description="PRD V3.0 §3.2：系统管理员无业务数据审批权，仅可查看复核队列与进度；打分、抽查与真实性确认需评委（JUDGE）或组织者（ORGANIZER）身份。" />
+      )}
+      <Alert type="info" showIcon
+        message={`最终分 = AI 分 × ${card.ai_weight}% + 评委均分 × ${card.judge_weight}%（多评委取均值，公式后台可配置）`}
+        description="评委姓名从钉钉读取、不可编辑；评委不能复核自己的作业，系统自动过滤。" />
+      {confirmMode && (
+        <Alert type="success" showIcon
+          message="V4.0 CR-07：抽查已简化为一次「真实性确认」"
+          description="确认人取钉钉身份不可编辑，确认即代表复核结束；评分截止前可撤回重评（全程留痕）。原三问字段保留为可选高级项，由开关 judge.deepSpotCheck 控制。" />
+      )}
+
+      <Row gutter={16}>
+        <Col xs={24} lg={14}>
+          {isC ? (
+            <Card size="small">
+              <Tabs
+                activeKey={cTab}
+                onChange={(k) => setCTab(k as 'pending' | 'history')}
+                items={[
+                  { key: 'pending', label: `待我评分（${queue.length}）`, children: queueTable },
+                  { key: 'history', label: `我的历史评分（${myHistory.length}）`, children: historyTable },
+                ]}
+              />
+            </Card>
+          ) : (
+            <Card size="small" title={`待复核队列（${queue.length}）`}>{queueTable}</Card>
+          )}
         </Col>
 
         <Col xs={24} lg={10}>
@@ -307,12 +440,14 @@ export default function JudgeReview() {
                 <span>评委合计</span><span className="num" style={{ color: COLOR.primary, fontSize: 20 }}>{total}</span>
               </div>
               <Input.TextArea
-                rows={3} style={{ marginTop: 8 }} placeholder="复核意见（≥10 字）"
+                rows={3} style={{ marginTop: 8 }} placeholder={reviseTarget ? '修订意见（≥10 字，说明为什么改分）' : '复核意见（≥10 字）'}
                 value={opinion} onChange={(e) => setOpinion(e.target.value)}
               />
               <Space style={{ marginTop: 8 }}>
-                <Button type="primary" disabled={!canOperate} onClick={submitScore}>提交复核</Button>
-                <Button onClick={() => setCurrent(null)}>取消</Button>
+                <Button type="primary" disabled={!canOperate} onClick={submitScore}>
+                  {reviseTarget ? '提交修订' : '提交复核'}
+                </Button>
+                <Button onClick={() => { setCurrent(null); setReviseTarget(null); setScores({}); setOpinion(''); }}>取消</Button>
               </Space>
             </Card>
           ) : (
