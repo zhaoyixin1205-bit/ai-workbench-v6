@@ -33,7 +33,7 @@ export default function PostDetailV2() {
 
   if (!p) {
     return (
-      <div className="wb2-page">
+      <div>
         <div className="wb2-empty">
           <div className="ic">🔍</div>
           <div className="t">帖子不存在或已被删除</div>
@@ -79,7 +79,7 @@ export default function PostDetailV2() {
   };
 
   return (
-    <div className="wb2-page">
+    <div>
       <Link to="/community" className="wb2-fhint" style={{ display: 'inline-block', marginBottom: 4 }}>
         <ArrowLeftOutlined /> 返回社区
       </Link>

@@ -115,7 +115,7 @@ export default function HomeV2() {
   };
 
   return (
-    <div className="wb2-page">
+    <div>
       {/* Hero */}
       <div className="wb2-hero">
         <div className="row">

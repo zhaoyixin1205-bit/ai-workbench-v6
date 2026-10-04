@@ -42,7 +42,7 @@ export default function ProfileV2() {
   const rank = [...db.users].sort((a, b) => b.points - a.points).findIndex((u) => u.union_id === me.union_id) + 1;
 
   return (
-    <div className="wb2-page">
+    <div>
       {/* 身份卡（品牌带 + 零投影） */}
       <div className="wb2-hero">
         <div className="row">

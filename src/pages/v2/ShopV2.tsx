@@ -59,7 +59,7 @@ export default function ShopV2() {
   const items = db.shopItems.filter((i) => i.status === '上架' || i.status === '售罄');
 
   return (
-    <div className="wb2-page">
+    <div>
       <div className="wb2-ph">
         <div>
           <div className="wb2-ph-t">积分兑换商城</div>

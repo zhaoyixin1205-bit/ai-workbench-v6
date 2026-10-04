@@ -19,6 +19,8 @@
   --wb-primary-active: #d94e1f;
   --wb-primary-soft: #fff1eb;
   --wb-primary-subtle: #ffe4d9;
+  /* Hero 渐变末端（原 template.css 内联 #ff8f5e，P3-6 收编为令牌） */
+  --wb-primary-light: #ff8f5e;
   /* 品牌色上的「墨色」：白底 / 暖底都可读的深橙，用于强调文字与品牌按钮 */
   --wb-primary-ink: #c2410c;
 

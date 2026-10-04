@@ -64,7 +64,7 @@ export default function CommunityV2() {
   }, [db.posts, board, sort]);
 
   return (
-    <div className="wb2-page">
+    <div>
       <div className="wb2-ph">
         <div>
           <div className="wb2-ph-t">用户社区</div>

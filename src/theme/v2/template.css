@@ -156,9 +156,6 @@
   color: var(--wb-ink-1);
   margin-bottom: var(--wb-space-4);
 }
-.wb2-sec + .wb2-sec {
-  margin-top: var(--wb-space-6);
-}
 .wb2-grid2 {
   display: grid;
   grid-template-columns: 1.5fr 1fr;
@@ -516,7 +513,7 @@
   position: relative;
   border-radius: var(--wb-radius-lg);
   padding: var(--wb-space-7) var(--wb-space-8);
-  background: linear-gradient(120deg, var(--wb-primary) 0%, #ff8f5e 100%);
+  background: linear-gradient(120deg, var(--wb-primary) 0%, var(--wb-primary-light) 100%);
   color: #fff;
   overflow: hidden;
 }

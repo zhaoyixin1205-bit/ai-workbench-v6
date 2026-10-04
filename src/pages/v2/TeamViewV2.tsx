@@ -131,8 +131,8 @@ export default function TeamViewV2() {
           </div>
         </div>
         <div className="wb2-empty">
-          <div className="wb2-empty-t">当前身份没有管辖的团队成员</div>
-          <div className="wb2-empty-d">若你认为这是误判，请联系组织者核对部门负责人属性</div>
+          <div className="t">当前身份没有管辖的团队成员</div>
+          <div className="d">若你认为这是误判，请联系组织者核对部门负责人属性</div>
         </div>
       </div>
     );
@@ -159,20 +159,20 @@ export default function TeamViewV2() {
       {/* ② 四指标 */}
       <div className="wb2-metrics">
         <div className="wb2-metric">
-          <div className="wb2-metric-l">团队人数</div>
-          <div className="wb2-metric-v">{members.length}</div>
+          <div className="lb">团队人数</div>
+          <div className="vl">{members.length}</div>
         </div>
         <div className="wb2-metric">
-          <div className="wb2-metric-l">已提报</div>
-          <div className="wb2-metric-v">{submitted.length}</div>
+          <div className="lb">已提报</div>
+          <div className="vl">{submitted.length}</div>
         </div>
         <div className="wb2-metric">
-          <div className="wb2-metric-l">未提报</div>
-          <div className="wb2-metric-v">{pending.length}</div>
+          <div className="lb">未提报</div>
+          <div className="vl">{pending.length}</div>
         </div>
         <div className="wb2-metric">
-          <div className="wb2-metric-l">平均分</div>
-          <div className="wb2-metric-v">{avgScore || '—'}</div>
+          <div className="lb">平均分</div>
+          <div className="vl">{avgScore || '—'}</div>
         </div>
       </div>
 

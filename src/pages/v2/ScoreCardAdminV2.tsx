@@ -27,7 +27,7 @@ function levelTextOf(d: ScoreDimension): string {
  *   ⑤ 状态 Tag（green/gold/default）→ `.wb2-tag` 四档语义
  *   ⑥ 4 处 modal.confirm / modal.info → `Dialog` + `useConfirm()`
  *      （删除属危险操作：danger + 禁点遮罩 + 默认聚焦取消）
- *   ⑦ 原生 `<select>` → 令牌化的 `<select className="wb2-sel">`
+ *   ⑦ 原生 `<select>` → 令牌化的 `<select className="wb2-chip">`
  *
  * 业务：CR-24 生命周期（新建/复制/启停/软删）、CR-34 可编辑与版本策略（草稿原地改 / 启用升版本）、
  * 权重合计 =100 与双轨权重 =100 双重校验、引用计数拦截删除——逐行沿用 v1，未改任何判定与写入字段。

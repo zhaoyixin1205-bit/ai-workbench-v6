@@ -68,6 +68,8 @@ import TeamView from '@/pages/c/TeamView';
 import JudgeScore from '@/pages/c/JudgeScore';
 
 import ExpertWorkbench from '@/pages/e/ExpertWorkbench';
+/* P3-6 清理期补齐：expert 域唯一未接入的页面 */
+import ExpertWorkbenchV2 from '@/pages/v2/ExpertWorkbenchV2';
 
 import Dashboard from '@/pages/b/Dashboard';
 import AssignmentAdmin from '@/pages/b/AssignmentAdmin';
@@ -135,7 +137,7 @@ function AppShell() {
           <Route path="/clinic/expert/:id" element={<V2Page v1={<ExpertDetail />} v2={<ExpertDetailV2 />} />} />
           <Route path="/clinic/mine" element={<V2Page v1={<MyBooking />} v2={<MyBookingV2 />} />} />
           {/* V6.0 CR-16：专家工作台下沉至 C 端，与 /admin/expert-workbench 共用同一组件实例 */}
-          <Route path="/clinic/workbench" element={<ExpertWorkbench />} />
+          <Route path="/clinic/workbench" element={<V2Page v1={<ExpertWorkbench />} v2={<ExpertWorkbenchV2 />} />} />
           {/* V6.0 CR-30：负责人团队视图 */}
           <Route path="/team" element={<V2Page v1={<TeamView />} v2={<TeamViewV2 />} />} />
           <Route path="/community" element={<V2Page v1={<Community />} v2={<CommunityV2 />} />} />

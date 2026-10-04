@@ -36,7 +36,7 @@ export default function AssetLibraryV2() {
   const totalUsers = db.assets.reduce((a, b) => a + b.reuse_user_count, 0);
 
   return (
-    <div className="wb2-page">
+    <div>
       <div className="wb2-ph">
         <div>
           <div className="wb2-ph-t">企业资产库</div>

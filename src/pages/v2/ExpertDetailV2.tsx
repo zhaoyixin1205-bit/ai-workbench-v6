@@ -34,8 +34,8 @@ export default function ExpertDetailV2() {
   if (!e) {
     return (
       <div className="wb2-empty">
-        <div className="wb2-empty-t">专家不存在</div>
-        <div className="wb2-empty-d">该专家可能已下线，或链接有误</div>
+        <div className="t">专家不存在</div>
+        <div className="d">该专家可能已下线，或链接有误</div>
         <Link to="/clinic"><Button type="primary">返回专家门诊</Button></Link>
       </div>
     );
@@ -99,19 +99,19 @@ export default function ExpertDetailV2() {
           {/* ② 三指标 + 好评率 */}
           <div className="wb2-metrics">
             <div className="wb2-metric">
-              <div className="wb2-metric-l"><StarFilled /> 综合评分</div>
-              <div className="wb2-metric-v">{e.rating_avg}</div>
-              <div className="wb2-metric-s">基于 {reviews.length} 条评价</div>
+              <div className="lb"><StarFilled /> 综合评分</div>
+              <div className="vl">{e.rating_avg}</div>
+              <div className="sb">基于 {reviews.length} 条评价</div>
             </div>
             <div className="wb2-metric">
-              <div className="wb2-metric-l"><MedicineBoxOutlined /> 累计接诊</div>
-              <div className="wb2-metric-v">{e.serve_count}</div>
-              <div className="wb2-metric-s">次</div>
+              <div className="lb"><MedicineBoxOutlined /> 累计接诊</div>
+              <div className="vl">{e.serve_count}</div>
+              <div className="sb">次</div>
             </div>
             <div className="wb2-metric">
-              <div className="wb2-metric-l"><TrophyOutlined /> 接诊积分</div>
-              <div className="wb2-metric-v">{e.points}</div>
-              <div className="wb2-metric-s">积分入账</div>
+              <div className="lb"><TrophyOutlined /> 接诊积分</div>
+              <div className="vl">{e.points}</div>
+              <div className="sb">积分入账</div>
             </div>
           </div>
           <div className="wb2-dist" style={{ marginTop: 'var(--wb-space-4)' }}>
@@ -129,7 +129,7 @@ export default function ExpertDetailV2() {
             <div className="wb2-card-t">就诊评价（最新 {Math.min(10, reviews.length)} 条）</div>
             {reviews.length === 0 ? (
               <div className="wb2-empty">
-                <div className="wb2-empty-d">暂无评价</div>
+                <div className="d">暂无评价</div>
               </div>
             ) : (
               <div className="wb2-list">
@@ -141,7 +141,7 @@ export default function ExpertDetailV2() {
                         {r.anonymous ? '匿名用户' : db.users.find((u) => u.union_id === r.rater_union_id)?.name}
                         <Rate disabled allowHalf value={r.rating} style={{ fontSize: 12, marginLeft: 8 }} />
                       </div>
-                      <div className="wb2-li-d">
+                      <div className="wb2-li-s">
                         专业 {r.dim_scores.专业度} · 响应 {r.dim_scores.响应速度} · 解决 {r.dim_scores.解决问题程度}
                       </div>
                       <div style={{ marginTop: 4, color: 'var(--wb-ink-2)' }}>{r.comment}</div>
@@ -164,7 +164,7 @@ export default function ExpertDetailV2() {
                   <div key={m.id} className="wb2-li">
                     <div className="wb2-li-m">
                       <div className="wb2-li-t">{m.title}</div>
-                      <div className="wb2-li-d">
+                      <div className="wb2-li-s">
                         {m.date} · {m.views} 次检索
                         {m.tags.map((t) => <span key={t} className="wb2-tag" style={{ marginLeft: 4 }}>{t}</span>)}
                       </div>
@@ -180,7 +180,7 @@ export default function ExpertDetailV2() {
             <div className="wb2-card-pad">
               <div className="wb2-card-t">近期可约号源</div>
               {schedules.length === 0 ? (
-                <div className="wb2-empty-d">暂无号源</div>
+                <div className="d">暂无号源</div>
               ) : (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--wb-space-2)' }}>
                   {schedules.map((s) => (
