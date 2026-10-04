@@ -16,6 +16,21 @@ import CaseListV2 from '@/pages/v2/CaseListV2';
 import CaseDetailV2 from '@/pages/v2/CaseDetailV2';
 import WorkSubmitV2 from '@/pages/v2/WorkSubmitV2';
 import DashboardV2 from '@/pages/v2/DashboardV2';
+import HomeV2 from '@/pages/v2/HomeV2';
+import ExpertDetailV2 from '@/pages/v2/ExpertDetailV2';
+import TeamViewV2 from '@/pages/v2/TeamViewV2';
+import CommunityV2 from '@/pages/v2/CommunityV2';
+import PostDetailV2 from '@/pages/v2/PostDetailV2';
+import AssetLibraryV2 from '@/pages/v2/AssetLibraryV2';
+import ShopV2 from '@/pages/v2/ShopV2';
+import ProfileV2 from '@/pages/v2/ProfileV2';
+import JudgeScoreV2 from '@/pages/v2/JudgeScoreV2';
+import BountyListV2 from '@/pages/v2/BountyListV2';
+import BountyCreateV2 from '@/pages/v2/BountyCreateV2';
+import WorkListV2 from '@/pages/v2/WorkListV2';
+import WorkDetailV2 from '@/pages/v2/WorkDetailV2';
+import ClinicV2 from '@/pages/v2/ClinicV2';
+import MyBookingV2 from '@/pages/v2/MyBookingV2';
 
 import Home from '@/pages/c/Home';
 import CaseList from '@/pages/c/CaseList';
@@ -92,28 +107,28 @@ function AppShell() {
     <HashRouter>
       <Routes>
         <Route element={<CShell />}>
-          <Route path="/" element={<Home />} />
+          <Route path="/" element={<V2Page v1={<Home />} v2={<HomeV2 />} />} />
           <Route path="/cases" element={<V2Page v1={<CaseList />} v2={<CaseListV2 />} />} />
           <Route path="/cases/:id" element={<V2Page v1={<CaseDetail />} v2={<CaseDetailV2 />} />} />
           {/* V7.0 CR-32：C 端评委评分（菜单位置在「首页」与「案例与选题」之间，仅评委可见） */}
-          <Route path="/judge" element={<JudgeScore />} />
-          <Route path="/bounty" element={<BountyList />} />
-          <Route path="/bounty/create" element={<BountyCreate />} />
-          <Route path="/work" element={<WorkList />} />
-          <Route path="/work/:id" element={<WorkDetail />} />
+          <Route path="/judge" element={<V2Page v1={<JudgeScore />} v2={<JudgeScoreV2 />} />} />
+          <Route path="/bounty" element={<V2Page v1={<BountyList />} v2={<BountyListV2 />} />} />
+          <Route path="/bounty/create" element={<V2Page v1={<BountyCreate />} v2={<BountyCreateV2 />} />} />
+          <Route path="/work" element={<V2Page v1={<WorkList />} v2={<WorkListV2 />} />} />
+          <Route path="/work/:id" element={<V2Page v1={<WorkDetail />} v2={<WorkDetailV2 />} />} />
           <Route path="/work/submit/:typeId" element={<V2Page v1={<WorkSubmit />} v2={<WorkSubmitV2 />} />} />
-          <Route path="/clinic" element={<Clinic />} />
-          <Route path="/clinic/expert/:id" element={<ExpertDetail />} />
-          <Route path="/clinic/mine" element={<MyBooking />} />
+          <Route path="/clinic" element={<V2Page v1={<Clinic />} v2={<ClinicV2 />} />} />
+          <Route path="/clinic/expert/:id" element={<V2Page v1={<ExpertDetail />} v2={<ExpertDetailV2 />} />} />
+          <Route path="/clinic/mine" element={<V2Page v1={<MyBooking />} v2={<MyBookingV2 />} />} />
           {/* V6.0 CR-16：专家工作台下沉至 C 端，与 /admin/expert-workbench 共用同一组件实例 */}
           <Route path="/clinic/workbench" element={<ExpertWorkbench />} />
           {/* V6.0 CR-30：负责人团队视图 */}
-          <Route path="/team" element={<TeamView />} />
-          <Route path="/community" element={<Community />} />
-          <Route path="/community/:id" element={<PostDetail />} />
-          <Route path="/assets" element={<AssetLibrary />} />
-          <Route path="/shop" element={<Shop />} />
-          <Route path="/me" element={<Profile />} />
+          <Route path="/team" element={<V2Page v1={<TeamView />} v2={<TeamViewV2 />} />} />
+          <Route path="/community" element={<V2Page v1={<Community />} v2={<CommunityV2 />} />} />
+          <Route path="/community/:id" element={<V2Page v1={<PostDetail />} v2={<PostDetailV2 />} />} />
+          <Route path="/assets" element={<V2Page v1={<AssetLibrary />} v2={<AssetLibraryV2 />} />} />
+          <Route path="/shop" element={<V2Page v1={<Shop />} v2={<ShopV2 />} />} />
+          <Route path="/me" element={<V2Page v1={<Profile />} v2={<ProfileV2 />} />} />
         </Route>
 
         <Route path="/admin" element={<BShell />}>
