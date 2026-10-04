@@ -1,10 +1,12 @@
 /**
  * 双版本开关（激进模式义务③：禁止就地覆盖式替换，必须能一键切回旧版）
  *
- * 优先级：URL ?ui=v2  >  localStorage  >  默认 v1
+ * 优先级：URL ?ui=v2  >  localStorage  >  默认 v2
  *
  * 约定：
- * - **默认 v1**，升级期间线上行为与升级前完全一致；
+ * - **默认 v2**（2026-10-05 起）：P3-5 后台域收尾，13 页 v2 化全部完成，
+ *   按 10-04 拍板「P3-5 收尾后再切默认」执行。旧版仍随时可达：
+ *   地址栏加 `?ui=v1`（HashRouter 下外层与 hash 内均识别），或顶栏切换控件。
  * - URL 参数任何人可手改（便于测试与临时回退），但**顶栏切换控件只对管理员渲染**；
  * - 切换不刷新页面：AntD theme 由 ConfigProvider 重新生成，CSS 变量是静态引入的，无需重载。
  */
@@ -12,7 +14,7 @@
 export type UIVersion = 'v1' | 'v2';
 
 const STORAGE_KEY = 'wb.ui.version';
-const DEFAULT_VERSION: UIVersion = 'v1';
+const DEFAULT_VERSION: UIVersion = 'v2';
 
 function fromLocation(): UIVersion | null {
   if (typeof window === 'undefined') return null;
