@@ -1,5 +1,7 @@
 import { Alert, Button, Checkbox, Form, Input, Radio, Select, Steps, Upload } from 'antd';
-import { ArrowLeftOutlined, InboxOutlined, SaveOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
+import {
+  ArrowLeftOutlined, DownloadOutlined, InboxOutlined, SaveOutlined, SafetyCertificateOutlined,
+} from '@ant-design/icons';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useStore } from '@/store/store';
 import { TRACKS } from '@/mock/types';
@@ -15,7 +17,12 @@ import '../../theme/v2/template.css';
  *   ③ 底部操作条固定 56px、白底 1px 描边（v1 是毛玻璃 + 上投影）
  *   ④ 空态页补齐「返回列表」按钮（v1 只有 Empty 描述）
  *
- * 业务：`useWorkSubmitForm` 与 v1 同源，写入内容（submits / pointRecords / topicSelections）完全一致。
+ * 业务：`useWorkSubmitForm` 与 v1 同源，写入内容
+ * （submits / pointRecords / topicSelections / topics）完全一致。
+ *
+ * P4 回归补齐（2026-10-05）：初版遗漏 v1 的「选题形态」三选一 UI
+ * （关联既有 / 其他·自定义 / 不选选题，受 topicCustom / workNoTopic 两个开关控制）
+ * 与 CR-31 附件下载 / 移除，已按 v1 逐行补回。
  */
 
 export default function WorkSubmitV2() {
@@ -24,8 +31,9 @@ export default function WorkSubmitV2() {
   const { me } = useStore();
   const {
     form, type, period, presetCase, presetTopic,
-    channel, setChannel, files, setFiles, beforeUpload,
+    channel, setChannel, atts, setAtts, beforeUpload, uploading,
     savedAt, saveDraft, submit,
+    topicMode, switchTopicMode, selectableTopics, topicCustomOn, noTopicOn,
   } = useWorkSubmitForm(typeId, qs.get('case'), qs.get('topic'));
 
   /** 空库保护：位置必须放在所有 Hooks 之后 */
@@ -81,6 +89,62 @@ export default function WorkSubmitV2() {
             <Alert type="success" showIcon style={{ marginBottom: 'var(--wb-space-4)' }}
               message={`已从${presetCase ? '案例' : '选题池'}预填：${presetCase?.title ?? presetTopic?.title}，可修改`} />
           )}
+
+          {/* V6.0 CR-18：三种选题形态（关联既有 / 其他·自定义 / 不选选题），均不消耗额外提报次数。
+              两个开关关闭时不出现对应选项，与 v1 同口径（关 ≡ 旧版）。 */}
+          <Form.Item
+            name="topic_mode" label={<span className="wb2-fl"><span className="req">●</span>选题形态</span>}
+            rules={[{ required: true }]}
+          >
+            <Radio.Group
+              optionType="button"
+              value={topicMode}
+              onChange={(e) => switchTopicMode(e.target.value)}
+              options={[
+                { label: '关联既有选题', value: 'EXISTING' },
+                ...(topicCustomOn ? [{ label: '其他 · 自定义', value: 'CUSTOM' }] : []),
+                ...(noTopicOn ? [{ label: '不选选题，直接提', value: 'NONE' }] : []),
+              ]}
+            />
+          </Form.Item>
+
+          {topicMode === 'EXISTING' && (
+            <Form.Item
+              name="topic_id" label="选择选题"
+              extra={<span className="wb2-fhint">私有自定义选题仅本人与组织者可见；列表与你可见范围一致</span>}
+            >
+              <Select
+                showSearch allowClear placeholder="从选题池中选择（可搜索）"
+                optionFilterProp="label"
+                options={selectableTopics.map((t) => ({
+                  value: t.id,
+                  label: `${t.title}${t.is_custom ? '（自定义）' : ''}`,
+                }))}
+              />
+            </Form.Item>
+          )}
+
+          {topicMode === 'CUSTOM' && (
+            <Form.Item
+              name="custom_topic" label={<span className="wb2-fl"><span className="req">●</span>自定义选题名称</span>}
+              rules={[
+                { required: true, message: '请填写自定义选题名称' },
+                { max: 30, message: '不超过 30 字' },
+              ]}
+              extra={<span className="wb2-fhint">默认仅你与组织者可见；组织者可在内容管理公开给全员</span>}
+            >
+              <Input placeholder="如：客户拜访前的 5 分钟准备卡" maxLength={30} showCount />
+            </Form.Item>
+          )}
+
+          {topicMode === 'NONE' && (
+            <Alert
+              type="info" showIcon style={{ marginBottom: 'var(--wb-space-4)' }}
+              message="不选选题直接提报"
+              description="不占用选题池名额，也不会在「我的选题」中生成条目；标题写清楚场景即可，后续照常进入评分与复核。"
+            />
+          )}
+
           <Form.Item name="track" label={<span className="wb2-fl"><span className="req">●</span>赛道</span>} rules={[{ required: true }]}>
             <Radio.Group options={TRACKS.map((t) => ({ label: t, value: t }))} optionType="button" />
           </Form.Item>
@@ -135,19 +199,47 @@ export default function WorkSubmitV2() {
 
           <Form.Item
             label="附件"
-            extra={<span className="wb2-fhint">白名单 {ALLOW_EXT.join(' / ')}，单文件 ≤50MB，最多 5 个；zip 需含 SKILL.md + manifest.yaml</span>}
+            extra={<span className="wb2-fhint">
+              白名单 {ALLOW_EXT.join(' / ')}，单文件 ≤50MB，最多 5 个；zip 由服务端解包校验是否含 SKILL.md + manifest.yaml
+              {uploading > 0 ? ` · 上传中 ${uploading}` : ''}
+            </span>}
           >
             <Upload.Dragger
               multiple maxCount={5}
               beforeUpload={beforeUpload}
-              fileList={files}
-              onChange={({ fileList }) => setFiles(fileList)}
+              fileList={atts.map((a) => ({ uid: a.id, name: a.name, status: 'done' as const }))}
               customRequest={({ onSuccess }) => setTimeout(() => onSuccess?.('ok'), 300)}
+              onRemove={(f) => { setAtts((p) => p.filter((x) => x.id !== f.uid)); return false; }}
             >
               <p className="ant-upload-drag-icon"><InboxOutlined /></p>
               <p className="ant-upload-text">点击或拖拽上传附件</p>
               <p className="ant-upload-hint">支持 zip / md / yaml / pdf / docx / xlsx / png / jpg</p>
             </Upload.Dragger>
+            {/* V6.0 CR-31：真实文件可下载；演示态如实说明，不给假下载按钮 */}
+            {atts.length > 0 && (
+              <div className="wb2-list" style={{ marginTop: 'var(--wb-space-3)' }}>
+                {atts.map((a) => (
+                  <div className="wb2-li" key={a.id}>
+                    <div className="wb2-li-t">{a.name}</div>
+                    <div className="wb2-li-m">
+                      <span style={{ fontSize: 'var(--wb-fs-label)', color: 'var(--wb-ink-3)' }}>{a.size}</span>
+                      {a.url ? (
+                        <a href={a.url} target="_blank" rel="noreferrer">
+                          <Button size="small" type="link" icon={<DownloadOutlined />}>下载</Button>
+                        </a>
+                      ) : (
+                        <span className="wb2-tag id">演示态·未落真实文件</span>
+                      )}
+                    </div>
+                    <div className="wb2-li-r">
+                      <Button size="small" type="link" danger onClick={() => setAtts((p) => p.filter((x) => x.id !== a.id))}>
+                        移除
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </Form.Item>
         </div>
 

@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { Button, Segmented, Select } from 'antd';
+import { Button, Form, Input, Segmented, Select } from 'antd';
 import { useNavigate } from 'react-router-dom';
-import { EyeOutlined, ThunderboltOutlined, FireOutlined } from '@ant-design/icons';
+import { EyeOutlined, ThunderboltOutlined, FireOutlined, PlusOutlined } from '@ant-design/icons';
 import { useStore } from '@/store/store';
 import { TRACKS } from '@/mock/types';
+import type { Track } from '@/mock/types';
 import { useCaseFilters } from '@/hooks/useCaseFilters';
 import { useTopicPick } from '@/hooks/useTopicPick';
+import { Dialog } from '@/components/v2/Dialog';
 import { HoverCard } from '@/components/ui';
 import { trackVar } from '@/theme/v2/track';
 import '../../theme/v2/template.css';
@@ -20,14 +22,26 @@ import '../../theme/v2/template.css';
  *   ④ 全部取色走 tokens，零裸 hex
  *
  * 业务逻辑 100% 复用 `useCaseFilters` / `useTopicPick`，与 v1 同源，未复制一份。
+ *
+ * P4 回归补齐（2026-10-05）：初版遗漏 v1 的「其他·自定义选题」入口与私有选题
+ * 可见性标识（V6.0 CR-17），已按 v1 逐行补回；入口仍受 `topicCustom` 开关控制。
  */
 
 export default function CaseListV2() {
   const { db } = useStore();
   const nav = useNavigate();
   const f = useCaseFilters();
-  const { pickedCount, mineSelected, pickTopic } = useTopicPick(f.multiSelect);
+  const { pickedCount, mineSelected, pickTopic, createCustomTopic } = useTopicPick(f.multiSelect);
   const [tab, setTab] = useState<'case' | 'topic'>('case');
+  /** V6.0 CR-17：自定义选题弹窗（入口受 flags.topicCustom 控制，关闭 ≡ 旧版无此入口） */
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customForm] = Form.useForm();
+
+  const submitCustom = (vals: { title: string; track: Track; expected_output?: string }) => {
+    createCustomTopic(vals);
+    setCustomOpen(false);
+    customForm.resetFields();
+  };
 
   /** 赛道 chip 上的计数：随当前 Tab 切换数据源 */
   const src = tab === 'case' ? db.cases : db.topics;
@@ -193,7 +207,18 @@ export default function CaseListV2() {
         )
       ) : (
         /* ---------- 选题：细线列表 ---------- */
-        f.topicList.length === 0 ? (
+        <>
+        {/* V6.0 CR-17：选题池顶部「其他·自定义」入口（开关关闭时不出现） */}
+        {f.topicCustomOn && (
+          <div className="wb2-setrow" style={{ marginBottom: 'var(--wb-space-4)' }}>
+            <div>
+              <div className="nm">没有合适的选题？自己填一个</div>
+              <div className="ds">默认仅你与组织者可见，组织者可公开给全员</div>
+            </div>
+            <Button size="small" icon={<PlusOutlined />} onClick={() => setCustomOpen(true)}>其他·自定义选题</Button>
+          </div>
+        )}
+        {f.topicList.length === 0 ? (
           <div className="wb2-empty">
             <div className="ic">⌕</div>
             <div className="t">没有匹配的选题</div>
@@ -226,6 +251,12 @@ export default function CaseListV2() {
                           {(t.tags ?? []).length === 0 ? '未分类' : (t.tags ?? []).map((x) => `#${x}`).join(' ')}
                         </span>
                       )}
+                      {/* V6.0 CR-17：私有自定义选题给出可见性标识，避免误以为别人也能看到 */}
+                      {t.is_custom && (
+                        <span className={t.visibility === 'PRIVATE' ? 'wb2-tag wa' : 'wb2-tag ok'}>
+                          {t.visibility === 'PRIVATE' ? '自定义 · 仅本人与组织者可见' : '自定义 · 已公开'}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="wb2-li-r">
@@ -246,8 +277,41 @@ export default function CaseListV2() {
               );
             })}
           </div>
-        )
+        )}
+        </>
       )}
+
+      {/* V6.0 CR-17：自定义选题弹窗 */}
+      <Dialog
+        open={customOpen}
+        title="其他 · 自定义选题"
+        okText="创建并去提报"
+        onCancel={() => setCustomOpen(false)}
+        onOk={() => customForm.submit()}
+      >
+        <Form form={customForm} layout="vertical" onFinish={submitCustom} preserve={false}
+          initialValues={{ track: TRACKS[0] }}>
+          <Form.Item
+            name="title" label="选题名称"
+            rules={[
+              { required: true, message: '请填写选题名称' },
+              { max: 30, message: '不超过 30 字' },
+            ]}
+            extra="写清楚你要解决的场景，≤30 字"
+          >
+            <Input placeholder="如：客户拜访前的 5 分钟准备卡" maxLength={30} showCount />
+          </Form.Item>
+          <Form.Item name="track" label="赛道" rules={[{ required: true }]}>
+            <Select options={TRACKS.map((t) => ({ value: t, label: t }))} />
+          </Form.Item>
+          <Form.Item name="expected_output" label="预期产出（选填）">
+            <Input placeholder="如：一页纸准备卡 / 一段可直接复用的提示词" />
+          </Form.Item>
+          <div style={{ fontSize: 'var(--wb-fs-caption)', color: 'var(--wb-ink-3)', lineHeight: 1.6 }}>
+            创建后默认仅你与组织者可见；组织者可在「内容管理 · 选题池」公开给全员，公开后才进入公共统计。
+          </div>
+        </Form>
+      </Dialog>
 
       <div style={{ fontSize: 'var(--wb-fs-caption)', color: 'var(--wb-ink-3)', marginTop: 'var(--wb-space-4)', lineHeight: 1.6 }}>
         V4.0 CR-03：已取消受众分层（原建议层级），分类改由发布者自选标签承载；无标签的内容进入「未分类」聚合，按标签筛选时不可见。

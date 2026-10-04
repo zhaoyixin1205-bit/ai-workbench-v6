@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '@/store/store';
+import type { Topic } from '@/mock/types';
 
 /**
  * 「案例与选题」筛选逻辑（P3-3 从 `pages/c/CaseList.tsx` 原样抽出）
@@ -17,7 +18,7 @@ export type TagMode = 'ANY' | 'ALL';
 export type ResFilter = 'ALL' | 'SKILL' | 'ATTACH';
 
 export function useCaseFilters() {
-  const { db, flags } = useStore();
+  const { db, me, flags, hasRole } = useStore();
   const [track, setTrack] = useState<string>('全部');
   const [kw, setKw] = useState('');
   const [tagFilter, setTagFilter] = useState<string[]>([]);
@@ -58,15 +59,30 @@ export function useCaseFilters() {
     [db.cases, track, kw, tagFilter, tagMode, resFilter, skillOn, attachOn]
   );
 
+  /** V6.0 CR-17：自定义选题开关（关闭=选题池不出现「其他·自定义」入口） */
+  const topicCustomOn = flags.topicCustom !== false;
+
+  /**
+   * V6.0 CR-17：可见性口径 —— 私有自定义选题仅本人与组织者可见。
+   * 边界：他人看不到（不是置灰），避免暴露「存在但不可见」。
+   *
+   * P4 回归补齐（2026-10-05）：初版抽出时漏了这条过滤，会把他人私有选题列出来。
+   */
+  const canSeeTopic = (t: Topic) => {
+    if (t.visibility !== 'PRIVATE') return true;
+    return t.created_by === me.union_id || hasRole('ORGANIZER') || hasRole('ADMIN');
+  };
+
   const topicList = useMemo(
     () => db.topics.filter((t) => {
+      if (!canSeeTopic(t)) return false;
       if (track !== '全部' && t.track !== track) return false;
       if (kw && !`${t.title}${t.expected_output}${(t.tags ?? []).join()}`.includes(kw)) return false;
       if (!matchTags(t.tags ?? [])) return false;
       return true;
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [db.topics, track, kw, tagFilter, tagMode]
+    [db.topics, track, kw, tagFilter, tagMode, me.union_id]
   );
 
   const resetFilter = () => { setTrack('全部'); setKw(''); setTagFilter([]); setResFilter('ALL'); };
@@ -82,5 +98,7 @@ export function useCaseFilters() {
     resFilter, setResFilter,
     tagPool, freeTags, multiSelect, skillOn, attachOn, resFilterable,
     list, topicList, resetFilter, filtering, matchTags,
+    /** V6.0 CR-17：自定义选题开关 + 私有选题可见性口径 */
+    topicCustomOn, canSeeTopic,
   };
 }

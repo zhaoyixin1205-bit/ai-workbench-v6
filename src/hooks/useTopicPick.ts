@@ -1,14 +1,18 @@
 import { useNavigate } from 'react-router-dom';
 import { App as AntApp } from 'antd';
 import { useStore } from '@/store/store';
-import type { Topic } from '@/mock/types';
+import type { Topic, Track } from '@/mock/types';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 
 /**
- * 选题「选它 / 继续提报」（P3-3 从 `pages/c/CaseList.tsx` :74-102 原样抽出）
+ * 选题「选它 / 继续提报」+ 自定义选题（P3-3 从 `pages/c/CaseList.tsx` :74-121 原样抽出）
  *
  * V4.0 CR-03 口径：选题非排斥 —— 同一选题可被 N 人选中；select_limit=0 表示不限。
  * 开关 `topicMultiSelect` 关闭时强制排他（limit=1），等价于 V3.0 的「已被选走」。
+ *
+ * V6.0 CR-17：新建自定义选题 —— 默认私有，组织者可在内容管理公开。
+ * P4 回归补齐（2026-10-05）：初版抽出时漏了 `createCustomTopic`，v2 选题池因此
+ * 没有「其他·自定义」入口，已按 v1 逐行补回。
  */
 export function useTopicPick(multiSelect: boolean) {
   const { db, me, setDb, log } = useStore();
@@ -44,5 +48,39 @@ export function useTopicPick(multiSelect: boolean) {
     nav(`/work/submit/${typeId}?topic=${t.id}`);
   };
 
-  return { pickedCount, mineSelected, pickTopic };
+  /**
+   * V6.0 CR-17：新建自定义选题 —— 默认私有，组织者可在内容管理公开。
+   * 与 v1 同口径：新建后自动落一条「已选」记录，并直接跳到提报表（带 ?topic=）。
+   */
+  const createCustomTopic = (vals: { title: string; track: Track; expected_output?: string }) => {
+    const id = `T-CUSTOM-${Date.now()}`;
+    const topic: Topic = {
+      id,
+      /** 自定义选题不挂在具体案例下 */
+      case_id: '',
+      title: vals.title,
+      difficulty: '中',
+      expected_output: vals.expected_output ?? '（自定义选题，产出形式自拟）',
+      suggest_level: '骨干层',
+      track: vals.track,
+      status: '可选',
+      tags: ['自定义'],
+      is_custom: true,
+      created_by: me.union_id,
+      visibility: 'PRIVATE',
+    };
+    setDb((p) => ({
+      ...p,
+      topics: [topic, ...p.topics],
+      topicSelections: [{
+        id: `TS${Date.now()}`, topic_id: id, union_id: me.union_id,
+        selected_at: `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`, status: '已选',
+      }, ...p.topicSelections],
+    }));
+    log('新建自定义选题', vals.title, 'V6.0 CR-17：默认仅本人与组织者可见，组织者可公开至全员');
+    message.success('自定义选题已创建，默认仅你与组织者可见（组织者可公开给全员）');
+    nav(`/work/submit/${db.assignmentTypes[0]?.id ?? 'AT1'}?topic=${id}`);
+  };
+
+  return { pickedCount, mineSelected, pickTopic, createCustomTopic };
 }
