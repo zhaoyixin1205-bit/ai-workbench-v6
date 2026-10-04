@@ -624,6 +624,173 @@
 /* 场景卡 chip 组 */
 .wb2-chips { display: flex; flex-wrap: wrap; gap: var(--wb-space-3); }
 
+/* ---------------- B 端补充件（P3-5） ---------------- */
+
+/* 规则 / 口径提示条：中性底 + 左 3px 语义条
+   （替代 AntD Alert 的整块蓝/黄底——后台一页常有 2~3 条，整块底色会把页面切成色带） */
+.wb2-alert {
+  display: flex;
+  gap: var(--wb-space-3);
+  background: var(--wb-surface-card);
+  border: 1px solid var(--wb-border);
+  border-left: 3px solid var(--wb-info);
+  border-radius: var(--wb-radius-md);
+  padding: var(--wb-space-4) var(--wb-space-5);
+}
+.wb2-alert + .wb2-alert { margin-top: var(--wb-space-3); }
+.wb2-alert.warn { border-left-color: var(--wb-warning); }
+.wb2-alert.er { border-left-color: var(--wb-error); }
+.wb2-alert.ok { border-left-color: var(--wb-success); }
+.wb2-alert .bd { min-width: 0; }
+.wb2-alert .t {
+  font-size: var(--wb-fs-body);
+  font-weight: 500;
+  color: var(--wb-ink-1);
+  line-height: 1.5;
+}
+.wb2-alert .d {
+  font-size: var(--wb-fs-caption);
+  color: var(--wb-ink-3);
+  margin-top: var(--wb-space-1);
+  line-height: 1.65;
+}
+
+/* Tab 容器：后台多数页面是「一页多 Tab」，此处只负责把面板装进统一卡片 */
+.wb2-tabs {
+  background: var(--wb-surface-card);
+  border: 1px solid var(--wb-border);
+  border-radius: var(--wb-radius-lg);
+  padding: 0 var(--wb-space-6) var(--wb-space-5);
+}
+
+/* 表格卡片：头（标题 + 计数 + 右侧操作）+ 表体 */
+.wb2-tcard {
+  background: var(--wb-surface-card);
+  border: 1px solid var(--wb-border);
+  border-radius: var(--wb-radius-lg);
+  overflow: hidden;
+}
+.wb2-tcard + .wb2-tcard { margin-top: var(--wb-space-5); }
+.wb2-tcard > .hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wb-space-4);
+  padding: var(--wb-space-4) var(--wb-space-5);
+  border-bottom: 1px solid var(--wb-border-subtle);
+  flex-wrap: wrap;
+}
+.wb2-tcard > .hd .t {
+  font-size: var(--wb-fs-subtitle);
+  font-weight: 600;
+  color: var(--wb-ink-1);
+}
+.wb2-tcard > .hd .n {
+  font-size: var(--wb-fs-caption);
+  color: var(--wb-ink-3);
+  margin-left: var(--wb-space-2);
+  font-variant-numeric: tabular-nums;
+}
+.wb2-tcard > .bd { padding: var(--wb-space-4) var(--wb-space-5); }
+.wb2-tcard > .ft {
+  padding: var(--wb-space-3) var(--wb-space-5);
+  border-top: 1px solid var(--wb-border-subtle);
+  font-size: var(--wb-fs-caption);
+  color: var(--wb-ink-3);
+  line-height: 1.65;
+}
+
+/* 设置行（开关 / 枚举配置）：label + 说明 在左，控件在右，细线分隔 */
+.wb2-setrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wb-space-4);
+  padding: var(--wb-space-3) 0;
+  border-bottom: 1px solid var(--wb-border-subtle);
+}
+.wb2-setrow:last-child { border-bottom: none; }
+.wb2-setrow .nm { font-size: var(--wb-fs-body); color: var(--wb-ink-1); min-width: 0; }
+.wb2-setrow .ds {
+  font-size: var(--wb-fs-caption);
+  color: var(--wb-ink-3);
+  margin-top: 2px;
+  line-height: 1.6;
+}
+.wb2-setrow .ct {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--wb-space-3);
+}
+
+/* ---------------- 弹窗统一操作层（P3-5） ----------------
+   28 个弹窗共用一套：标题区 / 正文区 / 底部操作条
+   底部顺序固定为「取消 · 次要 · 主行动」，危险操作主按钮为 danger 且禁点遮罩关闭 */
+.wb2-dlg {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wb-space-4);
+}
+.wb2-dlg > .fld > .lb {
+  display: block;
+  font-size: var(--wb-fs-label);
+  color: var(--wb-ink-2);
+  margin-bottom: var(--wb-space-2);
+}
+.wb2-dlg > .hint {
+  font-size: var(--wb-fs-caption);
+  color: var(--wb-ink-3);
+  line-height: 1.65;
+}
+.wb2-dlg > .hint.warn {
+  background: var(--wb-surface-warm);
+  color: var(--wb-warning-ink);
+  border-radius: var(--wb-radius-md);
+  padding: var(--wb-space-3) var(--wb-space-4);
+}
+.wb2-dlg-ft {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--wb-space-3);
+  flex-wrap: wrap;
+}
+/* 弹窗里的键值说明（对象名 / 影响面 / 风险） */
+.wb2-dlkv {
+  display: flex;
+  gap: var(--wb-space-3);
+  font-size: var(--wb-fs-label);
+  line-height: 1.7;
+}
+.wb2-dlkv > .k { flex: 0 0 64px; color: var(--wb-ink-3); }
+.wb2-dlkv > .v { flex: 1; color: var(--wb-ink-1); min-width: 0; }
+
+/* ---------------- 焦点可见性（P3-5 a11y） ----------------
+   tokens.css 已给全局 :focus-visible 加了环；此处补齐 v2 自定义可交互元素。
+   原则：只加轮廓，不换底色、不加外发光，鼠标点击不出现（:focus-visible 语义） */
+.wb2-chip:focus-visible,
+.wb2-slot:focus-visible,
+.wb2-ccard:focus-visible,
+.wb2-gcard:focus-visible,
+.wb2-li:focus-visible,
+.wb2-setrow:focus-visible {
+  outline: 2px solid var(--wb-primary);
+  outline-offset: 2px;
+}
+/* 自定义输入框：内部 input 清了 outline，靠容器补环 */
+.wb2-inp:has(input:focus-visible) {
+  outline: 2px solid var(--wb-primary);
+  outline-offset: 1px;
+}
+/* 搜索面板输入（shell） */
+.wb2-panel-input:focus-visible {
+  outline: 2px solid var(--wb-primary);
+  outline-offset: -2px;
+}
+/* v2 侧禁止把可聚焦元素的可访问性抹掉 */
+.wb2-chip:disabled,
+.wb2-slot.off { cursor: not-allowed; }
+
 /* ---------------- 响应式 ---------------- */
 @container (max-width: 1400px) {
   .wb2-metrics.c6 { grid-template-columns: repeat(3, 1fr); }

@@ -31,6 +31,20 @@ import WorkListV2 from '@/pages/v2/WorkListV2';
 import WorkDetailV2 from '@/pages/v2/WorkDetailV2';
 import ClinicV2 from '@/pages/v2/ClinicV2';
 import MyBookingV2 from '@/pages/v2/MyBookingV2';
+/* P3-5 后台域 */
+import AssignmentAdminV2 from '@/pages/v2/AssignmentAdminV2';
+import ScoreCardAdminV2 from '@/pages/v2/ScoreCardAdminV2';
+import JudgeReviewV2 from '@/pages/v2/JudgeReviewV2';
+import BountyReviewV2 from '@/pages/v2/BountyReviewV2';
+import ExpertAdminV2 from '@/pages/v2/ExpertAdminV2';
+import AssetAdminV2 from '@/pages/v2/AssetAdminV2';
+import ContentAdminV2 from '@/pages/v2/ContentAdminV2';
+import CommunityAdminV2 from '@/pages/v2/CommunityAdminV2';
+import ShopAdminV2 from '@/pages/v2/ShopAdminV2';
+import UserAdminV2 from '@/pages/v2/UserAdminV2';
+import CampaignConfigV2 from '@/pages/v2/CampaignConfigV2';
+import SystemAdminV2 from '@/pages/v2/SystemAdminV2';
+import WBAdminDataV2 from '@/pages/v2/WBAdminDataV2';
 
 import Home from '@/pages/c/Home';
 import CaseList from '@/pages/c/CaseList';
@@ -133,19 +147,19 @@ function AppShell() {
 
         <Route path="/admin" element={<BShell />}>
           <Route index element={<V2Page v1={<Dashboard />} v2={<DashboardV2 />} />} />
-          <Route path="assignment" element={<AssignmentAdmin />} />
-          <Route path="scorecard" element={<ScoreCardAdmin />} />
-          <Route path="judge" element={<JudgeReview />} />
-          <Route path="bounty" element={<BountyReview />} />
-          <Route path="expert" element={<ExpertAdmin />} />
-          <Route path="asset" element={<AssetAdmin />} />
-          <Route path="content" element={<ContentAdmin />} />
-          <Route path="community" element={<CommunityAdmin />} />
-          <Route path="shop" element={<ShopAdmin />} />
-          <Route path="users" element={<UserAdmin />} />
-          <Route path="campaign" element={<CampaignConfig />} />
-          <Route path="system" element={<SystemAdmin />} />
-          <Route path="wb" element={<WBAdminData />} />
+          <Route path="assignment" element={<V2Page v1={<AssignmentAdmin />} v2={<AssignmentAdminV2 />} />} />
+          <Route path="scorecard" element={<V2Page v1={<ScoreCardAdmin />} v2={<ScoreCardAdminV2 />} />} />
+          <Route path="judge" element={<V2Page v1={<JudgeReview />} v2={<JudgeReviewV2 />} />} />
+          <Route path="bounty" element={<V2Page v1={<BountyReview />} v2={<BountyReviewV2 />} />} />
+          <Route path="expert" element={<V2Page v1={<ExpertAdmin />} v2={<ExpertAdminV2 />} />} />
+          <Route path="asset" element={<V2Page v1={<AssetAdmin />} v2={<AssetAdminV2 />} />} />
+          <Route path="content" element={<V2Page v1={<ContentAdmin />} v2={<ContentAdminV2 />} />} />
+          <Route path="community" element={<V2Page v1={<CommunityAdmin />} v2={<CommunityAdminV2 />} />} />
+          <Route path="shop" element={<V2Page v1={<ShopAdmin />} v2={<ShopAdminV2 />} />} />
+          <Route path="users" element={<V2Page v1={<UserAdmin />} v2={<UserAdminV2 />} />} />
+          <Route path="campaign" element={<V2Page v1={<CampaignConfig />} v2={<CampaignConfigV2 />} />} />
+          <Route path="system" element={<V2Page v1={<SystemAdmin />} v2={<SystemAdminV2 />} />} />
+          <Route path="wb" element={<V2Page v1={<WBAdminData />} v2={<WBAdminDataV2 />} />} />
           {/* V6.0 CR-16：入口已下沉至 /clinic/workbench，旧路由保留重定向（@deprecated） */}
           <Route path="expert-workbench" element={<Navigate to="/clinic/workbench" replace />} />
         </Route>

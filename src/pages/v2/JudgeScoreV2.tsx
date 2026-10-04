@@ -1,4 +1,4 @@
-import JudgeReview from '@/pages/b/JudgeReview';
+import JudgeReviewV2 from '@/pages/v2/JudgeReviewV2';
 import { useStore } from '@/store/store';
 import '../../theme/v2/template.css';
 
@@ -7,6 +7,8 @@ import '../../theme/v2/template.css';
  *
  * 与 v1 同源：C 端外壳 + 口径说明，业务能力全部来自 JudgeReview（variant='c'）。
  * 仅把页头与口径条换成 v2 版式（提示条用 wb2-quote，避免 v1 的强色块）。
+ *
+ * P3-5：内层一并切到 JudgeReviewV2（此前 v2 壳里嵌的是 v1 内层，会出现半新半旧）。
  */
 export default function JudgeScoreV2() {
   const { me } = useStore();
@@ -27,7 +29,7 @@ export default function JudgeScoreV2() {
         不能给自己打分。评分卡修改会生成新版本，历史评分仍按当时的版本计算。
       </div>
 
-      <JudgeReview variant="c" />
+      <JudgeReviewV2 variant="c" />
     </div>
   );
 }
