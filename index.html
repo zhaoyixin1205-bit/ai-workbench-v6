@@ -13,7 +13,9 @@
     />
     <title>WorkBuddy AI 赋能工作台</title>
   </head>
-  <body>
+  <!-- P3-1：data-ui 是 v1/v2 样式隔离的锚点。预置 v1 保证首帧不会闪 v2 样式，
+       UIVersionProvider 挂载后按实际版本改写此属性。 -->
+  <body data-ui="v1">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

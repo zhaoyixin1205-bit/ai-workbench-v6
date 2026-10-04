@@ -255,56 +255,56 @@ a {
    ========================================================================== */
 
 /* —— 卡片 —— */
-.ant-card {
+body[data-ui="v1"] .ant-card{
   border-color: #f3f4f6 !important;
   box-shadow: 0 2px 8px rgba(31, 41, 55, 0.06), 0 1px 2px rgba(31, 41, 55, 0.04);
   transition: box-shadow 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
               transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
               border-color 240ms ease;
 }
-.ant-card-hoverable:hover {
+body[data-ui="v1"] .ant-card-hoverable:hover{
   border-color: #ffe4d9 !important;
   box-shadow: rgba(30, 36, 53, 0.16) 0 7px 14px;
   transform: translateY(-2px);
 }
-.ant-card-head {
+body[data-ui="v1"] .ant-card-head{
   border-bottom-color: #f3f4f6 !important;
   font-weight: 700;
 }
-.ant-card-head-title {
+body[data-ui="v1"] .ant-card-head-title{
   font-weight: 700;
   letter-spacing: -0.01em;
 }
 
 /* —— 按钮 —— */
-.ant-btn-primary {
+body[data-ui="v1"] .ant-btn-primary{
   box-shadow: 0 4px 12px rgba(255, 107, 53, 0.22);
 }
-.ant-btn-primary:hover {
+body[data-ui="v1"] .ant-btn-primary:hover{
   box-shadow: 0 6px 16px rgba(255, 107, 53, 0.30) !important;
   transform: translateY(-1px);
 }
-.ant-btn {
+body[data-ui="v1"] .ant-btn{
   transition: all 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 /* V4.1 Moka §1.2：页面主 CTA 一律胶囊（只作用于大号主按钮，表格内小按钮保持 10px 圆角） */
-.ant-btn-primary.ant-btn-lg,
-.ant-btn-lg.ant-btn-primary {
+body[data-ui="v1"] .ant-btn-primary.ant-btn-lg,
+body[data-ui="v1"] .ant-btn-lg.ant-btn-primary{
   border-radius: 999px !important;
   padding-inline: 28px;
   font-weight: 700;
   box-shadow: rgba(255, 138, 96, 0.28) 0 6px 16px;
 }
-.ant-btn-primary.ant-btn-lg:hover {
+body[data-ui="v1"] .ant-btn-primary.ant-btn-lg:hover{
   box-shadow: rgba(255, 138, 96, 0.34) 0 10px 22px !important;
 }
-.ant-btn:not(.ant-btn-primary):not(.ant-btn-link):not(.ant-btn-text):hover {
+body[data-ui="v1"] .ant-btn:not(.ant-btn-primary):not(.ant-btn-link):not(.ant-btn-text):hover{
   border-color: #ffb694 !important;
   color: #e55d2b !important;
 }
 
 /* —— 标签：把 antd 预设色统一成低饱和 chip —— */
-.ant-tag {
+body[data-ui="v1"] .ant-tag{
   border: none;
   font-weight: 600;
   font-size: 11px;
@@ -313,240 +313,240 @@ a {
   border-radius: 6px;
   margin-inline-end: 6px;
 }
-.ant-tag-orange,
-.ant-tag-volcano {
+body[data-ui="v1"] .ant-tag-orange,
+body[data-ui="v1"] .ant-tag-volcano{
   background: #fff1eb !important;
   color: #c2410c !important;
 }
-.ant-tag-blue,
-.ant-tag-geekblue {
+body[data-ui="v1"] .ant-tag-blue,
+body[data-ui="v1"] .ant-tag-geekblue{
   background: #eff6ff !important;
   color: #1d4ed8 !important;
 }
-.ant-tag-purple,
-.ant-tag-magenta {
+body[data-ui="v1"] .ant-tag-purple,
+body[data-ui="v1"] .ant-tag-magenta{
   background: #f3e8ff !important;
   color: #7e22ce !important;
 }
-.ant-tag-green,
-.ant-tag-lime {
+body[data-ui="v1"] .ant-tag-green,
+body[data-ui="v1"] .ant-tag-lime{
   background: #ecfdf5 !important;
   color: #047857 !important;
 }
-.ant-tag-red {
+body[data-ui="v1"] .ant-tag-red{
   background: #fef2f2 !important;
   color: #b91c1c !important;
 }
-.ant-tag-gold,
-.ant-tag-cyan {
+body[data-ui="v1"] .ant-tag-gold,
+body[data-ui="v1"] .ant-tag-cyan{
   background: #fffbeb !important;
   color: #b45309 !important;
 }
-.ant-tag-default {
+body[data-ui="v1"] .ant-tag-default{
   background: #f3f4f6 !important;
   color: #6b7280 !important;
 }
 
 /* —— 表格 —— */
-.ant-table-wrapper .ant-table {
+body[data-ui="v1"] .ant-table-wrapper .ant-table{
   border-radius: 14px;
 }
-.ant-table-wrapper .ant-table-thead > tr > th {
+body[data-ui="v1"] .ant-table-wrapper .ant-table-thead > tr > th{
   background: #fafbfc !important;
   color: #6b7280 !important;
   font-weight: 600 !important;
   font-size: 13px;
   border-bottom: 1px solid #f3f4f6 !important;
 }
-.ant-table-wrapper .ant-table-thead > tr > th::before {
+body[data-ui="v1"] .ant-table-wrapper .ant-table-thead > tr > th::before{
   display: none !important;
 }
-.ant-table-wrapper .ant-table-tbody > tr > td {
+body[data-ui="v1"] .ant-table-wrapper .ant-table-tbody > tr > td{
   border-bottom: 1px solid #f8f9fb !important;
 }
-.ant-table-wrapper .ant-table-tbody > tr:hover > td {
+body[data-ui="v1"] .ant-table-wrapper .ant-table-tbody > tr:hover > td{
   background: #fffaf7 !important;
 }
-.ant-table-wrapper .ant-table-tbody > tr:last-child > td {
+body[data-ui="v1"] .ant-table-wrapper .ant-table-tbody > tr:last-child > td{
   border-bottom: none !important;
 }
 
 /* —— 标题排版 —— */
-.ant-typography h1,
+body[data-ui="v1"] .ant-typography h1,
 h1.ant-typography,
-.ant-typography h2,
+body[data-ui="v1"] .ant-typography h2,
 h2.ant-typography,
-.ant-typography h3,
+body[data-ui="v1"] .ant-typography h3,
 h3.ant-typography,
-.ant-typography h4,
+body[data-ui="v1"] .ant-typography h4,
 h4.ant-typography,
-.ant-typography h5,
+body[data-ui="v1"] .ant-typography h5,
 h5.ant-typography {
   color: #1f2937;
   font-weight: 700;
   letter-spacing: -0.015em;
 }
-.ant-typography {
+body[data-ui="v1"] .ant-typography{
   color: #1f2937;
 }
-.ant-typography.ant-typography-secondary,
-.ant-typography-secondary {
+body[data-ui="v1"] .ant-typography.ant-typography-secondary,
+body[data-ui="v1"] .ant-typography-secondary{
   color: #6b7280;
 }
 
 /* —— 表单控件：柔和聚焦环，替代生硬描边 —— */
-.ant-input:focus,
-.ant-input-focused,
-.ant-input-affix-wrapper:focus,
-.ant-input-affix-wrapper-focused,
-.ant-select-focused .ant-select-selector,
-.ant-picker-focused,
-.ant-input-number-focused {
+body[data-ui="v1"] .ant-input:focus,
+body[data-ui="v1"] .ant-input-focused,
+body[data-ui="v1"] .ant-input-affix-wrapper:focus,
+body[data-ui="v1"] .ant-input-affix-wrapper-focused,
+body[data-ui="v1"] .ant-select-focused .ant-select-selector,
+body[data-ui="v1"] .ant-picker-focused,
+body[data-ui="v1"] .ant-input-number-focused{
   border-color: #ffb694 !important;
   box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.10) !important;
 }
-.ant-input:hover,
-.ant-input-affix-wrapper:hover,
-.ant-select:not(.ant-select-disabled):hover .ant-select-selector,
-.ant-picker:hover {
+body[data-ui="v1"] .ant-input:hover,
+body[data-ui="v1"] .ant-input-affix-wrapper:hover,
+body[data-ui="v1"] .ant-select:not(.ant-select-disabled):hover .ant-select-selector,
+body[data-ui="v1"] .ant-picker:hover{
   border-color: #ffd0bb !important;
 }
 
 /* —— 步骤条 —— */
-.ant-steps {
+body[data-ui="v1"] .ant-steps{
   padding: 4px 0;
 }
-.ant-steps .ant-steps-item-title {
+body[data-ui="v1"] .ant-steps .ant-steps-item-title{
   font-size: 13px !important;
   font-weight: 600;
 }
-.ant-steps .ant-steps-item-process .ant-steps-item-icon {
+body[data-ui="v1"] .ant-steps .ant-steps-item-process .ant-steps-item-icon{
   box-shadow: 0 4px 12px rgba(255, 107, 53, 0.24);
 }
 
 /* —— 分段控制器：胶囊化 —— */
-.ant-segmented {
+body[data-ui="v1"] .ant-segmented{
   padding: 3px;
   border-radius: 12px;
   background: #f3f4f6;
 }
-.ant-segmented .ant-segmented-item {
+body[data-ui="v1"] .ant-segmented .ant-segmented-item{
   border-radius: 9px;
   transition: all 0.2s ease;
 }
-.ant-segmented .ant-segmented-item:hover:not(.ant-segmented-item-selected) {
+body[data-ui="v1"] .ant-segmented .ant-segmented-item:hover:not(.ant-segmented-item-selected){
   color: #e55d2b;
 }
-.ant-segmented .ant-segmented-item-selected {
+body[data-ui="v1"] .ant-segmented .ant-segmented-item-selected{
   box-shadow: 0 2px 8px rgba(31, 41, 55, 0.08);
 }
-.ant-segmented .ant-segmented-item-selected .ant-segmented-item-label {
+body[data-ui="v1"] .ant-segmented .ant-segmented-item-selected .ant-segmented-item-label{
   color: #e55d2b;
   font-weight: 600;
 }
 
 /* —— 单选按钮组：选中态用主色浅底，替代纯描边 —— */
-.ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled) {
+body[data-ui="v1"] .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled){
   background: #fff1eb !important;
   border-color: #ffb694 !important;
   color: #c2410c !important;
   font-weight: 600;
   box-shadow: none !important;
 }
-.ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled)::before {
+body[data-ui="v1"] .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled)::before{
   background-color: #ffb694 !important;
 }
-.ant-radio-group-solid .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled) {
+body[data-ui="v1"] .ant-radio-group-solid .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled){
   background: linear-gradient(135deg, #ff7b47 0%, #ff6b35 100%) !important;
   border-color: transparent !important;
   color: #fff !important;
   box-shadow: 0 4px 12px rgba(255, 107, 53, 0.22) !important;
 }
-.ant-radio-group-solid .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled)::before {
+body[data-ui="v1"] .ant-radio-group-solid .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled)::before{
   background-color: transparent !important;
 }
 
 /* —— 统计数值 —— */
-.ant-statistic-content {
+body[data-ui="v1"] .ant-statistic-content{
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum';
   letter-spacing: -0.02em;
 }
-.ant-statistic-title {
+body[data-ui="v1"] .ant-statistic-title{
   color: #6b7280;
   font-size: 13px;
 }
 
 /* —— 弹层：更柔和的圆角与阴影 —— */
-.ant-modal .ant-modal-content {
+body[data-ui="v1"] .ant-modal .ant-modal-content{
   border-radius: 18px;
   padding: 24px;
   box-shadow: 0 24px 60px rgba(31, 41, 55, 0.16), 0 6px 16px rgba(31, 41, 55, 0.08);
 }
-.ant-modal .ant-modal-header {
+body[data-ui="v1"] .ant-modal .ant-modal-header{
   border-bottom: none;
   margin-bottom: 16px;
 }
-.ant-modal .ant-modal-title {
+body[data-ui="v1"] .ant-modal .ant-modal-title{
   font-weight: 700;
   font-size: 17px;
   letter-spacing: -0.01em;
 }
-.ant-drawer-content {
+body[data-ui="v1"] .ant-drawer-content{
   border-radius: 18px 0 0 18px;
 }
-.ant-dropdown-menu,
-.ant-select-dropdown {
+body[data-ui="v1"] .ant-dropdown-menu,
+body[data-ui="v1"] .ant-select-dropdown{
   border-radius: 12px;
   box-shadow: 0 8px 30px rgba(31, 41, 55, 0.12) !important;
   padding: 6px;
 }
-.ant-dropdown-menu-item,
-.ant-select-item {
+body[data-ui="v1"] .ant-dropdown-menu-item,
+body[data-ui="v1"] .ant-select-item{
   border-radius: 8px !important;
 }
-.ant-popover-inner {
+body[data-ui="v1"] .ant-popover-inner{
   border-radius: 12px;
 }
 
 /* —— 其它细节 —— */
-.ant-divider {
+body[data-ui="v1"] .ant-divider{
   border-color: #f3f4f6 !important;
 }
-.ant-list-item {
+body[data-ui="v1"] .ant-list-item{
   border-block-end-color: #f3f4f6 !important;
 }
-.ant-descriptions-item-label {
+body[data-ui="v1"] .ant-descriptions-item-label{
   color: #6b7280 !important;
   font-size: 13px;
 }
-.ant-collapse {
+body[data-ui="v1"] .ant-collapse{
   border: 1px solid #f3f4f6;
   border-radius: 14px;
   overflow: hidden;
 }
-.ant-alert {
+body[data-ui="v1"] .ant-alert{
   border-radius: 12px;
   border: none;
 }
-.ant-empty-description {
+body[data-ui="v1"] .ant-empty-description{
   color: #9ca3af;
   font-size: 13px;
 }
-.ant-progress-text {
+body[data-ui="v1"] .ant-progress-text{
   font-variant-numeric: tabular-nums;
   font-size: 12px !important;
 }
-.ant-tabs-tab {
+body[data-ui="v1"] .ant-tabs-tab{
   font-weight: 500;
 }
-.ant-tabs-tab-active .ant-tabs-tab-btn {
+body[data-ui="v1"] .ant-tabs-tab-active .ant-tabs-tab-btn{
   font-weight: 700;
 }
-.ant-menu-item-selected {
+body[data-ui="v1"] .ant-menu-item-selected{
   font-weight: 600;
 }
-.ant-menu-light.ant-menu-root.ant-menu-inline {
+body[data-ui="v1"] .ant-menu-light.ant-menu-root.ant-menu-inline{
   border-inline-end: none !important;
 }
 /* 键盘可访问性：统一焦点环 */
@@ -585,15 +585,15 @@ h5.ant-typography {
     border-radius: 16px;
   }
   /* 移动端表格横向滚动更顺滑 */
-  .ant-table-wrapper {
+  body[data-ui="v1"] .ant-table-wrapper{
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
   }
-  .ant-modal .ant-modal-content {
+  body[data-ui="v1"] .ant-modal .ant-modal-content{
     padding: 18px;
     border-radius: 16px;
   }
-  .ant-card {
+  body[data-ui="v1"] .ant-card{
     box-shadow: 0 1px 4px rgba(31, 41, 55, 0.05);
   }
 }
