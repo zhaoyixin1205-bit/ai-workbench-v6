@@ -14,6 +14,8 @@ import type {
   Announcement, Attachment, CaseItem, Level, SceneCard, ScopeSubject, SkillPackage, Topic, Track,
 } from '@/mock/types';
 import { useFileUpload } from '@/service/useFileUpload';
+/* V7.0 裸编码治理：公告/场景卡状态显示中文（DRAFT→草稿 等） */
+import { contentStatusText } from '@/constants/statusMeta';
 import { Dialog, useConfirm } from '@/components/v2/Dialog';
 import '../../theme/v2/template.css';
 
@@ -101,7 +103,7 @@ export default function ContentAdminV2() {
           }
           : a)),
       }));
-      log('编辑公告', vals.title ?? editing.title, `状态 ${vals.status}；置顶 ${vals.pinned ? '是' : '否'}`);
+      log('编辑公告', vals.title ?? editing.title, `状态 ${contentStatusText(vals.status)}；置顶 ${vals.pinned ? '是' : '否'}`);
       message.success('公告已保存');
     } else {
       const id = `AN-${Date.now()}`;
@@ -118,7 +120,7 @@ export default function ContentAdminV2() {
           created_at: at,
         }, ...p.announcements],
       }));
-      log('新建公告', vals.title ?? '', `状态 ${vals.status}；创建人 ${me.name}`);
+      log('新建公告', vals.title ?? '', `状态 ${contentStatusText(vals.status)}；创建人 ${me.name}`);
       message.success('公告已创建');
     }
     setAnnounceEditing(null);
@@ -564,7 +566,7 @@ export default function ContentAdminV2() {
           published_at: vals.status === 'PUBLISHED' && !s.published_at ? at : s.published_at,
         } : s)),
       }));
-      log('编辑场景卡', vals.title ?? editing.title, `状态 ${vals.status}`);
+      log('编辑场景卡', vals.title ?? editing.title, `状态 ${contentStatusText(vals.status)}`);
       message.success('场景卡已保存');
     } else {
       setDb((p) => ({
@@ -585,7 +587,7 @@ export default function ContentAdminV2() {
           created_at: at,
         }, ...p.sceneCards],
       }));
-      log('新建场景卡', vals.title ?? '', `状态 ${vals.status} · 创建人 ${me.name}`);
+      log('新建场景卡', vals.title ?? '', `状态 ${contentStatusText(vals.status)} · 创建人 ${me.name}`);
       message.success('场景卡已创建');
     }
     setSceneEditing(null);
@@ -867,7 +869,7 @@ export default function ContentAdminV2() {
                               <span style={{ fontSize: 20 }}>{c.emoji}</span>
                               <b style={{ color: COLOR.ink1 }}>{c.title}</b>
                               <span className="wb2-tag"><i className="d" style={{ background: trackVar(c.track) }} />{c.track}</span>
-                              <span className={`wb2-tag ${TONE.sceneStatus(c.status)}`}><i className="d" />{c.status}</span>
+                              <span className={`wb2-tag ${TONE.sceneStatus(c.status)}`}><i className="d" />{contentStatusText(c.status)}</span>
                               {c.week && <span className="wb2-tag id"><i className="d" />{c.week}</span>}
                             </div>
                             <div style={{ fontSize: FONT.caption, color: COLOR.ink3, marginTop: 'var(--wb-space-2)' }}>
@@ -913,7 +915,7 @@ export default function ContentAdminV2() {
                       {
                         title: '状态', dataIndex: 'status', width: 100,
                         render: (v: Announcement['status']) => (
-                          <span className={`wb2-tag ${TONE.announceStatus(v)}`}><i className="d" />{v}</span>
+                          <span className={`wb2-tag ${TONE.announceStatus(v)}`}><i className="d" />{contentStatusText(v)}</span>
                         ),
                       },
                       {

@@ -35,9 +35,9 @@ export const STATUS_META: Record<SubmitStatus, StatusMeta> = {
   CONSENSUS: { text: '已共识', color: 'geekblue' },
 };
 
-/** 取中文文案；未知状态回退为原值（不吞掉新状态，便于发现漏配） */
-export function statusText(s: string): string {
-  return (STATUS_META as Record<string, StatusMeta>)[s]?.text ?? s;
+/** 取中文文案；未知状态回退为原值（不吞掉新状态，便于发现漏配）。允许 undefined（可选字段场景） */
+export function statusText(s: string | undefined): string {
+  return (s !== undefined && (STATUS_META as Record<string, StatusMeta>)[s]?.text) || s || '—';
 }
 
 /** 取标签颜色；未知状态回退为 default */
@@ -68,6 +68,38 @@ export const TYPE_STATUS_TEXT: Record<string, string> = {
 export function statusOptions(extra?: SubmitStatus[]) {
   return [...ALL_SUBMIT_STATUSES, ...(extra ?? [])].map((v) => ({
     value: v as string,
-    label: `${statusText(v)}（${v}）`,
+    label: statusText(v),
   }));
+}
+
+/**
+ * 专家排班状态中文映射 —— V7.0 裸编码治理。
+ * ExpertSchedule.status 是 OPEN/FULL/CLOSED/HOLIDAY 英文枚举，此前在排班表格与
+ * 管理下拉里直接显示裸编码；本映射与门诊页 SLOT_STATUS 的文案口径保持一致。
+ */
+export const SCHEDULE_STATUS_TEXT: Record<string, string> = {
+  OPEN: '可预约',
+  FULL: '已约满',
+  CLOSED: '已关闭',
+  HOLIDAY: '休诊',
+};
+
+/** 取排班状态中文；未知值回退为原值。允许 undefined（表单可选字段场景） */
+export function scheduleStatusText(s: string | undefined): string {
+  return (s !== undefined && SCHEDULE_STATUS_TEXT[s]) || s || '—';
+}
+
+/**
+ * 内容实体（公告 Announcement / 场景卡 SceneCard）状态中文映射 —— V7.0 裸编码治理。
+ * 注意与「作业提报状态」（STATUS_META）和「作业类型状态」（TYPE_STATUS_TEXT）是三套枚举，不要混用。
+ */
+export const CONTENT_STATUS_TEXT: Record<string, string> = {
+  DRAFT: '草稿',
+  PUBLISHED: '已发布',
+  OFFLINE: '已下线',
+};
+
+/** 取内容状态中文；未知值回退为原值。允许 undefined（表单可选字段场景） */
+export function contentStatusText(s: string | undefined): string {
+  return (s !== undefined && CONTENT_STATUS_TEXT[s]) || s || '—';
 }

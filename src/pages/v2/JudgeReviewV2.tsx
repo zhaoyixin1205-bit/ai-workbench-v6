@@ -3,7 +3,7 @@ import { SafetyCertificateOutlined } from '@ant-design/icons';
 import { useState } from 'react';
 import { useStore } from '@/store/store';
 import { COLOR, FONT } from '@/theme/v2';
-import type { AssignmentSubmit, ScoreCard, ScoreResult } from '@/mock/types';
+import type { AssignmentSubmit, ScoreCard, ScoreResult, SubmitStatus } from '@/mock/types';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import { statusText, statusColor } from '@/constants/statusMeta';
 import { Dialog, DialogField, DialogKV, useConfirm } from '@/components/v2/Dialog';
@@ -35,12 +35,14 @@ const EMPTY_CARD: ScoreCard = {
   dimensions: [], updated_at: '',
 };
 
-/** CR-33 真源的 AntD 色 → v2 四档语义色（ok 完成 / run 进行 / wa 待处理 / er 拒绝 / id 中性） */
+/** CR-33 真源的 AntD 色 → v2 四档语义色（ok 完成 / run 进行 / wa 待处理 / er 拒绝 / id 中性）
+ *  V7.0 用户反馈治理：「复核中」与「已复核」同色（purple→wa）在队列里看起来像重复；
+ *  「已复核」单独走 ok 档（完成绿），与「复核中」一眼区分。 */
 const STATUS_TONE: Record<string, string> = {
   default: 'id', blue: 'run', cyan: 'run', geekblue: 'run',
   purple: 'wa', gold: 'wa', green: 'ok', red: 'er',
 };
-const statusTone = (v: string) => STATUS_TONE[statusColor(v)] ?? 'id';
+const statusTone = (v: string) => (v === 'REVIEWED' ? 'ok' : STATUS_TONE[statusColor(v)] ?? 'id');
 
 /** V4.0 CR-07：抽查三问 → 一次「真实性确认」 */
 interface ConfirmDraft {
@@ -204,7 +206,7 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
     log(
       confirm.result === '真实' ? '真实性确认通过' : '真实性确认存疑',
       current!.code,
-      `确认人 ${me.name}（钉钉身份不可编辑）· ${prevStatus} → ${nextStatus}${confirm.note ? ` · 备注：${confirm.note.slice(0, 20)}…` : ''}`,
+      `确认人 ${me.name}（钉钉身份不可编辑）· ${statusText(prevStatus)} → ${statusText(nextStatus)}${confirm.note ? ` · 备注：${confirm.note.slice(0, 20)}…` : ''}`,
     );
     message.success(confirm.result === '真实' ? '已确认真实性，复核完成' : '已标记存疑，退回重新复核并通知组织者');
     setConfirm(null); setCurrent(null);
@@ -245,11 +247,17 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
     db.reviewOverrides.filter((o) => o.submit_id === submitId)
       .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
 
+  /**
+   * V7.0 裸编码治理：原始结论的展示口径 —— 真实性确认结果（真实/存疑）已是中文直接用；
+   * 未确认时回退的是状态枚举（REVIEWING 等），必须转中文，避免覆盖弹窗与留痕里出现裸编码。
+   */
+  const resultTextOf = (r: AssignmentSubmit) => r.confirmed?.result ?? statusText(r.status);
+
   const openOverride = (r: AssignmentSubmit) => {
     setOverrideTarget(r);
     overrideForm.resetFields();
     overrideForm.setFieldsValue({
-      new_result: r.confirmed?.result ?? r.status,
+      new_result: resultTextOf(r),
       new_score: r.final_score ?? r.judge_score ?? 0,
       reason: '',
     });
@@ -268,7 +276,7 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
     if (reason.length < 10) { message.error('覆盖理由必填且不少于 10 字'); return; }
 
     /** 原结论不可变：只新增 review_override 记录，不改写原 review_confirm */
-    const original = r.confirmed?.result ?? r.status;
+    const original = resultTextOf(r);
     const originalScore = r.final_score ?? r.judge_score ?? 0;
     const newScore = Number(vals.new_score ?? originalScore);
     const at = `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`;
@@ -308,9 +316,20 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
   };
 
   /** V7.0 CR-32：待我评分队列（后台=待复核队列；C 端=我还没评过的） */
+  /** V7.0 用户反馈治理：队列按状态分组过滤 —— 只加视图过滤，不改变队列数据口径
+   *  （REVIEWED 保留在队列内以支持「撤回重评」，属既有业务设计）。 */
+  const [queueFilter, setQueueFilter] = useState<'ALL' | SubmitStatus>('ALL');
+  const queueStatusCount = (st: SubmitStatus) => queue.filter((s) => s.status === st).length;
+  const filteredQueue = queueFilter === 'ALL' ? queue : queue.filter((s) => s.status === queueFilter);
+  const queueTabs: { key: 'ALL' | SubmitStatus; label: string }[] = isC
+    ? [{ key: 'ALL', label: '全部' }]
+    : (['AI_SCORED', 'REVIEWING', 'REVIEWED'] as SubmitStatus[])
+      .filter((st) => queueStatusCount(st) > 0)
+      .map((st) => ({ key: st, label: `${statusText(st)} ${queueStatusCount(st)}` }));
+
   const queueTable = (
     <Table
-      size="small" rowKey="id" pagination={{ pageSize: 6 }} dataSource={queue}
+      size="small" rowKey="id" pagination={{ pageSize: 6 }} dataSource={filteredQueue}
       locale={{
         emptyText: (
           <div className="wb2-empty">
@@ -490,7 +509,34 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
             <div className="wb2-tcard">
               <div className="hd">
                 <span className="t">待复核队列<span className="n">{queue.length}</span></span>
+                {/* V7.0 用户反馈治理：状态分组过滤 chips（各带计数），区分「复核中 / 已复核」不再混淆 */}
+                {queueTabs.length > 1 && (
+                  <div style={{ display: 'flex', gap: 'var(--wb-space-2)', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      className={`wb2-chip${queueFilter === 'ALL' ? ' on' : ''}`}
+                      onClick={() => setQueueFilter('ALL')}
+                    >
+                      全部 {queue.length}
+                    </button>
+                    {queueTabs.map((t) => (
+                      <button
+                        key={t.key}
+                        type="button"
+                        className={`wb2-chip${queueFilter === t.key ? ' on' : ''}`}
+                        onClick={() => setQueueFilter(t.key)}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
+              {queue.some((s) => s.status === 'REVIEWED') && (
+                <div style={{ padding: 'var(--wb-space-2) var(--wb-space-5) 0', fontSize: FONT.caption, color: COLOR.ink3 }}>
+                  队列含已复核作业（评分截止前可撤回重评）；「已复核」为绿色标签，可与「复核中」区分
+                </div>
+              )}
               <div className="bd">{queueTable}</div>
             </div>
           )}
@@ -668,7 +714,7 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
       >
         <DialogKV
           k="原始结论"
-          v={`${overrideTarget?.confirmed?.result ?? overrideTarget?.status}（${overrideTarget?.final_score ?? overrideTarget?.judge_score ?? '—'} 分）${overrideTarget?.confirmed?.by ? ` · 确认人 ${overrideTarget.confirmed.by}` : ''}`}
+          v={`${overrideTarget ? resultTextOf(overrideTarget) : '—'}（${overrideTarget?.final_score ?? overrideTarget?.judge_score ?? '—'} 分）${overrideTarget?.confirmed?.by ? ` · 确认人 ${overrideTarget.confirmed.by}` : ''}`}
         />
         <Form form={overrideForm} layout="vertical" preserve={false}>
           <Form.Item name="new_result" label="调整后结论" rules={[{ required: true }]} style={{ marginBottom: 0 }}>

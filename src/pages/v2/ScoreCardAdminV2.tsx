@@ -1,4 +1,5 @@
 import { Button, Input, InputNumber, Table, App as AntApp } from 'antd';
+import { PlusOutlined } from '@ant-design/icons';
 import { useState } from 'react';
 import { useStore } from '@/store/store';
 import { COLOR } from '@/theme/v2';
@@ -239,6 +240,31 @@ export default function ScoreCardAdminV2() {
 
   const statusTone = (s: string) => (s === '启用' ? 'ok' : s === '草稿' ? 'wa' : 'id');
 
+  /**
+   * V7.0 用户反馈：维度支持新增 / 删除（编辑态）。
+   *  - 新增：默认「新维度N」、权重 0（避免悄悄改变合计，由组织者显式调整）、满分 10、档位空；
+   *  - 删除：至少保留 1 个维度；删除后 sort 重排，其余维度不动；
+   *  - 权重合计 =100 的校验沿用 save()，新增/删除后需自行调平才能保存。
+   */
+  const addDimension = () => {
+    const id = `D${Date.now()}-${dims.length + 1}`;
+    setDims([...dims, {
+      id, sort: dims.length + 1, name: `新维度${dims.length + 1}`,
+      weight: 0, max_score: 10, standard: '', levels: [],
+    }]);
+    setLevelText((m) => ({ ...m, [id]: '' }));
+  };
+
+  const removeDimension = (id: string) => {
+    if (dims.length <= 1) { message.warning('至少保留 1 个维度'); return; }
+    const rest = dims.filter((d) => d.id !== id).map((d, i) => ({ ...d, sort: i + 1 }));
+    setDims(rest);
+    setLevelText((m) => {
+      const { [id]: _drop, ...others } = m;
+      return others;
+    });
+  };
+
   return (
     <div>
       <div className="wb2-ph">
@@ -379,8 +405,26 @@ export default function ScoreCardAdminV2() {
                     ? <Input size="small" value={v} onChange={(e) => setDims(dims.map((d) => (d.id === r.id ? { ...d, standard: e.target.value } : d)))} />
                     : v,
                 },
+                /* V7.0 用户反馈：编辑态支持删除维度（查看态不显示该列） */
+                ...(editing ? [{
+                  title: '操作', width: 70,
+                  render: (_: unknown, r: ScoreDimension) => (
+                    <Button size="small" type="link" danger disabled={!editableOn || dims.length <= 1}
+                      onClick={() => removeDimension(r.id)}>
+                      删除
+                    </Button>
+                  ),
+                }] : []),
               ]}
             />
+
+            {/* V7.0 用户反馈：编辑态支持新增多个维度 */}
+            {editing && (
+              <div style={{ marginTop: 'var(--wb-space-3)', display: 'flex', gap: 'var(--wb-space-3)', alignItems: 'center' }}>
+                <Button size="small" icon={<PlusOutlined />} disabled={!editableOn} onClick={addDimension}>新增维度</Button>
+                <span className="wb2-note">新增维度默认权重 0，请调整各维度权重使合计 = 100 后保存</span>
+              </div>
+            )}
 
             <div className="wb2-grid2" style={{ marginTop: 'var(--wb-space-6)' }}>
               {/* ---------- 档位与标准 ---------- */}

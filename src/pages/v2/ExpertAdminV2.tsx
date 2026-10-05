@@ -10,6 +10,8 @@ import { Dialog, useConfirm } from '@/components/v2/Dialog';
 import dayjs from 'dayjs';
 /* V7.0 CR-36：排班字段契约 + 时段预置枚举（拍板 8-C：预置优先、允许自定义） */
 import { scheduleSchema, SCHEDULE_SLOTS, SCHEDULE_TYPES } from '@/constants/importSchemas';
+/* V7.0 裸编码治理：排班状态显示中文（OPEN→可预约 等） */
+import { scheduleStatusText } from '@/constants/statusMeta';
 import '../../theme/v2/template.css';
 
 /** V7.0 CR-36：排班导入行（显式泛型，避免 TS 从三态联合里推断成 {}） */
@@ -440,7 +442,7 @@ export default function ExpertAdminV2() {
                           {
                             title: '状态', dataIndex: 'status',
                             render: (v: string) => (
-                              <span className={`wb2-tag ${v === 'OPEN' ? 'wa' : v === 'HOLIDAY' ? 'wa' : 'id'}`}><i className="d" />{v}</span>
+                              <span className={`wb2-tag ${v === 'OPEN' ? 'wa' : v === 'HOLIDAY' ? 'wa' : 'id'}`}><i className="d" />{scheduleStatusText(v)}</span>
                             ),
                           },
                           {
@@ -553,7 +555,7 @@ export default function ExpertAdminV2() {
             <Input placeholder="线上填会议链接，线下填地点" />
           </Form.Item>
           <Form.Item name="status" label="状态" rules={[{ required: true }]} style={{ marginBottom: 0 }}>
-            <Select options={['OPEN', 'FULL', 'CLOSED', 'HOLIDAY'].map((v) => ({ value: v, label: v }))} />
+            <Select options={['OPEN', 'FULL', 'CLOSED', 'HOLIDAY'].map((v) => ({ value: v, label: scheduleStatusText(v) }))} />
           </Form.Item>
         </Form>
       </Dialog>

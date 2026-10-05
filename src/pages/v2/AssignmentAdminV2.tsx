@@ -242,8 +242,8 @@ export default function AssignmentAdminV2() {
           operator: me.name, reason, created_at: at,
         }, ...p.submitFlowLogs],
       }));
-      log('流程编排', `${s.code} ${s.status} → ${to}`, `理由：${reason}（白名单校验通过，操作人 ${me.name}）`);
-      message.success(`已流转：${s.status} → ${to}（已留痕）`);
+      log('流程编排', `${s.code} ${statusText(s.status)} → ${statusText(to)}`, `理由：${reason}（白名单校验通过，操作人 ${me.name}）`);
+      message.success(`已流转：${statusText(s.status)} → ${statusText(to)}（已留痕）`);
       setFlowTarget(null);
       flowForm.resetFields();
     };
@@ -488,12 +488,12 @@ export default function AssignmentAdminV2() {
       >
         <Form form={flowForm} layout="vertical" preserve={false}>
           <Form.Item label="当前环节" style={{ marginBottom: 'var(--wb-space-3)' }}>
-            <span className="wb2-tag run"><i className="d" />{flowTarget?.status}</span>
+            <span className="wb2-tag run"><i className="d" />{statusText(flowTarget?.status)}</span>
           </Form.Item>
           <Form.Item name="to_status" label="目标环节" rules={[{ required: true, message: '请选择目标环节' }]} style={{ marginBottom: 'var(--wb-space-3)' }}>
             <Select
               placeholder={allowedTargets(flowTarget?.status ?? 'DRAFT').length ? '选择目标环节' : '当前环节没有允许的流转路径'}
-              options={allowedTargets(flowTarget?.status ?? 'DRAFT').map((v) => ({ value: v, label: v }))}
+              options={allowedTargets(flowTarget?.status ?? 'DRAFT').map((v) => ({ value: v, label: statusText(v) }))}
             />
           </Form.Item>
           <Form.Item

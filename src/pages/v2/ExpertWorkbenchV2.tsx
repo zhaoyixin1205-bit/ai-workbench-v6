@@ -6,6 +6,8 @@ import { useStore } from '@/store/store';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 /* V7.0 CR-36：时段预置枚举 + 三种形式（拍板 8-C / 确认项 4） */
 import { SCHEDULE_SLOTS, SCHEDULE_TYPES } from '@/constants/importSchemas';
+/* V7.0 裸编码治理：排班状态显示中文 */
+import { scheduleStatusText } from '@/constants/statusMeta';
 import { Dialog, useConfirm } from '@/components/v2/Dialog';
 import '../../theme/v2/template.css';
 
@@ -154,7 +156,7 @@ export default function ExpertWorkbenchV2() {
 
       <div className="wb2-metrics" style={{ marginTop: 'var(--wb-space-5)' }}>
         {[
-          { lb: '可约号源', vl: openSlots, sb: '当前 OPEN 状态排班', accent: true },
+          { lb: '可约号源', vl: openSlots, sb: '当前「可预约」状态的排班', accent: true },
           { lb: '待接诊', vl: pending.length, sb: '状态为「待就诊」' },
           { lb: '评价条数', vl: reviews.length, sb: '含匿名评价' },
           { lb: '履约率', vl: `${doneRate}%`, sb: '已完成 / 全部预约' },
@@ -247,7 +249,7 @@ export default function ExpertWorkbenchV2() {
                       { title: '地点/链接', dataIndex: 'place_or_link' },
                       {
                         title: '状态', dataIndex: 'status',
-                        render: (v: string) => <span className={`wb2-tag ${schedTone(v)}`}><i className="d" />{v}</span>,
+                        render: (v: string) => <span className={`wb2-tag ${schedTone(v)}`}><i className="d" />{scheduleStatusText(v)}</span>,
                       },
                       {
                         title: '操作',
