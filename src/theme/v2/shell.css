@@ -50,6 +50,7 @@
   color: var(--wb-ink-1);
 }
 .wb2-logo-sub {
+  display: block;
   font-size: var(--wb-fs-caption);
   color: var(--wb-ink-3);
   line-height: 1.2;
@@ -65,12 +66,87 @@
   min-width: 0;
   height: 56px;
 }
+/* 分组导航：组名常驻触发按钮 + hover/点击展开子项（方案 D）
+   目的：把顶栏导航区从约 719px 压到约 260px，1280 视口不再与右侧功能区重叠 */
 .wb2-nav-group {
+  position: relative;
   display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 1px;
+  align-items: center;
   flex: 0 0 auto;
+}
+.wb2-nav-trigger {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 10px;
+  border: none;
+  background: none;
+  border-radius: var(--wb-radius-sm);
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--wb-ink-2);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.wb2-nav-trigger:hover {
+  background: var(--wb-surface-band);
+  color: var(--wb-ink-1);
+}
+/* 当前所在子项常驻在触发按钮上，位置感不因折叠而丢失 */
+.wb2-nav-trigger.on {
+  background: var(--wb-primary-soft);
+  color: var(--wb-primary);
+  font-weight: 500;
+}
+.wb2-nav-trigger .gp {
+  font-weight: 500;
+}
+.wb2-nav-trigger .cur {
+  padding-left: 5px;
+  border-left: 1px solid var(--wb-border-strong);
+  font-size: 12px;
+  opacity: 0.85;
+}
+.wb2-nav-trigger .caret {
+  font-size: 9px;
+  opacity: 0.6;
+}
+.wb2-nav-drop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 136px;
+  padding: 8px;
+  background: var(--wb-surface-card);
+  border: 1px solid var(--wb-border);
+  border-radius: var(--wb-radius-md);
+  box-shadow: var(--wb-shadow-popover);
+  z-index: var(--wb-z-popover);
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s;
+}
+/* hover（鼠标）/ open（触屏点击）/ focus-within（键盘 Tab）三种路径都能展开 */
+.wb2-nav-group:hover .wb2-nav-drop,
+.wb2-nav-group.open .wb2-nav-drop,
+.wb2-nav-group:focus-within .wb2-nav-drop {
+  visibility: visible;
+  opacity: 1;
+  transform: none;
+}
+/* 下拉内纵向排列：沿用 .wb2-nav-item，仅改容器方向 */
+.wb2-nav-box.col {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  background: none;
+  padding: 0;
+}
+.wb2-nav-box.col .wb2-nav-item {
+  text-align: left;
+  padding: 6px 10px;
 }
 .wb2-nav-label {
   font-size: 10px;
@@ -128,6 +204,44 @@
   gap: var(--wb-space-3);
   flex: 0 0 auto;
 }
+
+/* ===== 方案 A：右侧控件的「紧凑态」=====
+   默认（宽屏）显示完整文字态，≤1440 / ≤1280 逐级退化为图标态（见文末断点）。
+   所有紧凑态都保留 Tooltip + 原有 onClick，能力零损失。 */
+.wb2-sync-dot-wrap,
+.wb2-search-btn {
+  display: none;
+}
+.wb2-sync-dot {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--wb-border);
+  border-radius: var(--wb-radius-pill);
+  background: var(--wb-surface-card);
+  font-size: 13px;
+  cursor: pointer;
+}
+.wb2-sync-dot.ok { color: var(--wb-success); border-color: var(--wb-success-soft); }
+.wb2-sync-dot.wa { color: var(--wb-warning); border-color: var(--wb-warning-soft); }
+.wb2-sync-dot.er { color: var(--wb-error); border-color: var(--wb-error-soft); }
+.wb2-sync-dot:hover { background: var(--wb-surface-band); }
+.wb2-search-btn {
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--wb-border-strong);
+  border-radius: var(--wb-radius-md);
+  background: var(--wb-surface-card);
+  color: var(--wb-ink-3);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0;
+}
+.wb2-search-btn:hover { border-color: var(--wb-ink-3); color: var(--wb-ink-1); }
 
 /* 搜索 */
 .wb2-search {
@@ -356,7 +470,30 @@
   flex: 0 0 auto;
 }
 
-/* ================= 响应式（容器查询） ================= */
+/* ================= 响应式 =================
+   断点分层（方案 B）：
+     ≥1441  全量：文字同步徽章 + 完整搜索框 + 「仅管理员」说明
+     ≤1440  一级让步：同步徽章→状态点、搜索框→放大镜图标、隐藏「仅管理员」
+     ≤1280  二级让步：隐藏 Logo 副标题、后台按钮→纯图标、导航间距与字号收紧
+     ≤768   移动端：导航/搜索隐藏，走底部 Tab 栏
+   之所以补中间两档：主流办公屏（1080p + 系统 125%/150% 缩放 + Chrome 100%）
+   CSS 视口恰在 1280~1536px，此前该区间零适配，导航会与右侧重叠。 */
+@media (max-width: 1440px) {
+  .wb2-sync-full { display: none; }
+  .wb2-sync-dot-wrap { display: inline-flex; }
+  .wb2-search { display: none; }
+  .wb2-search-btn { display: inline-flex; }
+  .wb2-ver em { display: none; }
+}
+@media (max-width: 1280px) {
+  .wb2-logo-sub { display: none; }
+  .wb2-admin-txt { display: none; }
+  .wb2-nav { gap: var(--wb-space-2); }
+  .wb2-nav-item,
+  .wb2-nav-trigger { font-size: 12px; padding: 4px 8px; }
+  .wb2-hd { gap: var(--wb-space-4); }
+}
+
 @container (max-width: 768px) {
   .wb2-nav,
   .wb2-search {

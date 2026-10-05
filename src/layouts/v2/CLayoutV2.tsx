@@ -5,7 +5,8 @@ import {
   HomeOutlined, BulbOutlined, TrophyOutlined, FormOutlined, MedicineBoxOutlined,
   TeamOutlined, AppstoreOutlined, GiftOutlined, UserOutlined, SettingOutlined,
   BellOutlined, QuestionCircleOutlined, MessageOutlined, VerticalAlignTopOutlined,
-  SafetyCertificateOutlined,
+  SafetyCertificateOutlined, DownOutlined, SearchOutlined,
+  CloudOutlined, CloudServerOutlined, ExclamationCircleOutlined,
 } from '@ant-design/icons';
 import { useStore } from '@/store/store';
 import { canEnterAdmin, checkCAccess } from '@/auth/access';
@@ -73,6 +74,38 @@ const CRUMB: Record<string, string> = {
   me: '个人中心',
 };
 
+/**
+ * 窄屏（≤1440）专用：同步状态点
+ *
+ * SyncBadge 是 v1/v2 共享组件（v1 零 diff 红线，不可改），但它带文字、宽度约 90px。
+ * 窄屏放不下，所以在 v2 壳层内另做一个「同义图标态」：颜色区分 + Tooltip 给完整说明 + 点击可刷新，
+ * 保证 SyncBadge 存在的初心不被削弱 ——「用户不能以为共享了其实没共享」。
+ * 宽屏仍显示完整 SyncBadge（见 .wb2-sync-full / .wb2-sync-dot 的断点切换）。
+ */
+function SyncDot() {
+  const { sync, pullRemote } = useStore();
+  const conflict = sync.state === 'conflict';
+  const degraded = sync.mode === 'local' || sync.state === 'offline';
+  const title =
+    conflict ? (sync.message || '数据冲突 · 点击刷新')
+      : sync.mode === 'local' ? (sync.message || '未连接后端：数据只保存在本机，其他人看不到')
+        : sync.state === 'offline' ? (sync.message || '与后端断开 · 点击重连')
+          : `多人共享已启用（存储：${sync.driver === 'pg' ? 'PostgreSQL' : sync.driver || '后端'}）`
+            + `${sync.updatedBy ? ` · 最近由 ${sync.updatedBy} 更新` : ''}`;
+  return (
+    <Tooltip title={title}>
+      <button
+        className={`wb2-sync-dot ${conflict ? 'er' : degraded ? 'wa' : 'ok'}`}
+        onClick={() => void pullRemote()}
+        aria-label={title}
+        type="button"
+      >
+        {conflict ? <ExclamationCircleOutlined /> : degraded ? <CloudOutlined /> : <CloudServerOutlined />}
+      </button>
+    </Tooltip>
+  );
+}
+
 export default function CLayoutV2() {
   const { db, me, flags } = useStore();
   const nav = useNavigate();
@@ -83,6 +116,8 @@ export default function CLayoutV2() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [kw, setKw] = useState('');
+  /** 分组下拉展开态：hover 与 click 共用（触屏无 hover，故必须支持点击） */
+  const [openGroup, setOpenGroup] = useState<'act' | 'grow' | null>(null);
 
   const unread = db.messages.filter(
     (m) => m.status === '未读' && (m.union_id === 'all' || m.union_id === me.union_id)
@@ -125,6 +160,19 @@ export default function CLayoutV2() {
 
   useEffect(() => { setCursor(0); }, [kw]);
 
+  /** 跳路由后收起分组下拉（否则面板会挂在旧页面上） */
+  useEffect(() => { setOpenGroup(null); }, [loc.pathname]);
+
+  /** 点击顶栏之外关闭分组下拉（触屏点击开合后需要） */
+  useEffect(() => {
+    if (!openGroup) return;
+    const onDown = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('.wb2-nav-group')) setOpenGroup(null);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [openGroup]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -148,22 +196,52 @@ export default function CLayoutV2() {
     nav(to);
   };
 
-  const renderGroup = (g: 'act' | 'grow') => (
-    <div className="wb2-nav-group" key={g}>
-      <div className="wb2-nav-label">{GROUP_LABEL[g]}</div>
-      <div className="wb2-nav-box">
-        {navItems.filter((n) => n.group === g).map((n) => (
-          <button
-            key={n.key}
-            className={`wb2-nav-item${currentPath === n.key ? ' on' : ''}`}
-            onClick={() => nav(n.key)}
-          >
-            {n.label}
-          </button>
-        ))}
+  /**
+   * 分组导航（方案 D）：组名常驻、子项 hover/点击展开
+   *
+   * 相对「9 项平铺」的变化：顶栏导航区从约 719px 降到约 260px，1280 视口不再与右侧重叠。
+   * 能力零损失：① 触发按钮上显示当前所在子项，当前位置始终可见；
+   * ② 子项仍走 checkCAccess 过滤后的 navItems，与页级守卫同一份授权表；
+   * ③ 触屏无 hover，故同时支持点击开合。
+   */
+  const renderGroup = (g: 'act' | 'grow') => {
+    const items = navItems.filter((n) => n.group === g);
+    if (items.length === 0) return null;
+    const active = items.find((n) => currentPath === n.key);
+    return (
+      <div
+        className={`wb2-nav-group${openGroup === g ? ' open' : ''}`}
+        key={g}
+        onMouseEnter={() => setOpenGroup(g)}
+        onMouseLeave={() => setOpenGroup((v) => (v === g ? null : v))}
+      >
+        <button
+          type="button"
+          className={`wb2-nav-trigger${active ? ' on' : ''}`}
+          onClick={() => setOpenGroup((v) => (v === g ? null : g))}
+          aria-expanded={openGroup === g}
+        >
+          <span className="gp">{GROUP_LABEL[g]}</span>
+          {active && <span className="cur">{active.label}</span>}
+          <DownOutlined className="caret" />
+        </button>
+        <div className="wb2-nav-drop">
+          <div className="wb2-nav-label">{GROUP_LABEL[g]}</div>
+          <div className="wb2-nav-box col">
+            {items.map((n) => (
+              <button
+                key={n.key}
+                className={`wb2-nav-item${currentPath === n.key ? ' on' : ''}`}
+                onClick={() => { setOpenGroup(null); nav(n.key); }}
+              >
+                {n.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--wb-surface-page)', display: 'flex', flexDirection: 'column' }}>
@@ -173,7 +251,7 @@ export default function CLayoutV2() {
           <span className="wb2-logo-mark">W</span>
           <span>
             <span className="wb2-logo-name">AI 赋能工作台</span>
-            <span className="wb2-logo-sub" style={{ display: 'block' }}>WorkBuddy · 中小微事业群</span>
+            <span className="wb2-logo-sub">WorkBuddy · 中小微事业群</span>
           </span>
         </button>
 
@@ -192,11 +270,20 @@ export default function CLayoutV2() {
         </nav>
 
         <div className="wb2-hd-right">
-          <span className="only-pc"><SyncBadge /></span>
+          {/* 方案 A：宽屏显示完整文字徽章，≤1440 退化成同义图标点（断点在 shell.css） */}
+          <span className="wb2-sync-full only-pc"><SyncBadge /></span>
+          <span className="wb2-sync-dot-wrap only-pc"><SyncDot /></span>
+
+          {/* 方案 A：≤1440 搜索框收成放大镜图标，⌘K 面板与快捷键能力不变 */}
           <div className="wb2-search" onClick={() => setSearchOpen(true)} role="search">
             搜索案例 / 悬赏 / 资产 / 帖子
             <kbd>⌘K</kbd>
           </div>
+          <Tooltip title="搜索（⌘K / Ctrl+K）">
+            <button type="button" className="wb2-search-btn" onClick={() => setSearchOpen(true)} aria-label="搜索">
+              <SearchOutlined />
+            </button>
+          </Tooltip>
 
           {showVersionSwitch && (
             <div className="wb2-ver" title="仅管理员可见">
@@ -208,7 +295,9 @@ export default function CLayoutV2() {
 
           {canAdmin && (
             <Tooltip title="管理后台 / 工作台">
-              <Button size="small" icon={<SettingOutlined />} onClick={() => nav('/admin')}>后台</Button>
+              <Button size="small" icon={<SettingOutlined />} onClick={() => nav('/admin')}>
+                <span className="wb2-admin-txt">后台</span>
+              </Button>
             </Tooltip>
           )}
           <Tooltip title="消息中心">
