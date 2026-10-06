@@ -151,6 +151,16 @@ for (const u of contacts.users) {
 }
 stat.member = users.filter((x) => x.roles.length === 1).length;
 
+// 安全兜底：前端 `me = db.users.find(meId) ?? db.users[0]`。
+// 未部署新包的旧前端其 localStorage 里存的还是演示 id（uid001），查不到就会 fallback 到
+// users[0] —— 那会是个随机同事，等于任何人打开都顶着别人的身份。
+// 因此把组织者固定排在第一位，让任何版本的兜底都落在运营方本人身上。
+users.sort((a, b) => {
+  const pa = a.roles.includes('ORGANIZER') ? 0 : a.roles.includes('ADMIN') ? 1 : 2;
+  const pb = b.roles.includes('ORGANIZER') ? 0 : b.roles.includes('ADMIN') ? 1 : 2;
+  return pa - pb;
+});
+
 /* ================================================================
  * 2. 《大赛选题案例库_20场景.md》 → 选题库（推荐选题）
  * ============================================================== */
@@ -429,13 +439,29 @@ if (process.argv.includes('--apply')) {
 }
 
 if (process.argv.includes('--push')) {
-  const cur = await fetch(`${SITE}/api/state`).then((r) => r.json()).catch(() => null);
-  const baseVersion = cur?.version ?? 0;
-  const put = await fetch(`${SITE}/api/state`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ data: next, baseVersion, by: '钉钉真实数据装配' }),
-  });
-  const j = await put.json();
-  console.log(`${j.ok ? '✅' : '❌'} 线上推送 ${SITE} -> ${put.status} ${JSON.stringify(j).slice(0, 300)}`);
+  /**
+   * 线上是活的：随时可能有真实用户在写入，version 会变。
+   * 直接拿「刚才读到的 version」去写很容易撞 409（2026-10-06 实测撞上李铭铖的写入）。
+   * 所以冲突后重新取一次版本号再补推，最多重试 3 次 —— 不做静默强覆盖。
+   */
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const cur = await fetch(`${SITE}/api/state/version`).then((r) => r.json()).catch(() => null);
+    const baseVersion = cur?.version ?? 0;
+    const res = await fetch(`${SITE}/api/state`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: next, baseVersion, by: '钉钉真实数据装配' }),
+    });
+    const j = await res.json();
+    if (j.ok) {
+      console.log(`✅ 线上推送成功 ${SITE} -> version ${j.version}`);
+      break;
+    }
+    console.log(`⚠️ 第 ${attempt} 次推送冲突（线上 version=${baseVersion}，${j.error ?? ''}）`);
+    if (attempt === 3) {
+      console.log('❌ 三次均冲突，已放弃（未做任何强覆盖）。等线上无人操作时重跑 --push');
+    } else {
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+  }
 }
