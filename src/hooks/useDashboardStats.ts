@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useStore, useStats } from '@/store/store';
-import { deptName } from '@/mock/seedOrg';
+import { deptNameIn } from '@/mock/seedOrg';
 import { useSkillAdminConverge } from '@/auth/converge';
 
 /**
@@ -35,7 +35,7 @@ export function useDashboardStats() {
 
   const deptRank = Object.entries(
     users.reduce<Record<string, { total: number; sub: number; score: number[] }>>((acc, u) => {
-      const d = deptName(u.dept_id_list[0]);
+      const d = deptNameIn(db.depts, u.dept_id_list[0]);
       acc[d] ??= { total: 0, sub: 0, score: [] };
       acc[d].total += 1;
       if (submitted.has(u.union_id)) acc[d].sub += 1;

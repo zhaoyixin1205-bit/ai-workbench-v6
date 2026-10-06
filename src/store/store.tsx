@@ -283,6 +283,13 @@ const StoreCtx = createContext<Ctx | null>(null);
 const LS_KEY = 'wb-workbench-db-v3.0.0';
 const LS_ME = 'wb-workbench-me-v3.0.0';
 const LS_FLAGS = 'wb-workbench-flags-v3.0.0';
+/**
+ * 默认身份：V7.1 起通讯录换成钉钉真实数据，演示用的 'uid001' 已不存在。
+ * 若沿用旧值会 fallback 到 `db.users[0]`（通讯录里第一个人，是谁完全随机），
+ * 等于任何人打开都顶着别人的身份。故显式兜底到组织者本人（工号 E02107）。
+ * 用户点「切换身份」后以 localStorage 为准，不受此常量影响。
+ */
+const DEFAULT_ME_ID = 'uQAkcBWeXVgDWRa3ZFiiUxgiEiE';
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [db, setDb] = useState<DB>(() => {
@@ -336,7 +343,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [setMode]);
 
-  const [meId, setMeId] = useState<string>(() => localStorage.getItem(LS_ME) || 'uid001');
+  const [meId, setMeId] = useState<string>(() => localStorage.getItem(LS_ME) || DEFAULT_ME_ID);
   const [flags, setFlags] = useState<FeatureFlags>(() => {
     try {
       const raw = localStorage.getItem(LS_FLAGS);

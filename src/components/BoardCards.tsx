@@ -13,7 +13,7 @@ import { Card, Col, Progress, Row, Space, Table, Tag, Typography } from 'antd';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ResponsiveContainer } from 'recharts';
 import { useMemo } from 'react';
 import { useStore } from '@/store/store';
-import { deptName } from '@/mock/seedOrg';
+import { deptNameIn } from '@/mock/seedOrg';
 
 export interface BoardData {
   /** 当前口径标签名 */
@@ -53,7 +53,7 @@ export function useBoardData(): BoardData {
 
     const deptRank = Object.entries(
       users.reduce<Record<string, { total: number; sub: number; score: number[] }>>((acc, u) => {
-        const d = deptName(u.dept_id_list[0]);
+        const d = deptNameIn(db.depts, u.dept_id_list[0]);
         acc[d] ??= { total: 0, sub: 0, score: [] };
         acc[d].total += 1;
         if (submittedSet.has(u.union_id)) acc[d].sub += 1;

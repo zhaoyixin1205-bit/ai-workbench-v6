@@ -20,6 +20,11 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
+    // 显式关掉「构建前清空 outDir」。
+    // 原因：vite 的 emptyDir 会对目录做整体递归删除，在启用了安全删除护栏的环境里
+    // 会被判定为批量删除而中断构建；产物文件名带内容哈希，vite 覆写同名文件即可，
+    // 清空并非必需。旧的无哈希残留文件不影响运行（index.html 只引用当次产物）。
+    emptyOutDir: false,
     chunkSizeWarningLimit: 1600,
     rollupOptions: {
       output: {

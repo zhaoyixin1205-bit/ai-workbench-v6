@@ -18,8 +18,17 @@ export const DEPTS: Dept[] = [
   { dept_id: '152', parent_id: '15', name: '赋能中台', level: 3, path: '中小微事业群/中台支持中心/赋能中台' },
 ];
 
+/** @deprecated V7.1：只用于种子数据（演示部门表）。页面里一律改用 deptNameIn，否则
+ *  真实钉钉部门 id 在 DEPTS 里查不到，会直接把数字 id 显示给用户（2026-10-06 实测）。 */
 export const deptName = (id: string) => DEPTS.find((d) => d.dept_id === id)?.name ?? id;
 export const deptPath = (id: string) => DEPTS.find((d) => d.dept_id === id)?.path ?? id;
+
+/**
+ * V7.1：按**运行时**部门表解析名称。
+ * 通讯录换成钉钉真实数据后，dept_id 是钉钉的数字 id，写死在种子里的 DEPTS 必然查不到。
+ */
+export const deptNameIn = (depts: { dept_id: string; name: string }[], id: string) =>
+  depts.find((d) => d.dept_id === id)?.name ?? id;
 
 export const TAGS: Tag[] = [
   { id: 'T1', name: '干部', code: 'CADRE', is_default: true, is_assessment_scope: true, status: '启用', member_count: 39 },
