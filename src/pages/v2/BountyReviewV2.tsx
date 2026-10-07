@@ -10,6 +10,7 @@ import { useSkillAdminConverge } from '@/auth/converge';
 import { ScopeNotice } from '@/components/ScopeNotice';
 import { Dialog, DialogField, useConfirm } from '@/components/v2/Dialog';
 import { isCompanyBounty } from '@/constants/bounty';
+import BountyManage from '@/components/BountyManage';
 import '../../theme/v2/template.css';
 
 /**
@@ -238,6 +239,9 @@ export default function BountyReviewV2() {
           />
         </div>
       </div>
+
+      {/* ---------- V8.2-10.07：悬赏全量台账（含 11 条公司悬赏） ---------- */}
+      <BountyManage readOnly={readOnly} variant="tcard" />
 
       {/* ---------- 通过弹窗（统一操作层） ---------- */}
       <Dialog

@@ -17,6 +17,8 @@ import TeamBoard from '@/components/TeamBoard';
 import AnnounceTicker, { type TickerItem } from '@/components/AnnounceTicker';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import { currentStageOf, stageLabel, submitDeadlineOf } from '@/utils/campaignTime';
+/* V8.2-10.07：必修作业 To Do */
+import { myPendingRequired } from '@/utils/assignmentParticipants';
 import dayjs from 'dayjs';
 import '../../theme/v2/template.css';
 
@@ -61,9 +63,22 @@ export default function HomeV2() {
   const rank = [...db.users].sort((a, b) => b.points - a.points).findIndex((u) => u.union_id === me.union_id) + 1;
 
   /** V4.1 Moka §7：文案 = 事实 + 一个动作，不写状态 */
+  /**
+   * V8.2-10.07：组织者在「作业管理 · 参加人员」中把我设为「必修」且我尚未提报的作业，
+   * 以 To Do 形式置顶提醒（需求原文：必须参加人员名单 → 首页以 TO DO 提醒）。
+   */
+  const myRequiredTodos = myPendingRequired(db.assignmentTypes ?? [], db.submits, me.union_id)
+    .map(({ type }) => ({
+      key: `req-${type.id}`, done: false,
+      text: `${type.name} 指定你参加（${deadline.date ?? '日期待定'} 前提交）`,
+      action: '去提报', to: '/work',
+    }));
+
   const myTodos = [
+    ...myRequiredTodos,
     { key: 'topic', done: mySubmits.length > 0, text: '还没选定场景', action: '去挑一个', to: '/cases' },
-    { key: 'submit', done: mySubmitDone > 0, text: `作业还没交（${deadline.date ?? '日期待定'} 截止）`, action: '去提报', to: '/work' },
+    /* 已有必修提醒时不再重复展示通用「作业还没交」 */
+    ...(myRequiredTodos.length ? [] : [{ key: 'submit', done: mySubmitDone > 0, text: `作业还没交（${deadline.date ?? '日期待定'} 截止）`, action: '去提报', to: '/work' }]),
     { key: 'asset', done: db.assetApplies.some((a) => a.applicant_union_id === me.union_id), text: '作品还没申请入库', action: '去申请', to: '/assets' },
   ].filter((t) => !t.done).slice(0, 3);
 

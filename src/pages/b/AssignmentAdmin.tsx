@@ -9,6 +9,8 @@ import { DEMO_TODAY } from '@/mock/seedBiz';
 import ScopePicker, { ScopeText, useScopeCommit } from '@/components/ScopePicker';
 import type { AssignmentType, ScopeSubject, SubmitStatus } from '@/mock/types';
 import PeriodAdmin from '@/components/PeriodAdmin';
+/* V8.2-10.07：作业参加人员（必修 / 选修） */
+import AssignmentParticipants from '@/components/AssignmentParticipants';
 /* V7.0 CR-33：状态文案走唯一真源（B 端不再显示裸英文） */
 import { statusText, statusOptions, TYPE_STATUS_TEXT } from '@/constants/statusMeta';
 /* V7.0 CR-35：评分结果回写改为真实「下载模板 → 上传解析 → 三态回执」 */
@@ -287,6 +289,11 @@ export default function AssignmentAdmin() {
           {
             key: 'periods', label: '期次（提报周期）',
             children: <PeriodAdmin readOnly={readOnly} />,
+          },
+          /* V8.2-10.07：必须参加人员名单（必修 / 选修）+ 开放他人加入 */
+          {
+            key: 'participants', label: '参加人员',
+            children: <AssignmentParticipants readOnly={readOnly} />,
           },
           {
             key: 'submits', label: `提报清单（${submits.length}）`,

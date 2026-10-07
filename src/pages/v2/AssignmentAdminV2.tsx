@@ -16,6 +16,8 @@ import { useSkillAdminConverge } from '@/auth/converge';
 import { ScopeNotice } from '@/components/ScopeNotice';
 import { Dialog, useConfirm } from '@/components/v2/Dialog';
 import PeriodAdmin from '@/components/PeriodAdmin';
+/* V8.2-10.07：作业参加人员（必修 / 选修） */
+import AssignmentParticipants from '@/components/AssignmentParticipants';
 import '../../theme/v2/template.css';
 
 /** V6.0 CR-23：流程编排的操作对象（最小必要字段） */
@@ -318,6 +320,11 @@ export default function AssignmentAdminV2() {
             {
               key: 'periods', label: '期次（提报周期）',
               children: <PeriodAdmin readOnly={readOnly} variant="tcard" />,
+            },
+            /* V8.2-10.07：必须参加人员名单（必修 / 选修）+ 开放他人加入 */
+            {
+              key: 'participants', label: '参加人员',
+              children: <AssignmentParticipants readOnly={readOnly} variant="tcard" />,
             },
             {
               key: 'submits', label: `提报清单（${submits.length}）`,

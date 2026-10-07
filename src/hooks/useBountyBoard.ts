@@ -30,6 +30,8 @@ export const BOUNTY_STATUS_META: Record<BountyStatus, { text: string; color: str
   SUBMITTED: { text: '方案已提交', color: 'cyan' },
   APPROVED: { text: '已通过', color: 'green' },
   EXPIRED: { text: '已超期释放', color: 'default' },
+  /* V8.2-10.07：组织者下架（大厅不展示，后台可重新上架） */
+  OFFLINE: { text: '已下架', color: 'default' },
 };
 
 export type SolutionMode = 'SUBMIT' | 'MODIFY' | 'SUPPLEMENT';

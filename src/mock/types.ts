@@ -348,7 +348,9 @@ export type BountyStatus =
   | 'CLAIMED'
   | 'SUBMITTED'
   | 'APPROVED'
-  | 'EXPIRED';
+  | 'EXPIRED'
+  /** V8.2-10.07：组织者下架（悬赏大厅不再展示，后台仍可管理/重新上架） */
+  | 'OFFLINE';
 
 export interface Bounty {
   id: string;
@@ -367,6 +369,10 @@ export interface Bounty {
   reject_reason?: string;
   desensitized: boolean;
   created_at: string;
+  /** V8.2-10.07：后台管理留痕（编辑 / 下架 / 重新上架） */
+  updated_at?: string;
+  updated_by?: string;
+  offline_at?: string;
   /** @deprecated V6.0 CR-20：结构化方案上线后改为 solution_fields；旧值自动映射为 solution_fields.scene_desc（字段保留不删） */
   solution?: string;
   /** V6.0 CR-20：结构化方案（与作业提报通用模板同构） */
@@ -430,11 +436,36 @@ export interface AssignmentType {
   visible_scope: '全员' | '本部门' | '仅组织者';
   /** V4.0 CR-08：真正落库的可见范围主体。缺省时回退读 visible_scope（旧文案值） */
   visible_subjects?: ScopeSubject[];
+  /** V8.2-10.07：参加人员名单（必修 / 选修）；缺省表示沿用提报对象范围，不单独点名 */
+  participants?: AssignmentParticipant[];
+  /**
+   * V8.2-10.07：是否开放给其他人员主动加入。
+   * true = 名单外成员可在前端「加入作业」，加入后以选修身份进入 participants。
+   */
+  open_join?: boolean;
   version: number;
   status: 'DRAFT' | 'PUBLISHED' | 'CLOSED' | 'ARCHIVED';
 }
 
 export type PeriodStatus = 'UPCOMING' | 'OPEN' | 'SCORING' | 'CLOSED';
+/**
+ * V8.2-10.07：作业参加人员（必修 / 选修）。
+ * - REQUIRED：组织者指定的「必须参加人员」，首页以 To Do 提醒，后台可催办
+ * - ELECTIVE：作业公开后其他人员主动加入（成员自选），名单中区分展示
+ */
+export interface AssignmentParticipant {
+  union_id: string;
+  name: string;
+  dept_name?: string;
+  kind: 'REQUIRED' | 'ELECTIVE';
+  /** 来源：批量导入 / 手工指定 / 自主加入 */
+  source?: 'IMPORT' | 'MANUAL' | 'SELF_JOIN';
+  joined_at?: string;
+  /** 组织者手动催办（提醒未提报）的累计次数与最近时间 */
+  reminded_count?: number;
+  reminded_at?: string;
+}
+
 export interface AssignmentPeriod {
   id: string;
   type_id: string;

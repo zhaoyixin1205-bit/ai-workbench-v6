@@ -32,6 +32,8 @@ const STATUS_TONE: Partial<Record<BountyStatus, string>> = {
   CLAIMED: 'run',
   SUBMITTED: 'run',
   EXPIRED: 'id',
+  /* V8.2-10.07：已下架 */
+  OFFLINE: 'id',
   MEMBER_DRAFT: 'id',
 };
 

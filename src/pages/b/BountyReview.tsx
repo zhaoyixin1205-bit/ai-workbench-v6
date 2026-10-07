@@ -9,6 +9,7 @@ import dayjs from 'dayjs';
 import { useSkillAdminConverge } from '@/auth/converge';
 import { ScopeNotice } from '@/components/ScopeNotice';
 import { isCompanyBounty } from '@/constants/bounty';
+import BountyManage from '@/components/BountyManage';
 
 export default function BountyReview() {
   const { db, me, setDb, log, visibleUsers } = useStore();
@@ -170,6 +171,11 @@ export default function BountyReview() {
             { title: '说明', render: (_, r) => r.reject_reason ? <span style={{ color: '#B91C1C' }}>驳回：{r.reject_reason}</span> : `积分 ${r.points} 已入账` },
           ]}
         />
+      </Card>
+
+      {/* V8.2-10.07：悬赏全量台账（含 11 条公司悬赏）—— 改字段 / 审核 / 下架 / 重新上架 */}
+      <Card size="small" title="悬赏管理（全量）">
+        <BountyManage readOnly={readOnly} />
       </Card>
 
       <Modal open={!!approving} title={`审核通过 · ${approving?.title}`} onCancel={() => setApproving(null)} onOk={approve} okText="通过并发布">

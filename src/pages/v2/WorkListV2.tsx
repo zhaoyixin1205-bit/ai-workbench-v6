@@ -1,9 +1,11 @@
-import { Button, Tag } from 'antd';
+import { Button, Tag, App as AntApp } from 'antd';
 import { FormOutlined, ClockCircleOutlined, CheckCircleOutlined, InboxOutlined } from '@ant-design/icons';
 import { Link } from 'react-router-dom';
 import { useStore } from '@/store/store';
 import { useWorkBoard } from '@/hooks/useWorkBoard';
 import { useUIVersion } from '@/ui/UIVersionProvider';
+/* V8.2-10.07：作业公开后成员可主动加入（选修），名单区分必修 / 选修 */
+import { joinableOf, participantsOf } from '@/utils/assignmentParticipants';
 import { SubmitStatusTag } from '@/pages/c/WorkList';
 import { TrackTag } from '@/components/ui';
 import { trackVar } from '@/theme/v2/track';
@@ -21,13 +23,33 @@ import '../../theme/v2/template.css';
  * 行为复用 `useWorkBoard`，与 v1 同源，v1 一行未改。
  */
 export default function WorkListV2() {
-  const { me } = useStore();
+  const { db, me, setDb, log } = useStore();
+  const { message } = AntApp.useApp();
   const { version } = useUIVersion();
   const {
     type, period, scoreCard, daysLeft,
     mine, teamSubmits, usedTimes, canSubmit, groups,
     withdraw, applyAsset,
   } = useWorkBoard();
+
+  /* V8.2-10.07：我的参加身份（必修 / 选修）；作业公开时名单外成员可主动加入（选修） */
+  const myPart = type ? participantsOf(type).find((p) => p.union_id === me.union_id) : undefined;
+  const joinable = joinableOf(db.assignmentTypes, me.union_id);
+
+  const join = (t: NonNullable<typeof type>) => {
+    setDb((p) => ({
+      ...p,
+      assignmentTypes: p.assignmentTypes.map((x) => (x.id === t.id ? {
+        ...x,
+        participants: [...(x.participants ?? []), {
+          union_id: me.union_id, name: me.name, dept_name: me.dept_names?.[0] ?? '',
+          kind: 'ELECTIVE' as const, source: 'SELF_JOIN' as const, joined_at: DEMO_TODAY,
+        }],
+      } : x)),
+    }));
+    log('主动加入作业', t.name, '以「选修」身份加入（成员自选，不进首页 To Do 提醒）');
+    message.success(`已加入「${t.name}」，以选修身份计入参加名单`);
+  };
 
   const avg = teamSubmits.length
     ? Math.round(teamSubmits.reduce((a, b) => a + (b.final_score ?? 0), 0) / teamSubmits.length)
@@ -72,6 +94,15 @@ export default function WorkListV2() {
               {type.code} · 第 {period?.seq ?? '—'} 期
             </span>
             <span style={{ fontSize: 'var(--wb-fs-lg)', fontWeight: 700, color: 'var(--wb-ink-1)' }}>{type.name}</span>
+            {/* V8.2-10.07：参加身份（必修 / 选修）；未加入且作业公开时可主动加入 */}
+            {myPart && (
+              <span className={`wb2-tag ${myPart.kind === 'REQUIRED' ? 'er' : 'ok'}`}>
+                <i className="d" />{myPart.kind === 'REQUIRED' ? '我必须参加' : '我选修加入'}
+              </span>
+            )}
+            {!myPart && type.open_join && (
+              <Button size="small" type="primary" onClick={() => join(type)}>加入作业（选修）</Button>
+            )}
           </div>
           <div className="wb2-note" style={{ marginTop: 'var(--wb-space-3)' }}>
             提报对象：{type.target_scope} ｜ 时间窗 {period?.start_at ?? '—'} ~ {period?.end_at ?? '—'} ｜ 提交物模板：{type.form_template}
@@ -94,6 +125,24 @@ export default function WorkListV2() {
           </div>
         </div>
       </div>
+
+      {/* V8.2-10.07：组织者公开后的作业，名单外成员可主动加入（选修）—— 与 v1 同构 */}
+      {joinable.length > 0 && (
+        <div className="wb2-card" style={{ marginBottom: 'var(--wb-space-5)' }}>
+          <div className="wb2-card-t">可加入的作业（选修）</div>
+          <div className="wb2-list">
+            {joinable.map((t) => (
+              <div className="wb2-li" key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--wb-space-3)' }}>
+                <div>
+                  <div style={{ fontWeight: 600, color: 'var(--wb-ink-1)' }}>{t.name}</div>
+                  <div className="wb2-note">{t.code} · 提报对象 {t.target_scope}</div>
+                </div>
+                <Button size="small" type="primary" onClick={() => join(t)}>加入（选修）</Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 三个分组 */}
       {groups.map((g) => (

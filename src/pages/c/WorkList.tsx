@@ -8,6 +8,8 @@ import { PageHeader } from '@/components/ui';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import type { AssignmentSubmit, SubmitStatus } from '@/mock/types';
 import { STATUS_META } from '@/constants/statusMeta';
+/* V8.2-10.07：作业公开后成员可主动加入（选修），名单区分必修 / 选修 */
+import { joinableOf, participantsOf } from '@/utils/assignmentParticipants';
 import dayjs from 'dayjs';
 
 /**
@@ -52,6 +54,25 @@ export default function WorkList() {
 
   const usedTimes = mine.filter((s) => s.period_id === period?.id && s.status !== 'DRAFT' && s.status !== 'WITHDRAWN').length;
   const canSubmit = usedTimes < type.max_times;
+
+  /* V8.2-10.07：我的参加身份（必修 / 选修）；作业公开时名单外成员可主动加入（选修） */
+  const myPart = participantsOf(type).find((p) => p.union_id === me.union_id);
+  const joinable = joinableOf(db.assignmentTypes, me.union_id);
+
+  const join = (t: typeof type) => {
+    setDb((p) => ({
+      ...p,
+      assignmentTypes: p.assignmentTypes.map((x) => (x.id === t.id ? {
+        ...x,
+        participants: [...(x.participants ?? []), {
+          union_id: me.union_id, name: me.name, dept_name: me.dept_names?.[0] ?? '',
+          kind: 'ELECTIVE' as const, source: 'SELF_JOIN' as const, joined_at: DEMO_TODAY,
+        }],
+      } : x)),
+    }));
+    log('主动加入作业', t.name, `以「选修」身份加入（成员自选，不进首页 To Do 提醒）`);
+    message.success(`已加入「${t.name}」，以选修身份计入参加名单`);
+  };
 
   const withdraw = (s: AssignmentSubmit) => {
     modal.confirm({
@@ -101,6 +122,15 @@ export default function WorkList() {
                 padding: '3px 10px', borderRadius: 8,
               }}>{type.code} · 第 {period?.seq} 期</span>
               <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.01em' }}>{type.name}</span>
+              {/* V8.2-10.07：参加身份（必修 / 选修）；未加入且作业公开时可主动加入 */}
+              {myPart && (
+                <Tag color={myPart.kind === 'REQUIRED' ? 'red' : 'blue'} style={{ marginInlineEnd: 0 }}>
+                  {myPart.kind === 'REQUIRED' ? '我必须参加' : '我选修加入'}
+                </Tag>
+              )}
+              {!myPart && type.open_join && (
+                <Button size="small" type="primary" onClick={() => join(type)}>加入作业（选修）</Button>
+              )}
             </Space>
             <div style={{ marginTop: 10, color: COLOR.textSub, fontSize: 13 }}>
               提报对象：{type.target_scope} ｜ 时间窗 {period?.start_at} ~ {period?.end_at} ｜ 提交物模板：{type.form_template}
@@ -128,6 +158,26 @@ export default function WorkList() {
           </Col>
         </Row>
       </div>
+
+      {/* V8.2-10.07：组织者公开后的作业，名单外成员可主动加入（选修） */}
+      {joinable.length > 0 && (
+        <Card size="small" title="可加入的作业（选修）">
+          {joinable.map((t) => (
+            <div key={t.id} style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
+              padding: '8px 0', borderBottom: '1px solid #F1F2F4',
+            }}>
+              <div>
+                <Typography.Text strong>{t.name}</Typography.Text>
+                <div style={{ fontSize: 12, color: COLOR.textSub }}>
+                  {t.code} · 提报对象 {t.target_scope}
+                </div>
+              </div>
+              <Button size="small" type="primary" onClick={() => join(t)}>加入（选修）</Button>
+            </div>
+          ))}
+        </Card>
+      )}
 
       {groups.map((g) => (
         <Card key={g.key} size="small" title={g.title}>

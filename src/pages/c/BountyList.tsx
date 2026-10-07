@@ -24,6 +24,8 @@ const STATUS_META: Record<BountyStatus, { text: string; color: string }> = {
   SUBMITTED: { text: '方案已提交', color: 'cyan' },
   APPROVED: { text: '已通过', color: 'green' },
   EXPIRED: { text: '已超期释放', color: 'default' },
+  /* V8.2-10.07：已下架（组织者在后台下架，大厅不再展示） */
+  OFFLINE: { text: '已下架', color: 'default' },
 };
 
 export default function BountyList() {
