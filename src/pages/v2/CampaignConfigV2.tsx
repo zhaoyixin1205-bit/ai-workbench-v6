@@ -1,9 +1,12 @@
 import { Button, Checkbox, DatePicker, Form, Input, InputNumber, Radio, Segmented, Space, Steps, Switch, Table, Tag, App as AntApp } from 'antd';
+import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '@/store/store';
 import { COLOR } from '@/theme/v2';
 import { DEMO_TODAY } from '@/mock/seedBiz';
+import type { Campaign } from '@/mock/types';
 import { useCampaignOps, prevCampaign } from '@/hooks/useCampaignOps';
+import { currentStageOf } from '@/utils/campaignTime';
 import { Dialog } from '@/components/v2/Dialog';
 import dayjs from 'dayjs';
 import '../../theme/v2/template.css';
@@ -37,6 +40,11 @@ export default function CampaignConfigV2() {
   const [endV, setEndV] = useState<string>(campaign.end_date);
   const [pubOn, setPubOn] = useState<boolean>(campaign.publicSwitch);
   const [rules, setRules] = useState(campaign.pointRules);
+  /* V7.1：阶段行编辑（新增/删除/改名/改起止），保存才落库。
+     uid 仅为行 key（编辑名称时不重挂 input 丢焦点），saveStages 落库前会剥掉 */
+  const [stagesV, setStagesV] = useState<(Campaign['stages'][number] & { uid: string })[]>(
+    campaign.stages.map((s, i) => ({ ...s, uid: `s${i}` }))
+  );
 
   useEffect(() => {
     setVisibility(campaign.visibility);
@@ -44,7 +52,8 @@ export default function CampaignConfigV2() {
     setEndV(campaign.end_date);
     setPubOn(campaign.publicSwitch);
     setRules(campaign.pointRules);
-  }, [campaign.id, campaign.visibility, campaign.start_date, campaign.end_date, campaign.publicSwitch, campaign.pointRules]);
+    setStagesV(campaign.stages.map((s, i) => ({ ...s, uid: `s${i}` })));
+  }, [campaign.id, campaign.visibility, campaign.start_date, campaign.end_date, campaign.publicSwitch, campaign.pointRules, campaign.stages]);
 
   const openCreate = () => {
     form.setFieldsValue({
@@ -145,17 +154,85 @@ export default function CampaignConfigV2() {
           </Button>
           <Button type="primary" onClick={openCreate}>创建新届次</Button>
         </div>
-        {campaign.stages.length > 0 ? (
+        {campaign.stages.length > 0 && (
           <Steps
             style={{ marginTop: 'var(--wb-space-5)' }}
-            size="small" current={2}
+            size="small"
+            /* 当前阶段按真实今天派生（此前硬编码 current={2}，阶段改配置后高亮会错位） */
+            current={currentStageOf(campaign.stages)?.index ?? 0}
             items={campaign.stages.map((s) => ({ title: s.name, description: `${s.start} ~ ${s.end}` }))}
           />
-        ) : (
-          <div className="wb2-note" style={{ marginTop: 'var(--wb-space-4)' }}>
-            尚未配置阶段 —— 点「创建新届次」后将自动生成 W1~W4 四阶段模板。
-          </div>
         )}
+
+        {/* V7.1：阶段可自行配置 —— 新增 / 删除 / 改名，每阶段起止时间独立配置 */}
+        <div style={{ marginTop: 'var(--wb-space-5)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--wb-space-3)' }}>
+            <span style={{ fontSize: 'var(--wb-fs-label)', fontWeight: 600, color: COLOR.ink1 }}>阶段配置（可增删改，时间逐段独立）</span>
+            <Space>
+              <Button
+                size="small" icon={<PlusOutlined />} disabled={!hasCampaign}
+                onClick={() => {
+                  const last = stagesV[stagesV.length - 1];
+                  const s = last?.end && dayjs(last.end).add(1, 'day').isBefore(dayjs(campaign.end_date))
+                    ? dayjs(last.end).add(1, 'day').format('YYYY-MM-DD')
+                    : (campaign.start_date || dayjs().format('YYYY-MM-DD'));
+                  const e = campaign.end_date || s;
+                  setStagesV((p) => [...p, { name: `W${p.length + 1} 新阶段`, start: s, end: e, uid: `n${Date.now()}` }]);
+                }}
+              >添加阶段</Button>
+              <Button
+                size="small" type="primary" disabled={!hasCampaign}
+                onClick={() => {
+                  if (!hasCampaign) { message.warning('请先创建届次'); return; }
+                  if (ops.saveStages(campaign.id, stagesV)) message.success('阶段配置已保存并即时生效');
+                  else message.error('每个阶段需有名称，且结束日不得早于开始日');
+                }}
+              >保存阶段配置</Button>
+            </Space>
+          </div>
+          {stagesV.length === 0 ? (
+            <div className="wb2-note">
+              尚未配置阶段 —— 可点「添加阶段」逐段建立，或重新创建届次自动生成 W1~W4 模板。
+            </div>
+          ) : (
+            <Table
+              size="small" rowKey={(r) => r.uid} pagination={false}
+              dataSource={stagesV}
+              columns={[
+                {
+                  title: '阶段名称', dataIndex: 'name',
+                  render: (v: string, _r, i) => (
+                    <Input size="small" value={v} onChange={(e) => setStagesV((p) => p.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />
+                  ),
+                },
+                {
+                  title: '开始', dataIndex: 'start', width: 150,
+                  render: (v: string, _r, i) => (
+                    <DatePicker size="small" style={{ width: '100%' }} value={v ? dayjs(v) : undefined}
+                      onChange={(d) => setStagesV((p) => p.map((x, j) => (j === i ? { ...x, start: d ? d.format('YYYY-MM-DD') : '' } : x)))} />
+                  ),
+                },
+                {
+                  title: '结束', dataIndex: 'end', width: 150,
+                  render: (v: string, _r, i) => (
+                    <DatePicker size="small" style={{ width: '100%' }} value={v ? dayjs(v) : undefined}
+                      onChange={(d) => setStagesV((p) => p.map((x, j) => (j === i ? { ...x, end: d ? d.format('YYYY-MM-DD') : '' } : x)))} />
+                  ),
+                },
+                {
+                  title: '操作', width: 60,
+                  render: (_: unknown, _r, i) => (
+                    <Button size="small" type="text" danger icon={<DeleteOutlined />}
+                      onClick={() => setStagesV((p) => p.filter((_, j) => j !== i))} />
+                  ),
+                },
+              ]}
+            />
+          )}
+          <div className="wb2-note" style={{ marginTop: 'var(--wb-space-3)' }}>
+            保存后按开始日自动排序；结束日早于开始日的阶段会被拦截。首页「当前阶段」与倒计时即按此配置派生。
+          </div>
+        </div>
 
         {/* 多届列表：可切换当前届次 / 归档。此前页面只显示一条，无法回溯历史届次 */}
         {(db.campaigns ?? []).length > 0 && (

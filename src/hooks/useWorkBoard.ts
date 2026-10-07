@@ -21,7 +21,8 @@ export function useWorkBoard() {
   const period = type
     ? db.periods.find((p) => p.type_id === type.id && p.status === 'OPEN')
     : undefined;
-  const daysLeft = period ? dayjs(period.end_at).diff(dayjs(DEMO_TODAY), 'day') : 0;
+  /* V7.1：倒计时基准改真实今天（DEMO_TODAY 只服务演示数据的时间戳口径） */
+  const daysLeft = period ? dayjs(period.end_at).diff(dayjs(), 'day') : 0;
   const scoreCard = type ? db.scoreCards.find((c) => c.id === type.score_card_id) : undefined;
 
   const mine = useMemo(

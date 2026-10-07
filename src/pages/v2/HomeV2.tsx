@@ -16,6 +16,7 @@ import { useStore, useStats } from '@/store/store';
 import TeamBoard from '@/components/TeamBoard';
 import AnnounceTicker, { type TickerItem } from '@/components/AnnounceTicker';
 import { DEMO_TODAY } from '@/mock/seedBiz';
+import { currentStageOf, stageLabel, submitDeadlineOf } from '@/utils/campaignTime';
 import dayjs from 'dayjs';
 import '../../theme/v2/template.css';
 
@@ -49,7 +50,11 @@ export default function HomeV2() {
   const { db, me, campaign, flags, hasRole } = useStore();
   const stats = useStats();
 
-  const daysLeft = dayjs(campaign.end_date).diff(dayjs(DEMO_TODAY), 'day');
+  /* V7.1：距截止读「作业提报周期」（OPEN 期次）→ 当前阶段 → 届次结束日兜底；倒计时按真实今天 */
+  const deadline = submitDeadlineOf(db.periods ?? [], db.assignmentTypes ?? [], campaign);
+  const daysLeft = deadline.date ? dayjs(deadline.date).diff(dayjs(), 'day') : null;
+  /* 当前阶段按真实今天派生（此前硬编码「W3 · 制作陪跑阶段」，阶段改配置后会失真） */
+  const curStage = currentStageOf(campaign.stages);
   const mySubmits = db.submits.filter((s) => s.union_id === me.union_id);
   const mySubmitDone = mySubmits.filter((s) => s.status !== 'DRAFT' && s.status !== 'WITHDRAWN').length;
   const myPoints = db.pointRecords.filter((p) => p.union_id === me.union_id).reduce((a, b) => a + b.points, 0) + me.points;
@@ -58,7 +63,7 @@ export default function HomeV2() {
   /** V4.1 Moka §7：文案 = 事实 + 一个动作，不写状态 */
   const myTodos = [
     { key: 'topic', done: mySubmits.length > 0, text: '还没选定场景', action: '去挑一个', to: '/cases' },
-    { key: 'submit', done: mySubmitDone > 0, text: `第 1 期作业还没交（${campaign.end_date} 截止）`, action: '去提报', to: '/work' },
+    { key: 'submit', done: mySubmitDone > 0, text: `作业还没交（${deadline.date ?? '日期待定'} 截止）`, action: '去提报', to: '/work' },
     { key: 'asset', done: db.assetApplies.some((a) => a.applicant_union_id === me.union_id), text: '作品还没申请入库', action: '去申请', to: '/assets' },
   ].filter((t) => !t.done).slice(0, 3);
 
@@ -121,13 +126,18 @@ export default function HomeV2() {
         <div className="row">
           <div style={{ flex: '1 1 420px', minWidth: 0 }}>
             <span className="pill"><RocketOutlined /> {campaign.status}</span>
-            <span className="sub" style={{ marginLeft: 10 }}>W3 · 制作陪跑阶段</span>
+            {curStage && <span className="sub" style={{ marginLeft: 10 }}>{stageLabel(curStage.stage)}阶段</span>}
             <h1>{campaign.name}</h1>
-            <div className="desc">{campaign.start_date} ~ {campaign.end_date} ｜ 做出属于你的一件作品，让别人照着就能用</div>
+            <div className="desc">
+              {campaign.start_date} ~ {campaign.end_date}
+              {deadline.date ? ` ｜ 作业提报截止 ${deadline.date}` : ''} ｜ 做出属于你的一件作品，让别人照着就能用
+            </div>
             <div className="pg">
               <div className="lab">
                 <span>我的进度 · 提报 {mySubmitDone}/1</span>
-                <span style={{ fontWeight: 600 }}>距截止 {daysLeft} 天</span>
+                <span style={{ fontWeight: 600 }}>
+                  {daysLeft === null ? '' : `距截止 ${Math.max(0, daysLeft)} 天`}
+                </span>
               </div>
               <Progress
                 percent={Math.min(100, mySubmitDone * 100)}

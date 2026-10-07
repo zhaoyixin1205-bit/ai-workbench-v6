@@ -38,7 +38,8 @@ export default function WorkList() {
 
   const type = db.assignmentTypes[0];
   const period = db.periods.find((p) => p.type_id === type.id && p.status === 'OPEN')!;
-  const daysLeft = dayjs(period?.end_at).diff(dayjs(DEMO_TODAY), 'day');
+  /* V7.1：倒计时基准改真实今天（演示基准日 DEMO_TODAY 只服务演示数据，真实届次日程须按今天倒推） */
+  const daysLeft = dayjs(period?.end_at).diff(dayjs(), 'day');
 
   const mine = useMemo(
     () => db.submits.filter((s) => s.union_id === me.union_id).sort((a, b) => b.submitted_at.localeCompare(a.submitted_at)),

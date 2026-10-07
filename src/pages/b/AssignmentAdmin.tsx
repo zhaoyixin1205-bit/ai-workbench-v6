@@ -1,4 +1,4 @@
-import { Button, Card, Space, Table, Tabs, Tag, Typography, Input, Select, App as AntApp, Modal, Form, Switch, InputNumber, Row, Col, Statistic, Alert } from 'antd';
+import { Button, Card, Space, Table, Tabs, Tag, Typography, Input, Select, App as AntApp, Modal, Form, Switch, InputNumber, Row, Col, Statistic, Alert, DatePicker } from 'antd';
 import { DownloadOutlined, UploadOutlined, PlusOutlined, CopyOutlined } from '@ant-design/icons';
 import { useState } from 'react';
 import { useStore } from '@/store/store';
@@ -8,6 +8,7 @@ import { SubmitStatusTag } from '@/pages/c/WorkList';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import ScopePicker, { ScopeText, useScopeCommit } from '@/components/ScopePicker';
 import type { AssignmentType, ScopeSubject, SubmitStatus } from '@/mock/types';
+import PeriodAdmin from '@/components/PeriodAdmin';
 /* V7.0 CR-33：状态文案走唯一真源（B 端不再显示裸英文） */
 import { statusText, statusOptions, TYPE_STATUS_TEXT } from '@/constants/statusMeta';
 /* V7.0 CR-35：评分结果回写改为真实「下载模板 → 上传解析 → 三态回执」 */
@@ -282,6 +283,10 @@ export default function AssignmentAdmin() {
                   message="作业类型配置变更会生成新版本，历史期次沿用旧版本；已截止期次的规则与评分不变。" />
               </Card>
             ),
+          },
+          {
+            key: 'periods', label: '期次（提报周期）',
+            children: <PeriodAdmin readOnly={readOnly} />,
           },
           {
             key: 'submits', label: `提报清单（${submits.length}）`,

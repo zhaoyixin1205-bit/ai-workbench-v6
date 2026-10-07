@@ -183,6 +183,34 @@ export function useCampaignOps() {
     [db.campaigns, setDb, log]
   );
 
+  /**
+   * 保存阶段配置（V7.1：阶段可自行新增/删除/修改，每阶段时间独立配置）。
+   * 校验：名称非空、起止合法且 end ≥ start；通过后按开始日排序落库。
+   * @returns true=已保存；false=校验失败（调用方提示）
+   */
+  const saveStages = useCallback(
+    (id: string, stages: Campaign['stages']): boolean => {
+      const t = (db.campaigns ?? []).find((c) => c.id === id);
+      if (!t) return false;
+      const cleaned = stages
+        .map((s) => ({ name: (s.name ?? '').trim(), start: s.start ?? '', end: s.end ?? '' }))
+        .filter((s) => s.name);
+      if (cleaned.some((s) => !s.start || !s.end || dayjs(s.end).isBefore(dayjs(s.start)))) return false;
+      cleaned.sort((a, b) => a.start.localeCompare(b.start));
+      setDb((p) => ({
+        ...p,
+        campaigns: (p.campaigns ?? []).map((c) => (c.id === id ? { ...c, stages: cleaned } : c)),
+      }));
+      log(
+        '阶段配置变更',
+        t.name,
+        `${t.stages.length} → ${cleaned.length} 个阶段｜${cleaned.map((s) => `${s.name} ${s.start}~${s.end}`).join('；') || '（已清空）'}`
+      );
+      return true;
+    },
+    [db.campaigns, setDb, log]
+  );
+
   /** 保存积分规则（真实写入） */
   const savePointRules = useCallback(
     (id: string, rules: Campaign['pointRules']) => {
@@ -217,6 +245,7 @@ export function useCampaignOps() {
     archiveCampaign,
     removeCampaign,
     saveTimeWindow,
+    saveStages,
     savePointRules,
     savePublicSwitch,
     defaultPointRules: DEFAULT_POINT_RULES,
