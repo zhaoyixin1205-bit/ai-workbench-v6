@@ -39,6 +39,8 @@ export default function JudgeReview({ variant = 'admin' }: { variant?: 'admin' |
   const isC = variant === 'c';
   const { db, me, setDb, log, hasRole, flags } = useStore();
   const { message } = AntApp.useApp();
+  /** V8.4-10.07：提示文案必须跟总闸一致，不能开关关着还说「已推送」 */
+  const autoPush = db.pushSettings?.autoPush === true;
   const [current, setCurrent] = useState<AssignmentSubmit | null>(null);
   const [scores, setScores] = useState<Record<string, number>>({});
   const [opinion, setOpinion] = useState('');
@@ -145,7 +147,7 @@ export default function JudgeReview({ variant = 'admin' }: { variant?: 'admin' |
       }, ...p.submitFlowLogs],
     }));
     log('评委复核打分', current!.code, `四维合计 ${total}，意见：${opinion.slice(0, 20)}…`);
-    message.success(`复核完成，最终分按 AI ${card.ai_weight}% + 评委 ${card.judge_weight}% 合成；已推送组织者做真实性复核`);
+    message.success(`复核完成，最终分按 AI ${card.ai_weight}% + 评委 ${card.judge_weight}% 合成${autoPush ? '；已推送组织者做真实性复核' : '；组织者不会自动收到提醒，需到「作业管理」手动发起推送'}`);
     setCurrent(null); setScores({}); setOpinion('');
   };
 
@@ -168,7 +170,7 @@ export default function JudgeReview({ variant = 'admin' }: { variant?: 'admin' |
       }, ...p.submitFlowLogs],
     }));
     log('3 问抽查', current!.code, '结论：通过');
-    message.success('抽查结论：通过，已进入「已完成」并推送组织者确认公示');
+    message.success(`抽查结论：通过，已进入「已完成」${autoPush ? '；已推送组织者确认公示' : '；如需提醒组织者确认公示，请到「作业管理」手动发起推送'}`);
     setSpot(null); setCurrent(null);
   };
 
