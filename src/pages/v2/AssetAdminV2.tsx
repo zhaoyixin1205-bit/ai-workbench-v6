@@ -215,22 +215,39 @@ export default function AssetAdminV2() {
     setImp(null);
   };
 
+  /**
+   * V8.4-10.07：驳回弹窗原本写着「驳回后将通知申请人并说明原因」，但既没有原因输入框、
+   * 也没有发过任何通知 —— 承诺的两件事一样都没做。现在补上：原因必填，且真的发给申请人本人。
+   */
+  const [rejectTarget, setRejectTarget] = useState<AssetApply | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+
   const rejectApply = (a: AssetApply) => {
-    confirm({
-      title: '驳回该入库申请？',
-      content: '驳回后将通知申请人并说明原因。',
-      okText: '确认驳回',
-      danger: true,
-      onOk: () => {
-        setDb((p) => ({
-          ...p,
-          assetApplies: p.assetApplies.map((x) => (x.id === a.id ? { ...x, status: '已驳回' } : x)),
-          submits: p.submits.map((s) => (s.id === a.submit_id ? { ...s, status: 'ASSET_REJECTED' } : s)),
-        }));
-        log('入库驳回', a.submit_title, '不符合入库标准');
-        message.success('已驳回');
-      },
-    });
+    setRejectTarget(a);
+    setRejectReason('');
+  };
+
+  const confirmReject = () => {
+    const a = rejectTarget;
+    if (!a) return;
+    const reason = rejectReason.trim();
+    if (reason.length < 5) { message.warning('请填写不少于 5 字的驳回原因（会原样发送给申请人）'); return; }
+    const at = `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`;
+    setDb((p) => ({
+      ...p,
+      assetApplies: p.assetApplies.map((x) => (x.id === a.id
+        ? { ...x, status: '已驳回' as const, reviewer_union_id: me.union_id } : x)),
+      submits: p.submits.map((s) => (s.id === a.submit_id ? { ...s, status: 'ASSET_REJECTED' } : s)),
+      messages: [{
+        id: `MSG-AR-${Date.now()}`, union_id: a.applicant_union_id, type: '入库申请驳回',
+        title: '你的入库申请已被驳回',
+        content: `《${a.submit_title}》未通过入库审核。驳回原因：${reason}。可根据原因调整后重新提交。`,
+        channel: '站内' as const, status: '未读' as const, sent_at: at,
+      }, ...p.messages],
+    }));
+    log('入库驳回', a.submit_title, `申请人 ${a.applicant_name}；原因：${reason}`);
+    message.success(`已驳回并通知申请人 ${a.applicant_name}`);
+    setRejectTarget(null); setRejectReason('');
   };
 
   /** 申请状态 → 四档语义 */
@@ -486,6 +503,23 @@ export default function AssetAdminV2() {
           <div className="nm">标记为受限可见<div className="ds">涉客户数据 / 对外文案必须勾选</div></div>
           <div className="ct"><Switch checked={restricted} onChange={(c) => setRestricted(c)} /></div>
         </div>
+      </Dialog>
+
+      {/* V8.4-10.07：驳回须填原因，原因会随站内通知发给申请人（此前只承诺不做） */}
+      <Dialog
+        open={!!rejectTarget} title="驳回该入库申请？"
+        sub={`驳回原因会原样发送给申请人 ${rejectTarget?.applicant_name ?? ''}；确认后申请状态改为「已驳回」。`}
+        okText="确认驳回并通知申请人" danger okDisabled={rejectReason.trim().length < 5}
+        onCancel={() => { setRejectTarget(null); setRejectReason(''); }}
+        onOk={confirmReject}
+      >
+        <DialogField label="驳回原因（不少于 5 字）">
+          <Input.TextArea
+            rows={3} maxLength={200} showCount value={rejectReason}
+            placeholder="例如：脱敏不完整，第 3 页仍可见客户名称，处理后再提交"
+            onChange={(e) => setRejectReason(e.target.value)}
+          />
+        </DialogField>
       </Dialog>
 
       {/* ---------- 复用台账导入（V4.0 CR-10） ---------- */}

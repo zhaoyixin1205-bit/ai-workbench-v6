@@ -159,10 +159,14 @@ export default function ContentAdminV2() {
     message.success('已发布，首页公告条即时生效');
   };
 
-  /** 推送沿用钉钉群卡片通道（toast 模拟） */
+  /**
+   * V8.4-10.07：钉钉群推送在此前是「只弹 toast + 写日志」的空操作，UI 却说「已推送到钉钉群」。
+   * 浏览器端无法直连钉钉服务端（无 CORS，必须经服务端或 dws CLI 中转），因此在真正接入前，
+   * 这里如实登记推送时间与留痕，不再声称已经发出去。
+   */
   const pushAnnounce = (a: Announcement) => {
-    log('推送公告', a.title, '钉钉群卡片推送（toast 模拟）');
-    message.success('已推送到钉钉群');
+    log('推送公告', a.title, '登记推送（钉钉群尚未接入，未实际外发）');
+    message.success('已登记推送；钉钉群尚未接入，当前仅本地留痕');
   };
 
   /** 下线 = 状态置 OFFLINE（软下线，记录保留） */
@@ -343,7 +347,7 @@ export default function ContentAdminV2() {
      V6.0 CR-28：案例 / 选题 / 场景卡的「复制 / 推送 / 删除」三项补齐。
      统一口径（三个 Tab 完全一致，避免各写一套）：
        ① 复制 → 生成未发布副本，不复制发布状态与互动数据；
-       ② 推送 → 沿用钉钉群卡片通道（toast 模拟，写入审计日志）；
+       ② 推送 → 登记推送时间并写入审计日志（钉钉群尚未接入，不会真的外发）；
        ③ 删除 → 一律软删并留痕；已发布 / 已被引用的对象禁止直接删除，须先下线。
      ============================================================ */
   const copyCase = (c: CaseItem) => {
@@ -365,8 +369,8 @@ export default function ContentAdminV2() {
   };
 
   const pushCase = (c: CaseItem) => {
-    log('推送案例', c.title, '钉钉群卡片推送（toast 模拟）');
-    message.success('已推送到钉钉群');
+    log('推送案例', c.title, '登记推送（钉钉群尚未接入，未实际外发）');
+    message.success('已登记推送；钉钉群尚未接入，当前仅本地留痕');
   };
 
   /** 删除案例：已发布须先下线（避免前台仍可访问却后台已删的悬挂状态） */
@@ -480,8 +484,8 @@ export default function ContentAdminV2() {
   };
 
   const pushTopic = (t: Topic) => {
-    log('推送选题', t.title, '钉钉群卡片推送（toast 模拟）');
-    message.success('已推送到钉钉群');
+    log('推送选题', t.title, '登记推送（钉钉群尚未接入，未实际外发）');
+    message.success('已登记推送；钉钉群尚未接入，当前仅本地留痕');
   };
 
   /** 删除选题：已被选中的选题禁止直接删除（有引用），仅可关闭 —— 与资产 / 商品 / 评分卡同一口径 */
@@ -621,8 +625,8 @@ export default function ContentAdminV2() {
       ...p,
       sceneCards: p.sceneCards.map((x) => (x.id === s.id ? { ...x, pushed_at: now() } : x)),
     }));
-    log('推送场景卡', s.title, '钉钉群卡片推送（toast 模拟）');
-    message.success('已推送到钉钉群');
+    log('推送场景卡', s.title, '登记推送（钉钉群尚未接入，未实际外发）');
+    message.success('已登记推送；钉钉群尚未接入，当前仅本地留痕');
   };
 
   const setSceneStatus = (s: SceneCard, next: SceneCard['status']) => {
@@ -891,7 +895,7 @@ export default function ContentAdminV2() {
                                 </>
                               )}
                               {' · '}阅读 {c.view_count}
-                              {c.pushed_at && ` · 已推送 ${c.pushed_at}`}
+                              {c.pushed_at && ` · 已登记推送 ${c.pushed_at}`}
                             </div>
                           </div>
                           <div style={{ flex: '0 0 auto' }}>

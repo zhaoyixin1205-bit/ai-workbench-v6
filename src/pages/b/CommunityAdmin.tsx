@@ -18,13 +18,25 @@ export default function CommunityAdmin() {
 
   const auditQueue = db.posts.filter((p) => p.status === '审核中' || p.report_count >= 3);
 
+  /**
+   * V8.4-10.07：处理结果必须通知到作者 —— 前台举报弹窗早就写了「处理结果将通知作者」，
+   * 但后台处理时一条消息都没发过。举报人身份不入库（匿名机制），因此只通知作者。
+   */
   const handle = (id: string, action: '通过' | '隐藏' | '删除', reason?: string) => {
+    const target = db.posts.find((x) => x.id === id);
+    const at = `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`;
     setDb((p) => ({
       ...p,
       posts: p.posts.map((x) => (x.id === id ? { ...x, status: action === '通过' ? '正常' : action === '隐藏' ? '已隐藏' : '已删除' } : x)),
+      messages: target ? [{
+        id: `MSG-POST-${Date.now()}`, union_id: target.union_id, type: '社区内容处理',
+        title: `你的帖子已被${action}`,
+        content: `《${target.title}》经社区审核，处理结果：${action}${reason ? `。原因：${reason}` : ''}。如有异议可在社区内申诉。`,
+        channel: '站内' as const, status: '未读' as const, sent_at: at,
+      }, ...p.messages] : p.messages,
     }));
-    log(`社区内容${action}`, id, reason ?? '');
-    message.success(`已${action}${reason ? '：' + reason : ''}`);
+    log(`社区内容${action}`, target?.title ?? id, `${reason ?? ''}${target ? `（已通知作者 ${target.author_name}）` : ''}`);
+    message.success(`已${action}${reason ? '：' + reason : ''}${target ? '，已通知作者' : ''}`);
   };
 
   const trace = () => {

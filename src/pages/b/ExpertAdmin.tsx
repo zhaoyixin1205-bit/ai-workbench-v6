@@ -114,6 +114,11 @@ export default function ExpertAdmin() {
     const at = `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`;
     const expert = db.experts.find((e) => e.id === r.expert_id);
     const who = `${expert?.name ?? r.expert_id} ${r.date} ${r.slot}`;
+    /**
+     * V8.4-10.07：消息收件人必须是申请人本人。原写法 `?? 'all'` 在申请人 union_id 缺失时
+     * 会把内部排班信息广播给全员 501 人 —— 宁可不发，也不能错发给不相干的人。
+     */
+    const applicantId = r.applicant_union_id;
 
     if (pass) {
       const exists = db.schedules.some((s) => s.expert_id === r.expert_id && s.date === r.date && s.slot === r.slot);
@@ -131,14 +136,16 @@ export default function ExpertAdmin() {
         }, ...p.schedules],
         scheduleRequests: p.scheduleRequests.map((x) => (x.id === r.id
           ? { ...x, status: '已通过' as const, reviewed_by: me.name, reviewed_at: at } : x)),
-        messages: [{
-          id: `MSG-SR-${Date.now()}`, union_id: r.applicant_union_id ?? 'all', type: '排班申请',
+        messages: applicantId ? [{
+          id: `MSG-SR-${Date.now()}`, union_id: applicantId, type: '排班申请',
           title: '你提交的排班申请已通过', content: `${r.date} ${r.slot}（${r.type}）已开放预约。`,
           channel: '站内' as const, status: '未读' as const, sent_at: at,
-        }, ...p.messages],
+        }, ...p.messages] : p.messages,
       }));
-      log('审核排班申请', who, '通过并生成排班（来源 EXPERT_APPLY，已通知专家）');
-      message.success('已通过并生成排班');
+      log('审核排班申请', who, applicantId
+        ? '通过并生成排班（来源 EXPERT_APPLY，已通知申请人）'
+        : '通过并生成排班（来源 EXPERT_APPLY；该单无申请人账号，未发送站内通知）');
+      message.success(applicantId ? '已通过并生成排班，已通知申请人' : '已通过并生成排班（该单缺少申请人账号，未发送通知）');
       return;
     }
 
@@ -146,14 +153,16 @@ export default function ExpertAdmin() {
       ...p,
       scheduleRequests: p.scheduleRequests.map((x) => (x.id === r.id
         ? { ...x, status: '已驳回' as const, reviewed_by: me.name, reviewed_at: at } : x)),
-      messages: [{
-        id: `MSG-SR-${Date.now()}`, union_id: r.applicant_union_id ?? 'all', type: '排班申请',
+      messages: applicantId ? [{
+        id: `MSG-SR-${Date.now()}`, union_id: applicantId, type: '排班申请',
         title: '你提交的排班申请未通过', content: `${r.date} ${r.slot} 已被组织者驳回，请重新选择时间提交。`,
         channel: '站内' as const, status: '未读' as const, sent_at: at,
-      }, ...p.messages],
+      }, ...p.messages] : p.messages,
     }));
-    log('审核排班申请', who, '驳回（申请单保留，需专家重新提交）');
-    message.success('已驳回并通知专家');
+    log('审核排班申请', who, applicantId
+      ? '驳回（申请单保留，需专家重新提交；已通知申请人）'
+      : '驳回（申请单保留，需专家重新提交；该单无申请人账号，未发送站内通知）');
+    message.success(applicantId ? '已驳回并通知申请人' : '已驳回（该单缺少申请人账号，未发送通知）');
   };
 
   const hideReview = (id: string) => {

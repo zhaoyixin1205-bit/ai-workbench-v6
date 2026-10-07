@@ -67,11 +67,28 @@ export default function PostDetailV2() {
   };
 
   const report = () => {
+    /**
+     * V8.4-10.07：举报此前只写日志 + 弹「已提交」，承诺的「3 人自动进入审核队列」与
+     * 「处理结果通知」两件事都没发生过。这里补上计数与自动入队。
+     * 至于通知举报人 —— 举报是匿名的、库里不存举报人身份，技术上无法定向通知，
+     * 因此页面文案同步改成「管理员处理后会通知作者（匿名举报不单独通知举报人）」。
+     */
     modal.confirm({
       title: '举报该内容',
-      content: '举报理由：' + reason + '。同一帖被 3 人举报将自动进入审核队列。',
+      content: `举报理由：${reason}。同一帖被 3 人举报将自动进入审核队列；管理员处理后会通知作者（举报为匿名机制，不会单独通知举报人）。`,
       onOk: () => {
-        log('举报帖子', p.title, `理由：${reason}`);
+        setDb((prev) => {
+          const t = prev.posts.find((x) => x.id === p.id);
+          if (!t) return prev;
+          const next = (t.report_count ?? 0) + 1;
+          return {
+            ...prev,
+            posts: prev.posts.map((x) => (x.id === p.id
+              ? { ...x, report_count: next, status: next >= 3 ? '审核中' as const : x.status }
+              : x)),
+          };
+        });
+        log('举报帖子', p.title, `理由：${reason}（已累加举报计数）`);
         message.success('举报已提交，感谢维护社区氛围');
         setReportOpen(false);
       },
@@ -173,7 +190,7 @@ export default function PostDetailV2() {
           options={['广告', '人身攻击', '涉密', '不实信息', '其他'].map((v) => ({ label: v, value: v }))}
         />
         <div className="wb2-fhint" style={{ marginTop: 8 }}>
-          同一帖被 3 人举报将自动进入审核队列；处理结果将通知作者与举报人。
+          同一帖被 3 人举报将自动进入审核队列；管理员处理后会通知作者（举报为匿名机制，不会单独通知举报人）。
         </div>
       </Modal>
     </div>
