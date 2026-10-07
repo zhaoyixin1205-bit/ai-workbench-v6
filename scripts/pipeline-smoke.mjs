@@ -72,11 +72,19 @@ const USERS = [
   { union_id: 'u-out', name: '离职评委', roles: ['JUDGE'], status: 3 },
 ];
 
+/**
+ * 链路风味：pushSettings.autoPush 为 false（默认）时，**只有 AI 评分是自动的**，
+ * 所有对外推送（评委 / 复核 / 公示）都由组织者在后台勾选后手动发起。
+ * 因此 B 段锁的是「手动路径」，D 段锁的是「打开总闸后的自动路径」——两条都必须绿。
+ */
 const BASE = {
   submits: [mkSubmit()], users: USERS, scoreCards: [CARD],
   assignmentTypes: [{ id: 'T1', score_card_id: 'SC1' }],
   scoreResults: [], submitFlowLogs: [], messages: [],
+  pushSettings: { autoPush: false },
 };
+/** 同一个场景、但打开了自动推送总闸 */
+const BASE_AUTO = { ...BASE, pushSettings: { autoPush: true } };
 
 const merge = (db, patch) => ({ ...db, ...(patch ?? {}) });
 const one = (db) => db.submits.find((s) => s.id === 'S1');
@@ -127,11 +135,11 @@ check('[A7] 评分卡无维度时不出分且说明原因', () => {
 });
 
 /* ------------------------------------------------------------------ */
-/* B. 完整链路                                                          */
+/* B. 默认口径（总闸 OFF）：AI 自动出分，推送全部由组织者手动发起        */
 /* ------------------------------------------------------------------ */
 
 const step1 = P.runSubmitPipeline(BASE);
-check('[B1] 提交后第 1 次扫描有产出', () => step1 !== null || '返回 null，AI 评分未触发');
+check('[B1] 提交后第 1 次扫描有产出（AI 评分必须仍然自动）', () => step1 !== null || '返回 null，AI 评分未触发');
 const db1 = merge(BASE, step1?.patch);
 
 check('[B2] 提交后自动流转为「AI 已出分」', () => one(db1).status === 'AI_SCORED' || `got=${one(db1).status}`);
@@ -139,66 +147,92 @@ check('[B3] 自动写出 AI 分', () => typeof one(db1).ai_score === 'number' ||
 check('[B4] 落一条 AI 评分明细', () => step1.patch.scoreResults?.length === 1 || `got=${step1.patch.scoreResults?.length}`);
 check('[B5] 评分主体如实写为「AI 规则引擎」', () => step1.patch.scoreResults?.[0]?.scorer_name === P.AI_SCORER_NAME || '未如实标注评分主体');
 check('[B6] 留一条流转痕（提交后触发 AI 规则评分）', () => step1.patch.submitFlowLogs?.length === 1 || '无流转痕');
-check('[B7] 作者收到「AI 评分完成」站内消息', () => has(db1, 'MSG-AI-S1', 'u-author') || '作者未收到通知');
 
-const step2 = P.runSubmitPipeline(db1);
-check('[B8] 第 2 次扫描推进到推送评委', () => step2 !== null || '返回 null，评委推送未发生');
-const db2 = merge(db1, step2?.patch);
+check('[B7] 总闸 OFF：系统不自动打扰任何人（一条消息都不发）', () => (
+  (db1.messages ?? []).length === 0
+) || `发了 ${(db1.messages ?? []).length} 条`);
 
-check('[B9] 自动流转为「复核中」', () => one(db2).status === 'REVIEWING' || `got=${one(db2).status}`);
-check('[B10] 两位评委各收到 1 条待评分待办', () => (
+check('[B8] 总闸 OFF：重复扫描不再推进（停在已出分等人来推）', () => P.runSubmitPipeline(db1) === null || '仍在自动往下走');
+
+/* —— 组织者勾选后手动「推送评委复核」 —— */
+const pushJudge = P.pushStage(db1, 'judge', ['S1'], '赵冰艳', '2026-10-07 11:00');
+check('[B9] 手动推送评委成功执行', () => pushJudge.ok === true || `err=${pushJudge.error}`);
+const db2 = merge(db1, pushJudge?.patch);
+
+check('[B10] 手动推送后状态变为「复核中」', () => one(db2).status === 'REVIEWING' || `got=${one(db2).status}`);
+check('[B11] 两位评委各收到 1 条待评分待办', () => (
   to(db2, 'u-judge1').length === 1 && to(db2, 'u-judge2').length === 1
 ) || `j1=${to(db2, 'u-judge1').length}, j2=${to(db2, 'u-judge2').length}`);
-check('[B11] 评委消息走「钉钉待办」通道', () => to(db2, 'u-judge1')[0]?.channel === '钉钉待办' || `got=${to(db2, 'u-judge1')[0]?.channel}`);
-check('[B12] 已停用评委（status=3）不收消息', () => to(db2, 'u-out').length === 0 || '停用人不应收到推送');
-check('[B13] 作者收到「已进入评委评分」通知', () => has(db2, 'MSG-JDGED-S1', 'u-author') || '作者不知情');
+check('[B12] 评委消息走「钉钉待办」通道', () => to(db2, 'u-judge1')[0]?.channel === '钉钉待办' || `got=${to(db2, 'u-judge1')[0]?.channel}`);
+check('[B13] 已停用评委（status=3）不收消息', () => to(db2, 'u-out').length === 0 || '停用人不应收到推送');
+check('[B14] 作者收到「已进入评委评分」通知', () => has(db2, 'MSG-JDGED-S1', 'u-author') || '作者不知情');
+check('[B15] 手动推送留痕，操作人是真人不是「系统自动」', () => (
+  (db2.submitFlowLogs ?? []).some((l) => l.id === 'FL-S1-TO-REVIEW' && l.operator === '赵冰艳')
+) || '流转日志未记录真实操作人');
 
-check('[B14] 幂等：再次扫描返回 null（不重复出分、不重复推送）', () => P.runSubmitPipeline(db2) === null || '重复执行仍在产出');
+check('[B16] 幂等：重复手动推送同一批返回失败而不是重复发', () => (
+  P.pushStage(db2, 'judge', ['S1'], '赵冰艳').ok === false
+) || '重复推送竟然成功了');
+
+check('[B17] 未勾选任何提报时给出提示而不是静默无操作', () => {
+  const r = P.pushStage(db2, 'judge', [], '赵冰艳');
+  return (r.ok === false && String(r.error).includes('勾选')) || JSON.stringify(r);
+});
 
 /* 评委打分：页面操作，这里直接模拟结果 */
 const aiScore = one(db2).ai_score;
 const finalScore = Math.round((aiScore * 0.4 + 88 * 0.6) * 10) / 10;
 const db3 = { ...db2, submits: db2.submits.map((s) => patchTo(s, { status: 'REVIEWED', judge_score: 88, final_score: finalScore })) };
-const step4 = P.runSubmitPipeline(db3);
-check('[B15] 评委打分后有产出', () => step4 !== null || '打分后无后续动作');
-const db4 = merge(db3, step4?.patch);
 
-check('[B16] 组织者收到「真实性复核」待办', () => has(db4, 'MSG-CFM-S1-u-org', 'u-org') || '组织者未收到复核待办');
-check('[B17] 作者收到「正在做真实性复核」通知', () => has(db4, 'MSG-CFM-A-S1', 'u-author') || '作者不知情');
-check('[B18] 未确认前状态保持不变（不自动代劳人工决策）', () => one(db4).status === 'REVIEWED' || `got=${one(db4).status}`);
+check('[B18] 总闸 OFF：评委打完分后系统不会自动骚扰组织者', () => P.runSubmitPipeline(db3) === null || '仍自动推送了复核待办');
+
+const pushReview = P.pushStage(db3, 'review', ['S1'], '赵冰艳', '2026-10-07 14:00');
+check('[B19] 手动「提醒真实性复核」成功', () => pushReview.ok === true || `err=${pushReview.error}`);
+const db4 = merge(db3, pushReview?.patch);
+
+check('[B20] 组织者收到「真实性复核」待办', () => has(db4, 'MSG-CFM-S1-u-org', 'u-org') || '组织者未收到复核待办');
+check('[B21] 作者收到「正在做真实性复核」通知', () => has(db4, 'MSG-CFM-A-S1', 'u-author') || '作者不知情');
+check('[B22] 未确认前状态保持不变（不自动代劳人工决策）', () => one(db4).status === 'REVIEWED' || `got=${one(db4).status}`);
 
 /* 确认真实性：页面操作 */
 const db5base = {
   ...db4,
   submits: db4.submits.map((s) => patchTo(s, { status: 'COMPLETED', confirmed: { by: '李评委', at: '2026-10-07 15:00', result: '真实' } })),
 };
-const step5 = P.runSubmitPipeline(db5base);
-check('[B19] 确认真实性后有产出', () => step5 !== null || '确认后无后续动作');
-const db5 = merge(db5base, step5?.patch);
+const pushPublish = P.pushStage(db5base, 'publish', ['S1'], '赵冰艳', '2026-10-07 15:30');
+check('[B23] 手动「提醒确认公示」成功', () => pushPublish.ok === true || `err=${pushPublish.error}`);
+const db5 = merge(db5base, pushPublish?.patch);
 
-check('[B20] 组织者收到「确认是否公示」待办', () => has(db5, 'MSG-PUB-S1-u-org', 'u-org') || '组织者未收到公示待办');
-check('[B21] 达标提报 → 作者被告知「可以申请入库」', () => {
+check('[B24] 组织者收到「确认是否公示」待办', () => has(db5, 'MSG-PUB-S1-u-org', 'u-org') || '组织者未收到公示待办');
+check('[B25] 达标提报 → 作者被告知「可以申请入库」', () => {
   const m = to(db5, 'u-author').find((x) => x.id === 'MSG-AST-S1');
   return m?.title === '你的作业可以申请入库了' || `got=${m?.title}`;
 });
-check('[B22] 链路走完后不再重复推送', () => P.runSubmitPipeline(db5) === null || '仍在重复推送');
+check('[B26] 链路走完后不再重复推送', () => P.pushStage(db5, 'publish', ['S1'], '赵冰艳').ok === false || '仍重复推送');
+
+check('[B27] 状态不符的提报被跳过并如实回报（不静默失败）', () => {
+  const r = P.pushStage(db5, 'judge', ['S1'], '赵冰艳');
+  return (r.ok === false && r.skipped.length === 1) || JSON.stringify(r);
+});
 
 /* ------------------------------------------------------------------ */
 /* C. 异常分支                                                          */
 /* ------------------------------------------------------------------ */
 
-check('[C1] 没有在岗评委时向全员报警（避免作业静默卡死）', () => {
+check('[C1] 没有在岗评委时报警（避免作业静默卡死）', () => {
   const noJudge = { ...BASE, users: USERS.filter((u) => !u.roles.includes('JUDGE')) };
-  let d = merge(noJudge, P.runSubmitPipeline(noJudge)?.patch);
-  d = merge(d, P.runSubmitPipeline(d)?.patch);
-  return has(d, 'MSG-NOJUDGE-S1', 'all') || '无评委时无告警';
+  const s1 = P.runSubmitPipeline(noJudge);
+  const d1 = merge(noJudge, s1?.patch);
+  const d2 = merge(d1, P.pushStage(d1, 'judge', ['S1'], '赵冰艳')?.patch);
+  return has(d2, 'MSG-NOJUDGE-S1', 'all') || '无评委时无告警';
 });
 
 check('[C2] 低于及格线 → 不承诺入库', () => {
   let d = BASE;
-  for (let i = 0; i < 6; i += 1) { const r = P.runSubmitPipeline(d); if (!r) break; d = merge(d, r.patch); }
+  const s1 = P.runSubmitPipeline(d); if (s1) d = merge(d, s1.patch);
+  const j = P.pushStage(d, 'judge', ['S1'], '赵冰艳'); if (j.ok) d = merge(d, j.patch);
   d = { ...d, submits: d.submits.map((s) => patchTo(s, { status: 'COMPLETED', final_score: 42 })) };
-  const r = P.runSubmitPipeline(d); if (r) d = merge(d, r.patch);
+  const p = P.pushStage(d, 'publish', ['S1'], '赵冰艳'); if (p.ok) d = merge(d, p.patch);
   const m = to(d, 'u-author').find((x) => x.id === 'MSG-AST-S1');
   return m?.title === '你的作业已完成评分' || `got=${m?.title}`;
 });
@@ -251,10 +285,56 @@ check('[C10] 提报不存在时补跑安全失败', () => {
 });
 
 /* ------------------------------------------------------------------ */
+/* D. 总闸 ON：恢复全自动链路（组织者确认正式运转后会打开）                */
+/* ------------------------------------------------------------------ */
+
+check('[D1] pushEnabled 默认关闭（未配置时也必须是 false）', () => (
+  P.pushEnabled(BASE) === false && P.pushEnabled({ ...BASE, pushSettings: undefined }) === false
+) || '默认竟然是开启');
+
+check('[D2] 总闸 ON 时识别为开启', () => P.pushEnabled(BASE_AUTO) === true || '开关读不出来');
+
+check('[D3] 总闸 ON：全自动跑完「出分 → 推评委 → 复核 → 公示/入库」', () => {
+  let d = BASE_AUTO;
+  const s1 = P.runSubmitPipeline(d);
+  if (!s1) return 'AI 评分未触发';
+  d = merge(d, s1.patch);
+  if (one(d).status !== 'AI_SCORED') return `第一步状态=${one(d).status}`;
+
+  const s2 = P.runSubmitPipeline(d);
+  if (!s2) return '未自动推送评委';
+  d = merge(d, s2.patch);
+  if (one(d).status !== 'REVIEWING') return `第二步状态=${one(d).status}`;
+  if (to(d, 'u-judge1').length !== 1) return '评委未收到待办';
+
+  if (P.runSubmitPipeline(d) !== null) return '同一步未幂等';
+
+  d = { ...d, submits: d.submits.map((s) => patchTo(s, { status: 'REVIEWED', judge_score: 88, final_score: 88 })) };
+  const s3 = P.runSubmitPipeline(d);
+  if (!s3) return '未自动推真实性复核';
+  d = merge(d, s3.patch);
+  if (!has(d, 'MSG-CFM-S1-u-org', 'u-org')) return '组织者未收到复核待办';
+
+  d = { ...d, submits: d.submits.map((s) => patchTo(s, { status: 'COMPLETED', confirmed: { by: '李评委', at: '2026-10-07 15:00', result: '真实' } })) };
+  const s4 = P.runSubmitPipeline(d);
+  if (!s4) return '未自动推公示/入库';
+  d = merge(d, s4.patch);
+  if (!has(d, 'MSG-PUB-S1-u-org', 'u-org')) return '组织者未收到公示待办';
+  if (to(d, 'u-author').find((x) => x.id === 'MSG-AST-S1')?.title !== '你的作业可以申请入库了') return '作者未被告知可入库';
+
+  return P.runSubmitPipeline(d) === null || '收尾仍未幂等';
+});
+
+check('[D4] 总闸 ON 时作者才收到「AI 评分完成」通知', () => {
+  const d = merge(BASE_AUTO, P.runSubmitPipeline(BASE_AUTO)?.patch);
+  return has(d, 'MSG-AI-S1', 'u-author') || 'ON 状态下作者没收通知';
+});
+
+/* ------------------------------------------------------------------ */
 /* 汇总                                                                 */
 /* ------------------------------------------------------------------ */
 const failed = results.filter((r) => !r.ok);
-console.log(`\nV8.3 评分链路冒烟：共 ${results.length} 项断言`);
+console.log(`\nV8.4 评分链路冒烟：共 ${results.length} 项断言`);
 console.log(`通过 ${results.length - failed.length} / ${results.length}`);
 if (failed.length) {
   console.log('\n失败项：');

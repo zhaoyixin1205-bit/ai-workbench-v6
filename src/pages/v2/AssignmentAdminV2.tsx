@@ -1,5 +1,5 @@
 import { Button, Form, Input, InputNumber, Select, Switch, Table, Tabs, App as AntApp } from 'antd';
-import { DownloadOutlined, PlusOutlined, CopyOutlined } from '@ant-design/icons';
+import { DownloadOutlined, PlusOutlined, CopyOutlined, SendOutlined } from '@ant-design/icons';
 import { useState } from 'react';
 import { useStore } from '@/store/store';
 import { COLOR } from '@/theme/v2';
@@ -20,6 +20,9 @@ import PeriodAdmin from '@/components/PeriodAdmin';
 import AssignmentParticipants from '@/components/AssignmentParticipants';
 /* V8.3-10.07：补跑 AI 评分走与自动流水线同一份算法（避免前后台两个分） */
 import { aiRescore, needsAiScore } from '@/service/submitPipeline';
+/* V8.4-10.07：推送改由组织者手动发起（系统默认不自动打扰任何人）；与 v1 逐行对等 */
+import { pushStage } from '@/service/submitPipeline';
+import type { PushStage } from '@/service/submitPipeline';
 import '../../theme/v2/template.css';
 
 /** V6.0 CR-23：流程编排的操作对象（最小必要字段） */
@@ -161,7 +164,32 @@ export default function AssignmentAdminV2() {
     if (!res.ok || !res.patch) { message.error(res.error ?? '补跑失败'); return; }
     setDb((p) => ({ ...p, ...res.patch }));
     log('补跑 AI 评分', r.code, `${res.cardLabel} → ${res.total} 分（操作人 ${me.name}）`);
-    message.success(`已补跑 AI 评分：${res.total} 分（${res.cardLabel}），随后会自动推送评委`);
+    message.success(`已补跑 AI 评分：${res.total} 分（${res.cardLabel}）。推送评委请勾选后点「推送评委复核」`);
+  };
+
+  /* ------------------------------------------------------------------
+   * V8.4-10.07：对外推送一律由组织者手动发起（与 v1 `AssignmentAdmin` 逐行对等）
+   * ---------------------------------------------------------------- */
+  const autoPush = db.pushSettings?.autoPush === true;
+
+  const toggleAutoPush = (v: boolean) => {
+    setDb((p) => ({
+      ...p,
+      pushSettings: { autoPush: v, updated_by: me.name, updated_at: `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}` },
+    }));
+    log('自动推送总闸', v ? '开启' : '关闭', `${me.name} 变更；开启后评委/组织者会收到钉钉待办`);
+    message.success(v ? '已开启自动推送：后续提报会自动推送评委与组织者' : '已关闭自动推送：所有推送改为手动发起');
+  };
+
+  const manualPush = (stage: PushStage, label: string) => {
+    if (selected.length === 0) { message.warning('请先勾选要推送的提报'); return; }
+    const res = pushStage(db, stage, selected, me.name, `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`);
+    if (!res.ok || !res.patch) { message.error(res.error ?? '推送失败'); return; }
+    setDb((p) => ({ ...p, ...res.patch }));
+    log('手动推送', label, `${res.pushed} 条：${res.detail.join('；')}（操作人 ${me.name}）`);
+    const skipped = res.skipped.length ? `，跳过 ${res.skipped.length} 条（当前状态不适用）` : '';
+    message.success(`${label}：已推 ${res.pushed} 条${skipped}`);
+    setSelected([]);
   };
 
   /** 公示口径兼容：新标记位优先，旧 PUBLISHED 状态仍算已公示（历史数据） */
@@ -344,7 +372,33 @@ export default function AssignmentAdminV2() {
               key: 'submits', label: `提报清单（${submits.length}）`,
               children: (
                 <>
+                  {/* V8.4-10.07：先讲清当前推送口径，再给操作，避免组织者误以为「点完补跑就自动发了」 */}
+                  <div className="wb2-card" style={{ marginBottom: 12 }}>
+                    <div className="wb2-card-t">推送口径</div>
+                    <div className="wb2-setrow">
+                      <div className="nm">
+                        系统自动推送
+                        <div className="ds">{autoPush
+                          ? '开启后新提报出分会自动给评委发钉钉待办、打分后自动提醒组织者复核。'
+                          : '关闭时系统照常自动出 AI 分，但不给任何人发消息 / 钉钉待办；推送请在下方勾选后手动发起。正式运转前建议保持关闭。'}</div>
+                      </div>
+                      <div className="ct">
+                        <span className={`wb2-tag ${autoPush ? 'wa' : 'ok'}`}><i className="d" />{autoPush ? 'ON' : 'OFF'}</span>
+                        <Switch size="small" checked={autoPush} disabled={readOnly} onChange={toggleAutoPush} />
+                      </div>
+                    </div>
+                  </div>
                   <div className="wb2-tools">
+                    {/* V8.4-10.07：推送评委是组织者统一发起的动作，不再由 AI 评分自动连带触发 */}
+                    <Button type="primary" disabled={readOnly || selected.length === 0} icon={<SendOutlined />} onClick={() => manualPush('judge', '推送评委复核')}>
+                      推送评委复核{selected.length ? `（${selected.length}）` : ''}
+                    </Button>
+                    <Button disabled={readOnly || selected.length === 0} onClick={() => manualPush('review', '提醒真实性复核')}>
+                      提醒真实性复核{selected.length ? `（${selected.length}）` : ''}
+                    </Button>
+                    <Button disabled={readOnly || selected.length === 0} onClick={() => manualPush('publish', '提醒确认公示')}>
+                      提醒确认公示{selected.length ? `（${selected.length}）` : ''}
+                    </Button>
                     <label className="wb2-inp" style={{ minWidth: 220 }}>
                       <Input
                         placeholder="搜索姓名 / 标题 / 编号" value={kw} allowClear

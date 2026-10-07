@@ -8,8 +8,8 @@ import type {
   ScoreCard, ScoreResult, Expert, ExpertSchedule, Booking, ExpertReview, AssetApply, Asset,
   PointRecord, ShopItem, ShopOrder, Board, Post, PostComment, WbUsage, AuditLog, AppMessage,
   Campaign, Tag, Dept, TopicSelection, BoardConfig, ImportJob, ImportJobItem, Announcement,
-  SubmitFlowRule, SubmitFlowLog, ReviewOverride, SceneCard, AttachmentFile, ScheduleRequest,
-  ExpertMinute,
+  SubmitFlowRule, SubmitFlowLog, ReviewOverride, SceneCard, AttachmentFile,   ScheduleRequest,
+  ExpertMinute, PushSettings,
 } from '@/mock/types';
 // 注意：EMPTY_CAMPAIGN 是值不是类型，必须单独 import，不能在上面的 import type 里
 import { EMPTY_CAMPAIGN } from '@/mock/types';
@@ -67,7 +67,17 @@ export interface DB {
   scheduleRequests: ScheduleRequest[];
   /** V8.3-10.07 专家答疑纪要（真实实体；替代原先页面内硬编码的演示纪要） */
   expertMinutes: ExpertMinute[];
+  /**
+   * V8.4-10.07 对外推送总闸。
+   * 注意：**默认关闭**（`autoPush: false`）——系统照常自动出 AI 分、自动推进状态，
+   * 但不发任何站内消息 / 钉钉待办；要打扰真人必须由组织者在后台手动发起。
+   * 这么做是因为系统尚处在试跑阶段，一次误推就是对真实员工的不可逆打扰，
+   * 而 JUDGE 角色一旦配多了，一次开盘就是几百条待办。
+   */
+  pushSettings: PushSettings;
 }
+
+export const DEFAULT_PUSH_SETTINGS: PushSettings = { autoPush: false };
 
 /**
  * V6.0 CR-23：默认安全转移路径（禁止任意跳转）。
@@ -119,6 +129,7 @@ function initialDB(): DB {
     attachmentFiles: [],
     scheduleRequests: [],
     expertMinutes: [],
+    pushSettings: { ...DEFAULT_PUSH_SETTINGS },
   };
 }
 
@@ -140,6 +151,8 @@ function hydrate(raw: unknown): DB {
     attachmentFiles: p.attachmentFiles ?? [],
     scheduleRequests: p.scheduleRequests ?? [],
     expertMinutes: p.expertMinutes ?? [],
+    /* 老库没有这个字段时给「关闭」而不是 true：宁可少打扰，也不要升级后突然开始推待办 */
+    pushSettings: { ...DEFAULT_PUSH_SETTINGS, ...(p.pushSettings ?? {}) },
   };
 }
 

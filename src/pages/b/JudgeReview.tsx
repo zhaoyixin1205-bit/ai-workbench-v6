@@ -279,7 +279,8 @@ export default function JudgeReview({ variant = 'admin' }: { variant?: 'admin' |
         new_result: `${vals.new_result}（${newScore} 分）`,
         reason, operator: me.name, created_at: at,
       }, ...p.reviewOverrides],
-      /** 覆盖后通知原评委与作者（沿用 M10 触达点） */
+      /* V8.4-10.07：只通知当事人（作者 + 原评委），不再 union_id:'all' 全员广播。
+         广播会把「谁的结论被组织者覆盖了」这种内部评审细节推给 501 个无关的人。 */
       messages: [
         {
           id: `MSG-OV-${Date.now()}-1`, union_id: r.union_id, type: '复核结果调整',
@@ -288,12 +289,15 @@ export default function JudgeReview({ variant = 'admin' }: { variant?: 'admin' |
           channel: '站内' as const, status: '未读' as const, sent_at: at,
         },
         ...(r.confirmed?.by
-          ? [{
-            id: `MSG-OV-${Date.now()}-2`, union_id: 'all', type: '复核结果调整',
-            title: '复核结论被组织者覆盖',
-            content: `${r.code}：原评委 ${r.confirmed.by} 的结论 ${original} 已被覆盖为 ${vals.new_result}。`,
-            channel: '站内' as const, status: '未读' as const, sent_at: at,
-          }]
+          ? (db.users ?? [])
+            .filter((u) => u.name === r.confirmed?.by)
+            .slice(0, 1)
+            .map((u) => ({
+              id: `MSG-OV-${Date.now()}-2`, union_id: u.union_id, type: '复核结果调整',
+              title: '你的复核结论被组织者覆盖',
+              content: `${r.code}：你给出的结论 ${original} 已被覆盖为 ${vals.new_result}。理由：${reason}`,
+              channel: '站内' as const, status: '未读' as const, sent_at: at,
+            }))
           : []),
         ...p.messages,
       ],

@@ -1,5 +1,5 @@
-import { Button, Card, Space, Table, Tabs, Tag, Typography, Input, Select, App as AntApp, Modal, Form, Switch, InputNumber, Row, Col, Statistic, Alert, DatePicker } from 'antd';
-import { DownloadOutlined, UploadOutlined, PlusOutlined, CopyOutlined } from '@ant-design/icons';
+import { Button, Card, Space, Table, Tabs, Tag, Typography, Input, Select, App as AntApp, Modal, Form, Switch, InputNumber, Row, Col, Statistic, Alert, DatePicker, Tooltip } from 'antd';
+import { DownloadOutlined, UploadOutlined, PlusOutlined, CopyOutlined, SendOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import { useState } from 'react';
 import { useStore } from '@/store/store';
 import { COLOR, TRACK_COLOR } from '@/theme';
@@ -17,6 +17,9 @@ import { statusText, statusOptions, TYPE_STATUS_TEXT } from '@/constants/statusM
 import BatchImport from '@/components/BatchImport';
 /* V8.3-10.07：补跑 AI 评分走与自动流水线同一份算法（避免前后台两个分） */
 import { aiRescore, needsAiScore } from '@/service/submitPipeline';
+/* V8.4-10.07：推送改由组织者手动发起（系统默认不自动打扰任何人） */
+import { pushStage } from '@/service/submitPipeline';
+import type { PushStage } from '@/service/submitPipeline';
 
 /** V6.0 CR-23：流程编排的操作对象（最小必要字段） */
 type BountyFlowTarget = {
@@ -145,7 +148,36 @@ export default function AssignmentAdmin() {
     if (!res.ok || !res.patch) { message.error(res.error ?? '补跑失败'); return; }
     setDb((p) => ({ ...p, ...res.patch }));
     log('补跑 AI 评分', r.code, `${res.cardLabel} → ${res.total} 分（操作人 ${me.name}）`);
-    message.success(`已补跑 AI 评分：${res.total} 分（${res.cardLabel}），随后会自动推送评委`);
+    /* V8.4-10.07：不再承诺「随后自动推送评委」—— 推送现在由组织者手动发起 */
+    message.success(`已补跑 AI 评分：${res.total} 分（${res.cardLabel}）。推送评委请在上面勾选后点「推送评委复核」`);
+  };
+
+  /* ------------------------------------------------------------------
+   * V8.4-10.07：对外推送一律由组织者手动发起。
+   * 系统不再替运营决定「什么时候、推给谁」，因为一次误推就是对真实员工的不可逆打扰，
+   * 而 JUDGE 角色一旦配多了，一次开盘就是几百条待办。
+   * ---------------------------------------------------------------- */
+  const autoPush = db.pushSettings?.autoPush === true;
+
+  const toggleAutoPush = (v: boolean) => {
+    setDb((p) => ({
+      ...p,
+      pushSettings: { autoPush: v, updated_by: me.name, updated_at: `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}` },
+    }));
+    log('自动推送总闸', v ? '开启' : '关闭', `${me.name} 变更；开启后评委/组织者会收到钉钉待办`);
+    message.success(v ? '已开启自动推送：后续提报会自动推送评委与组织者' : '已关闭自动推送：所有推送改为手动发起');
+  };
+
+  /** 勾选若干提报 → 手动推一步。同一个共享层函数，自动模式复用的也是它 */
+  const manualPush = (stage: PushStage, label: string) => {
+    if (selected.length === 0) { message.warning('请先勾选要推送的提报'); return; }
+    const res = pushStage(db, stage, selected, me.name, `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`);
+    if (!res.ok || !res.patch) { message.error(res.error ?? '推送失败'); return; }
+    setDb((p) => ({ ...p, ...res.patch }));
+    log('手动推送', label, `${res.pushed} 条：${res.detail.join('；')}（操作人 ${me.name}）`);
+    const skipped = res.skipped.length ? `，跳过 ${res.skipped.length} 条（当前状态不适用）` : '';
+    message.success(`${label}：已推 ${res.pushed} 条${skipped}`);
+    setSelected([]);
   };
 
   /** 公示口径兼容：新标记位优先，旧 PUBLISHED 状态仍算已公示（历史数据） */
@@ -315,7 +347,37 @@ export default function AssignmentAdmin() {
             key: 'submits', label: `提报清单（${submits.length}）`,
             children: (
               <Card size="small">
+                {/* V8.4-10.07：先说清当前推送口径，再给操作。避免组织者以为「点完补跑就自动发了」 */}
+                <Alert
+                  style={{ marginBottom: 12 }}
+                  type={autoPush ? 'warning' : 'success'}
+                  showIcon
+                  message={autoPush
+                    ? '自动推送已开启：新提报出分后会自动给评委发钉钉待办、打分后自动提醒组织者复核。'
+                    : '自动推送已关闭：系统照常自动给每条提报出 AI 分，但不会给任何人发消息 / 钉钉待办；需要推送时请勾选提报后手动点击。'}
+                  action={(
+                    <Space size={6}>
+                      <Switch size="small" checked={autoPush} disabled={readOnly} onChange={toggleAutoPush} />
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        {autoPush ? 'ON' : 'OFF'}
+                      </Typography.Text>
+                      <Tooltip title="系统正式运转前建议保持 OFF；确认流程跑通后再开启。OFF 状态下手动推送依然可用。">
+                        <QuestionCircleOutlined style={{ color: '#999' }} />
+                      </Tooltip>
+                    </Space>
+                  )}
+                />
                 <Space wrap style={{ marginBottom: 12 }}>
+                  {/* V8.4-10.07：推送评委是组织者统一发起的动作，不再由 AI 评分自动连带触发 */}
+                  <Button type="primary" disabled={readOnly || selected.length === 0} icon={<SendOutlined />} onClick={() => manualPush('judge', '推送评委复核')}>
+                    推送评委复核{selected.length ? `（${selected.length}）` : ''}
+                  </Button>
+                  <Button disabled={readOnly || selected.length === 0} onClick={() => manualPush('review', '提醒真实性复核')}>
+                    提醒真实性复核{selected.length ? `（${selected.length}）` : ''}
+                  </Button>
+                  <Button disabled={readOnly || selected.length === 0} onClick={() => manualPush('publish', '提醒确认公示')}>
+                    提醒确认公示{selected.length ? `（${selected.length}）` : ''}
+                  </Button>
                   <Input.Search placeholder="搜索姓名 / 标题 / 编号" style={{ width: 220 }} value={kw} onChange={(e) => setKw(e.target.value)} allowClear />
                   {/* V7.0 CR-33：筛选项显示中文（value 仍为枚举，筛选逻辑零变化） */}
                   <Select

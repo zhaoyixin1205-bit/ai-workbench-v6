@@ -64,6 +64,18 @@ function defaultStamp(): string {
 }
 
 /**
+ * 全站推送总闸（V8.4-10.07）。
+ *
+ * 默认**关闭**：系统照样自动出 AI 分、照样(status 前移)，但**不产生任何站内消息 / 钉钉待办**。
+ * 原因很直接 —— 系统还在联调期，一旦自动推送就是对真实员工的不可逆打扰；
+ * 而且 JUDGE 角色人数一旦配置偏多，一次开盘就是几百条待办。
+ * 所以把「要不要打扰人」交给组织者决定：后台手动推送生效，或显式打开总闸后自动推送生效。
+ */
+export function pushEnabled(db: DB): boolean {
+  return db.pushSettings?.autoPush === true;
+}
+
+/**
  * 是否需要「补跑 AI 评分」。
  * 共享层判定是因为后台 v1 / v2 都要显示这个按钮，两处各写一遍判定会漂移。
  * 口径：只要这条提报已经走到需要 AI 分的环节，却还没有 AI 分，就给入口。
@@ -187,6 +199,218 @@ function activeByRole(db: DB, ...roles: string[]): User[] {
 }
 
 /* ------------------------------------------------------------------ */
+/* 推送话术构造器（自动流水线与组织者手动推送共用同一份，避免文案漂移）      */
+/* ------------------------------------------------------------------ */
+
+const TXT = {
+  /** 给评委的打分待办：要把作者、提报编号、AI 分如实带上，评委据此判断是否要重点看 */
+  judgeTodo: (s: AssignmentSubmit) => `《${s.title}》（${s.code}，${s.name} · ${s.dept_name ?? '—'}）已完成 AI 评分 ${s.ai_score ?? '—'} 分，请在「评委复核」中完成四维打分与真实性确认。`,
+  /** 无在岗评委时的报警：必须发给全员，否则这条提报会静静卡死在已出分状态 */
+  noJudge: (s: AssignmentSubmit) => `《${s.title}》（${s.code}）已出 AI 分但没有在岗的评委角色用户，请到「用户与权限」为评委授予 JUDGE 角色。`,
+  judgedToAuthor: (s: AssignmentSubmit, pushed: number) => `《${s.title}》已推送 ${pushed} 位评委打分，评委完成后还需做一次真实性确认。`,
+  reviewTodo: (s: AssignmentSubmit, card: ScoreCard | null) => `《${s.title}》（${s.code}，${s.name}）评委已打出 ${s.judge_score ?? '—'} 分，最终分 ${s.final_score ?? '—'}${card ? `（及格线 ${card.pass_line}）` : ''}。请在「评委复核」确认内容真实性：真实 → 进入完成；存疑 → 退回重评。`,
+  reviewToAuthor: (s: AssignmentSubmit) => `《${s.title}》评委已评分（最终分 ${s.final_score ?? '—'}），组织者正在复核内容真实性，结论出来后你会收到通知。`,
+  publishTodo: (s: AssignmentSubmit, passed: boolean) => `《${s.title}》（${s.code}，${s.name}）最终分 ${s.final_score ?? '—'}，${passed ? '已达及格线' : '低于及格线'}。请在「作业管理」确认是否公示；公示后全员可见并可被复用。`,
+  /** 给作者的入库提示：通过与否的文案必须如实不同，不能一律说「可以申请入库」 */
+  assetToAuthor: (s: AssignmentSubmit, card: ScoreCard | null, passed: boolean) => (passed
+    ? `《${s.title}》已完成评分并通过真实性复核（最终分 ${s.final_score ?? '—'}），可在「我的作业」申请入库，入库后进入资产库供全员复用。`
+    : `《${s.title}》最终分 ${s.final_score ?? '—'}${card ? `，低于及格线 ${card.pass_line}` : ''}，暂不可申请入库；可优化后再提。`),
+};
+
+/* ------------------------------------------------------------------ */
+/* ③ 推送三阶段：自动流水线与组织者手动推送共用同一份实现                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 三个「需要对外告知并推动人去干活」的环节。
+ * 之所以抽出来而不是在自动/手动两处各写一遍：
+ *   同一步动作如果被写成两份，状态迁移、消息 ID、文案迟早会漂；
+ *   漂移的表现就是「自动能推、手动推不动」这种最难查的问题。
+ */
+export type PushStage = 'judge' | 'review' | 'publish';
+
+interface PushCtx {
+  judges: User[];
+  organizers: User[];
+  /** 已存在的消息 ID，保证同一条通知绝对不会发第二次 */
+  existingIds: Set<string>;
+  sink: AppMessage[];
+}
+
+function mkCtx(db: DB): PushCtx {
+  return {
+    judges: activeByRole(db, 'JUDGE'),
+    organizers: activeByRole(db, 'ORGANIZER', 'ADMIN'),
+    existingIds: new Set((db.messages ?? []).map((m) => m.id)),
+    sink: [],
+  };
+}
+
+function pushOnce(ctx: PushCtx, m: AppMessage): boolean {
+  if (ctx.existingIds.has(m.id)) return false;
+  ctx.existingIds.add(m.id);
+  ctx.sink.push(m);
+  return true;
+}
+
+/** 一个阶段做完之后要写回的东西；`summary` 直接喂给界面提示 */
+interface StageOutcome {
+  submit?: AssignmentSubmit;
+  log?: SubmitFlowLog;
+  pushed: number;
+  summary: string;
+}
+
+/** 阶段一：AI 已出分 → 推给评委打分（AI_SCORED → REVIEWING） */
+function stageJudge(ctx: PushCtx, db: DB, s: AssignmentSubmit, at: string, operator: string): StageOutcome | null {
+  if (s.status !== 'AI_SCORED') return null;
+  const targets = ctx.judges.filter((j) => j.union_id !== s.union_id);
+  let pushed = 0;
+  targets.forEach((j) => {
+    if (pushOnce(ctx, mkMsg(
+      `MSG-JDG-${s.id}-${j.union_id}`, j.union_id, '待评分任务',
+      '有一条提报等你打分', TXT.judgeTodo(s), '钉钉待办', at,
+    ))) pushed += 1;
+  });
+  /* 没有配置评委时必须报警：否则这条作业会静静地卡在 AI_SCORED（正是当初要修的病） */
+  if (pushed === 0) {
+    pushOnce(ctx, mkMsg(
+      `MSG-NOJUDGE-${s.id}`, 'all', '配置提醒',
+      '没有可用的评委，提报流程已卡住', TXT.noJudge(s), '站内', at,
+    ));
+  }
+  pushOnce(ctx, mkMsg(
+    `MSG-JDGED-${s.id}`, s.union_id, '进入评委复核',
+    '你的作业已进入评委评分', TXT.judgedToAuthor(s, pushed), '站内', at,
+  ));
+  return {
+    submit: { ...s, status: 'REVIEWING' },
+    log: {
+      id: `FL-${s.id}-TO-REVIEW`, submit_id: s.id,
+      from_status: 'AI_SCORED', to_status: 'REVIEWING',
+      operator,
+      reason: pushed > 0 ? `推送 ${pushed} 位评委打分` : '无在岗评委，已发出配置报警',
+      created_at: at,
+    },
+    pushed,
+    summary: `${s.code} 推送 ${pushed} 位评委${pushed === 0 ? '（无可用评委，已报警）' : ''}`,
+  };
+}
+
+/** 阶段二：评委已打分 → 提醒组织者做真实性复核（状态不变，只推待办） */
+function stageReview(ctx: PushCtx, db: DB, s: AssignmentSubmit, at: string): StageOutcome | null {
+  if (s.status !== 'REVIEWED' || s.confirmed) return null;
+  /* 幂等：这两个环节不迁状态，靠「已发过通知」本身做去重，
+     否则组织者每点一次按钮就重复计一次成功、日志被反复覆盖。 */
+  if (ctx.existingIds.has(`MSG-CFM-A-${s.id}`)) return null;
+  const card = resolveScoreCard(db, s);
+  ctx.organizers.forEach((o) => {
+    pushOnce(ctx, mkMsg(
+      `MSG-CFM-${s.id}-${o.union_id}`, o.union_id, '待办·真实性复核',
+      '有一条提报待复核真实性', TXT.reviewTodo(s, card), '钉钉待办', at,
+    ));
+  });
+  pushOnce(ctx, mkMsg(
+    `MSG-CFM-A-${s.id}`, s.union_id, '待办·真实性复核',
+    '你的作业正在做真实性复核', TXT.reviewToAuthor(s), '站内', at,
+  ));
+  return {
+    pushed: ctx.organizers.length,
+    summary: `${s.code} 提醒 ${ctx.organizers.length} 位做真实性复核`,
+  };
+}
+
+/** 阶段三：复核通过 → 提醒组织者确认公示 + 告知作者能否申请入库（状态不变） */
+function stagePublish(ctx: PushCtx, db: DB, s: AssignmentSubmit, at: string): StageOutcome | null {
+  if (!['COMPLETED', 'CONSENSUS'].includes(s.status) || s.is_published) return null;
+  if (ctx.existingIds.has(`MSG-AST-${s.id}`)) return null;
+  const card = resolveScoreCard(db, s);
+  /* 没有卡时不能一律算通过——宁可不提醒，也不要把「暂不可入库」说成「可以申请入库」 */
+  const passed = card ? (s.final_score ?? 0) >= card.pass_line : true;
+  ctx.organizers.forEach((o) => {
+    pushOnce(ctx, mkMsg(
+      `MSG-PUB-${s.id}-${o.union_id}`, o.union_id, '待办·确认公示',
+      '有一条提报等你确认是否公示', TXT.publishTodo(s, passed), '钉钉待办', at,
+    ));
+  });
+  pushOnce(ctx, mkMsg(
+    `MSG-AST-${s.id}`, s.union_id, '可申请入库',
+    passed ? '你的作业可以申请入库了' : '你的作业已完成评分',
+    TXT.assetToAuthor(s, card, passed), '站内', at,
+  ));
+  return {
+    pushed: ctx.organizers.length,
+    summary: `${s.code} 提醒 ${ctx.organizers.length} 位确认公示${passed ? '' : '（低于及格线）'}`,
+  };
+}
+
+function onStage(
+  stage: PushStage, ctx: PushCtx, db: DB, s: AssignmentSubmit, at: string, operator: string,
+): StageOutcome | null {
+  if (stage === 'judge') return stageJudge(ctx, db, s, at, operator);
+  if (stage === 'review') return stageReview(ctx, db, s, at);
+  return stagePublish(ctx, db, s, at);
+}
+
+export interface ManualPushResult {
+  ok: boolean;
+  /** 失败原因直接喂给 message.error */
+  error?: string;
+  patch?: Partial<DB>;
+  /** 实际发出去通知的提报数 */
+  pushed: number;
+  /** 因为状态不匹配而被跳过的提报（转成「xxx 条不符合条件」提示） */
+  skipped: string[];
+  detail: string[];
+}
+
+/**
+ * 组织者在后台主动发起一次推送。
+ *
+ * 这是本次改动的落点：系统不再替运营做「什么时候打扰谁」的决定，
+ * 而是把每一步推送都做成组织者勾选 → 点按钮 → 才发生。
+ * 好处是不管系统处在什么阶段都能灰度：先自己一个人跑通，确认没问题再放量。
+ */
+export function pushStage(
+  db: DB, stage: PushStage, submitIds: string[], operator: string, at?: string,
+): ManualPushResult {
+  if (submitIds.length === 0) return { ok: false, error: '请先勾选要推送的提报', pushed: 0, skipped: [], detail: [] };
+
+  const stamp = at ?? defaultStamp();
+  const ctx = mkCtx(db);
+  const next = [...(db.submits ?? [])];
+  const newLogs: SubmitFlowLog[] = [];
+  const skipped: string[] = [];
+  const detail: string[] = [];
+  let pushed = 0;
+
+  submitIds.forEach((id) => {
+    const idx = next.findIndex((x) => x.id === id);
+    if (idx < 0) { skipped.push(id); return; }
+    const s = next[idx];
+    const outcome = onStage(stage, ctx, db, s, stamp, operator);
+    if (!outcome) { skipped.push(s.code ?? id); return; }
+    if (outcome.submit) next[idx] = outcome.submit;
+    if (outcome.log) newLogs.push(outcome.log);
+    pushed += 1;
+    detail.push(outcome.summary);
+  });
+
+  if (pushed === 0) {
+    return { ok: false, error: `没有符合条件的提报（已跳过 ${skipped.length} 条）`, pushed: 0, skipped, detail };
+  }
+
+  const patch: Partial<DB> = {};
+  if (newLogs.length) {
+    const ids = new Set(newLogs.map((l) => l.id));
+    patch.submitFlowLogs = [...(db.submitFlowLogs ?? []).filter((l) => !ids.has(l.id)), ...newLogs];
+  }
+  if (ctx.sink.length) patch.messages = [...(db.messages ?? []), ...ctx.sink];
+  patch.submits = next;
+  return { ok: true, patch, pushed, skipped, detail };
+}
+
+/* ------------------------------------------------------------------ */
 /* ③ 流水线主体                                                        */
 /* ------------------------------------------------------------------ */
 
@@ -218,6 +442,7 @@ export function runSubmitPipeline(db: DB, opts?: PipelineOptions): PipelineResul
 
   const at = opts?.at ?? defaultStamp();
   const existingIds = new Set((db.messages ?? []).map((m) => m.id));
+  const autoPush = pushEnabled(db);
 
   const nextSubmits = [...submits];
   const newMessages: AppMessage[] = [];
@@ -235,6 +460,7 @@ export function runSubmitPipeline(db: DB, opts?: PipelineOptions): PipelineResul
     newMessages.push(m);
     return true;
   };
+  const ctx: PushCtx = { judges, organizers, existingIds, sink: newMessages };
 
   for (let i = 0; i < nextSubmits.length; i += 1) {
     const s = nextSubmits[i];
@@ -273,97 +499,32 @@ export function runSubmitPipeline(db: DB, opts?: PipelineOptions): PipelineResul
         from_status: 'SUBMITTED', to_status: 'AI_SCORED',
         operator: PIPELINE_OPERATOR, reason: '提交后触发 AI 规则评分', created_at: scoredAt,
       });
-      pushOnce(mkMsg(
-        `MSG-AI-${s.id}`, s.union_id, 'AI 评分完成',
-        '你的作业已完成 AI 评分',
-        `《${s.title}》：AI 分 ${r.total}（${card.name} ${card.version}）。接下来会自动推送评委打分，评分完成后你会在待办里看到结果。`,
-        '站内', scoredAt,
-      ));
+      /* 总闸关闭时连「AI 已出分」这条站内通知也不发：出分是系统内部动作，不需要打扰作者 */
+      if (autoPush) {
+        pushOnce(mkMsg(
+          `MSG-AI-${s.id}`, s.union_id, 'AI 评分完成',
+          '你的作业已完成 AI 评分',
+          `《${s.title}》：AI 分 ${r.total}（${card.name} ${card.version}）。接下来会自动推送评委打分，评分完成后你会在待办里看到结果。`,
+          '站内', scoredAt,
+        ));
+      }
       advanced += 1;
       detail.push(`${s.code} AI 自动评分 ${r.total} 分`);
       continue;
     }
 
-    /* —— 步骤 2：推送评委打分 AI_SCORED → REVIEWING —— */
-    if (s.status === 'AI_SCORED') {
-      const targets = judges.filter((j) => j.union_id !== s.union_id);
-      let pushed = 0;
-      targets.forEach((j) => {
-        if (pushOnce(mkMsg(
-          `MSG-JDG-${s.id}-${j.union_id}`, j.union_id, '待评分任务',
-          '有一条提报等你打分',
-          `《${s.title}》（${s.code}，${s.name} · ${s.dept_name ?? '—'}）已完成 AI 评分 ${s.ai_score ?? '—'} 分，请在「评委复核」中完成四维打分与真实性确认。`,
-          '钉钉待办', at,
-        ))) pushed += 1;
-      });
-      /* 没有配置评委时必须报警：否则这条作业会静静地卡在 AI_SCORED（正是本次要修的病） */
-      if (pushed === 0) {
-        pushOnce(mkMsg(
-          `MSG-NOJUDGE-${s.id}`, 'all', '配置提醒',
-          '没有可用的评委，提报流程已卡住',
-          `《${s.title}》（${s.code}）已出 AI 分但没有在岗的评委角色用户，请到「用户与权限」为评委授予 JUDGE 角色。`,
-          '站内', at,
-        ));
-      }
-      nextSubmits[i] = { ...s, status: 'REVIEWING' };
-      newLogs.push({
-        id: `FL-${s.id}-TO-REVIEW`, submit_id: s.id,
-        from_status: 'AI_SCORED', to_status: 'REVIEWING',
-        operator: PIPELINE_OPERATOR, reason: `自动推送 ${pushed} 位评委打分`, created_at: at,
-      });
-      pushOnce(mkMsg(
-        `MSG-JDGED-${s.id}`, s.union_id, '进入评委复核',
-        '你的作业已进入评委评分',
-        `《${s.title}》已推送 ${pushed} 位评委打分，评委完成后还需做一次真实性确认。`,
-        '站内', at,
-      ));
-      advanced += 1;
-      detail.push(`${s.code} 推送 ${pushed} 位评委`);
-      continue;
-    }
+    /* 总闸关闭：推送环节一律让位给「组织者在后台手动发起」。
+       注意这里不是删功能 —— 手动推送走的还是下面同一批 stage 函数，只是触发者从系统变成了人。 */
+    if (!autoPush) continue;
 
-    /* —— 步骤 3：评委已打分 → 推送真实性复核待办（REVIEWED 且未确认） —— */
-    if (s.status === 'REVIEWED' && !s.confirmed) {
-      const card = resolveScoreCard(db, s);
-      organizers.forEach((o) => {
-        pushOnce(mkMsg(
-          `MSG-CFM-${s.id}-${o.union_id}`, o.union_id, '待办·真实性复核',
-          '有一条提报待复核真实性',
-          `《${s.title}》（${s.code}，${s.name}）评委已打出 ${s.judge_score ?? '—'} 分，最终分 ${s.final_score ?? '—'}${card ? `（及格线 ${card.pass_line}）` : ''}。请在「评委复核」确认内容真实性：真实 → 进入完成；存疑 → 退回重评。`,
-          '钉钉待办', at,
-        ));
-      });
-      pushOnce(mkMsg(
-        `MSG-CFM-A-${s.id}`, s.union_id, '待办·真实性复核',
-        '你的作业正在做真实性复核',
-        `《${s.title}》评委已评分（最终分 ${s.final_score ?? '—'}），组织者正在复核内容真实性，结论出来后你会收到通知。`,
-        '站内', at,
-      ));
-      continue;
-    }
-
-    /* —— 步骤 4：复核通过 → 组织者确认公示 / 员工可申请入库 —— */
-    if ((s.status === 'COMPLETED' || s.status === 'CONSENSUS') && !s.is_published) {
-      const card = resolveScoreCard(db, s);
-      const passed = card ? (s.final_score ?? 0) >= card.pass_line : true;
-      organizers.forEach((o) => {
-        pushOnce(mkMsg(
-          `MSG-PUB-${s.id}-${o.union_id}`, o.union_id, '待办·确认公示',
-          '有一条提报等你确认是否公示',
-          `《${s.title}》（${s.code}，${s.name}）最终分 ${s.final_score ?? '—'}，${passed ? '已达及格线' : '低于及格线'}。请在「作业管理」确认是否公示；公示后全员可见并可被复用。`,
-          '钉钉待办', at,
-        ));
-      });
-      pushOnce(mkMsg(
-        `MSG-AST-${s.id}`, s.union_id, '可申请入库',
-        passed ? '你的作业可以申请入库了' : '你的作业已完成评分',
-        passed
-          ? `《${s.title}》已完成评分并通过真实性复核（最终分 ${s.final_score ?? '—'}），可在「我的作业」申请入库，入库后进入资产库供全员复用。`
-          : `《${s.title}》最终分 ${s.final_score ?? '—'}${card ? `，低于及格线 ${card.pass_line}` : ''}，暂不可申请入库；可优化后再提。`,
-        '站内', at,
-      ));
-      continue;
-    }
+    const outcome = onStage('judge', ctx, db, s, at, PIPELINE_OPERATOR)
+      ?? onStage('review', ctx, db, s, at, PIPELINE_OPERATOR)
+      ?? onStage('publish', ctx, db, s, at, PIPELINE_OPERATOR);
+    if (!outcome) continue;
+    if (outcome.submit) nextSubmits[i] = outcome.submit;
+    if (outcome.log) newLogs.push(outcome.log);
+    advanced += 1;
+    detail.push(outcome.summary);
   }
 
   if (advanced === 0 && newMessages.length === 0) return null;

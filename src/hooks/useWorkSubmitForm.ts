@@ -190,7 +190,7 @@ export function useWorkSubmitForm(typeId: string | undefined, caseId: string | n
      *（此前提交后没有任何评分逻辑，才出现「AI 评分不触发、评委收不到」）。
      * 文案同步改为真实承诺：自动评分 + 推送评委，而不是空头支票「触发组织者待办」。
      */
-    message.success('提报成功！系统已自动完成 AI 评分并推送评委打分，结果出来后会在待办里通知你');
+    message.success('提报成功！系统已自动完成 AI 评分，之后由组织者统一推送评委复核，结果出来后会通知你');
     nav('/work');
   };
 
