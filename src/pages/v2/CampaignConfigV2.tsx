@@ -1,8 +1,10 @@
-import { Button, DatePicker, InputNumber, Segmented, Steps, Switch, Table, Tag, App as AntApp } from 'antd';
-import { useState } from 'react';
+import { Button, Checkbox, DatePicker, Form, Input, InputNumber, Radio, Segmented, Space, Steps, Switch, Table, Tag, App as AntApp } from 'antd';
+import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '@/store/store';
 import { COLOR } from '@/theme/v2';
 import { DEMO_TODAY } from '@/mock/seedBiz';
+import { useCampaignOps, prevCampaign } from '@/hooks/useCampaignOps';
+import { Dialog } from '@/components/v2/Dialog';
 import dayjs from 'dayjs';
 import '../../theme/v2/template.css';
 
@@ -21,11 +23,77 @@ import '../../theme/v2/template.css';
  */
 
 export default function CampaignConfigV2() {
-  const { db, campaign, setDb, setFlags, flags, log } = useStore();
+  const { db, campaign, setDb, setFlags, flags, log, hasCampaign } = useStore();
   const [visibility, setVisibility] = useState(campaign.visibility);
   const { message } = AntApp.useApp();
+  const ops = useCampaignOps();
+
+  /* ---------- V7.1：届次新建 / 复制（此前只有 message.success，点了毫无效果） ---------- */
+  type Mode = null | 'create' | 'copy';
+  const [mode, setMode] = useState<Mode>(null);
+  const [form] = Form.useForm();
+  const prev = useMemo(() => prevCampaign(db.campaigns ?? [], campaign.id), [db.campaigns, campaign.id]);
+  const [startV, setStartV] = useState<string>(campaign.start_date);
+  const [endV, setEndV] = useState<string>(campaign.end_date);
+  const [pubOn, setPubOn] = useState<boolean>(campaign.publicSwitch);
+  const [rules, setRules] = useState(campaign.pointRules);
+
+  useEffect(() => {
+    setVisibility(campaign.visibility);
+    setStartV(campaign.start_date);
+    setEndV(campaign.end_date);
+    setPubOn(campaign.publicSwitch);
+    setRules(campaign.pointRules);
+  }, [campaign.id, campaign.visibility, campaign.start_date, campaign.end_date, campaign.publicSwitch, campaign.pointRules]);
+
+  const openCreate = () => {
+    form.setFieldsValue({
+      name: '',
+      range: [dayjs().startOf('month'), dayjs().add(3, 'month').endOf('month')],
+      status: '未开始',
+    });
+    setMode('create');
+  };
+  const openCopy = () => {
+    const src = prev ?? campaign;
+    form.setFieldsValue({
+      name: `${src.name} 副本`,
+      range: [dayjs(src.start_date || undefined), dayjs(src.end_date || undefined)],
+      status: '未开始',
+      fromId: src.id,
+      copyStages: true, copyPointRules: true, copyVisibility: true, copyPublicSwitch: true,
+    });
+    setMode('copy');
+  };
+  const submitCampaign = async () => {
+    let v: { name?: string; range?: [dayjs.Dayjs, dayjs.Dayjs]; status?: '进行中' | '已结束' | '未开始'; fromId?: string; copyStages?: boolean; copyPointRules?: boolean; copyVisibility?: boolean; copyPublicSwitch?: boolean };
+    try {
+      v = await form.validateFields();
+    } catch {
+      return;
+    }
+    const [s, e] = v.range ?? [];
+    const id = ops.createCampaign({
+      name: v.name ?? '',
+      start_date: s ? s.format('YYYY-MM-DD') : '',
+      end_date: e ? e.format('YYYY-MM-DD') : '',
+      status: v.status ?? '未开始',
+      fromId: mode === 'copy' ? (v.fromId ?? prev?.id) : undefined,
+      copyStages: !!v.copyStages,
+      copyPointRules: !!v.copyPointRules,
+      copyVisibility: !!v.copyVisibility,
+      copyPublicSwitch: !!v.copyPublicSwitch,
+    });
+    if (!id) {
+      message.error('请填写届次名称，且结束日必须晚于开始日');
+      return;
+    }
+    message.success(mode === 'copy' ? '已按所选配置复制为新届次，并设为当前届次' : '新届次已创建，并设为当前届次');
+    setMode(null);
+  };
 
   const saveVisibility = () => {
+    if (!hasCampaign) { message.warning('请先创建届次'); return; }
     setDb((p) => ({
       ...p,
       campaigns: p.campaigns.map((c) => (c.id === campaign.id ? { ...c, visibility } : c)),
@@ -71,15 +139,94 @@ export default function CampaignConfigV2() {
             {campaign.start_date} ~ {campaign.end_date}
           </span>
           <span style={{ flex: 1 }} />
-          <Button onClick={() => { log('复制届次', campaign.name, '复制案例、选题与规则配置'); message.success('已复制为上届配置（减少重复配置工作量）'); }}>一键复制上届</Button>
-          <Button type="primary" onClick={() => message.success('已创建新届次草稿（多届支持，历史届次数据可回溯）')}>创建新届次</Button>
+          <Button disabled={!hasCampaign} onClick={openCopy}
+            title={hasCampaign ? undefined : '尚无届次可复制，请先创建新届次'}>
+            一键复制上届{prev ? `（${prev.name}）` : ''}
+          </Button>
+          <Button type="primary" onClick={openCreate}>创建新届次</Button>
         </div>
-        <Steps
-          style={{ marginTop: 'var(--wb-space-5)' }}
-          size="small" current={2}
-          items={campaign.stages.map((s) => ({ title: s.name, description: `${s.start} ~ ${s.end}` }))}
-        />
+        {campaign.stages.length > 0 ? (
+          <Steps
+            style={{ marginTop: 'var(--wb-space-5)' }}
+            size="small" current={2}
+            items={campaign.stages.map((s) => ({ title: s.name, description: `${s.start} ~ ${s.end}` }))}
+          />
+        ) : (
+          <div className="wb2-note" style={{ marginTop: 'var(--wb-space-4)' }}>
+            尚未配置阶段 —— 点「创建新届次」后将自动生成 W1~W4 四阶段模板。
+          </div>
+        )}
+
+        {/* 多届列表：可切换当前届次 / 归档。此前页面只显示一条，无法回溯历史届次 */}
+        {(db.campaigns ?? []).length > 0 && (
+          <div style={{ marginTop: 'var(--wb-space-5)' }}>
+            <Table
+              size="small" rowKey="id" pagination={false}
+              dataSource={db.campaigns ?? []}
+              columns={[
+                {
+                  title: '届次', dataIndex: 'name',
+                  render: (v: string, r) => (
+                    <Space size={6}>
+                      {r.id === campaign.id && <span className="wb2-tag wa"><i className="d" />当前</span>}
+                      <span>{v}</span>
+                    </Space>
+                  ),
+                },
+                { title: '状态', dataIndex: 'status', width: 90, render: (v: string) => <span className="wb2-tag">{v}</span> },
+                { title: '周期', width: 190, render: (_: unknown, r) => `${r.start_date} ~ ${r.end_date}` },
+                { title: '阶段', width: 70, render: (_: unknown, r) => r.stages.length },
+                { title: '积分规则', width: 80, render: (_: unknown, r) => r.pointRules.length },
+                {
+                  title: '操作', width: 140,
+                  render: (_: unknown, r) => (
+                    <Space size={4}>
+                      <Button size="small" type="link" disabled={r.id === campaign.id}
+                        onClick={() => { ops.switchCampaign(r.id); message.success(`已切换到「${r.name}」`); }}>设为当前</Button>
+                      <Button size="small" type="link" disabled={r.status !== '进行中'}
+                        onClick={() => { ops.archiveCampaign(r.id); message.success(`「${r.name}」已归档`); }}>归档</Button>
+                    </Space>
+                  ),
+                },
+              ]}
+            />
+          </div>
+        )}
       </div>
+
+      <Dialog
+        open={mode !== null}
+        title={mode === 'copy' ? '复制上一届次 · 生成新届次' : '创建新届次'}
+        sub="创建后自动设为当前届次；若状态选「进行中」，原有进行中届次会自动归档为「已结束」"
+        okText="创建并设为当前届次"
+        onOk={submitCampaign}
+        onCancel={() => setMode(null)}
+      >
+        <Form form={form} layout="vertical">
+          <Form.Item name="name" label="届次名称" rules={[{ required: true, message: '请填写届次名称' }]}>
+            <Input placeholder="如：2026 Q4 · AI 应用实践季" />
+          </Form.Item>
+          <Form.Item name="range" label="起止日期" rules={[{ required: true, message: '请选择起止日期' }]}>
+            <DatePicker.RangePicker style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="status" label="状态">
+            <Radio.Group options={[{ label: '未开始', value: '未开始' }, { label: '进行中', value: '进行中' }]} />
+          </Form.Item>
+          {mode === 'copy' && (
+            <>
+              <Form.Item name="fromId" hidden><Input /></Form.Item>
+              <Form.Item label="复制内容" style={{ marginBottom: 0 }}>
+                <Space direction="vertical">
+                  <Form.Item name="copyStages" valuePropName="checked" noStyle><Checkbox>阶段划分（W1~W4）</Checkbox></Form.Item>
+                  <Form.Item name="copyPointRules" valuePropName="checked" noStyle><Checkbox>积分规则</Checkbox></Form.Item>
+                  <Form.Item name="copyVisibility" valuePropName="checked" noStyle><Checkbox>公示口径</Checkbox></Form.Item>
+                  <Form.Item name="copyPublicSwitch" valuePropName="checked" noStyle><Checkbox>公示总闸</Checkbox></Form.Item>
+                </Space>
+              </Form.Item>
+            </>
+          )}
+        </Form>
+      </Dialog>
 
       <div className="wb2-grid2">
         {/* ---------- 左列 ---------- */}
@@ -88,14 +235,20 @@ export default function CampaignConfigV2() {
             <div className="wb2-card-t">时间窗配置</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--wb-space-3)', flexWrap: 'wrap' }}>
               <span style={{ fontSize: 'var(--wb-fs-label)', color: COLOR.ink2 }}>启动日</span>
-              <DatePicker defaultValue={dayjs(campaign.start_date)} />
+              <DatePicker value={startV ? dayjs(startV) : undefined}
+                onChange={(d) => setStartV(d ? d.format('YYYY-MM-DD') : '')} />
               <span style={{ fontSize: 'var(--wb-fs-label)', color: COLOR.ink2 }}>结束日</span>
-              <DatePicker defaultValue={dayjs(campaign.end_date)} />
+              <DatePicker value={endV ? dayjs(endV) : undefined}
+                onChange={(d) => setEndV(d ? d.format('YYYY-MM-DD') : '')} />
             </div>
             <div className="wb2-note" style={{ marginTop: 'var(--wb-space-3)' }}>
               影响提报与榜单，不影响历史数据；演示基准日 {DEMO_TODAY}
             </div>
-            <Button type="primary" style={{ marginTop: 'var(--wb-space-4)' }} onClick={() => message.success('时间窗已保存')}>保存时间窗</Button>
+            <Button type="primary" style={{ marginTop: 'var(--wb-space-4)' }} onClick={() => {
+              if (!hasCampaign) { message.warning('请先创建届次'); return; }
+              if (!ops.saveTimeWindow(campaign.id, startV, endV)) { message.error('结束日必须晚于开始日'); return; }
+              message.success('时间窗已保存');
+            }}>保存时间窗</Button>
           </div>
 
           <div className="wb2-card" style={{ overflow: 'hidden' }}>
@@ -109,7 +262,10 @@ export default function CampaignConfigV2() {
                   { title: '行为', dataIndex: 'action' },
                   {
                     title: '积分', dataIndex: 'points', width: 100,
-                    render: (v: number) => <InputNumber size="small" defaultValue={v} min={0} />,
+                    render: (v: number, r) => (
+                      <InputNumber size="small" value={v} min={0}
+                        onChange={(n) => setRules((prev) => prev.map((x) => (x.action === r.action ? { ...x, points: Number(n ?? 0) } : x)))} />
+                    ),
                   },
                   { title: '上限', dataIndex: 'cap', width: 90, render: (v?: number) => v ? <span className="num">{v}</span> : '—' },
                 ]}
@@ -119,7 +275,11 @@ export default function CampaignConfigV2() {
               <div className="wb2-note">
                 规则变更仅对新行为生效；设置个人与部门积分上限防止积分超发导致成本失控。
               </div>
-              <Button style={{ marginTop: 'var(--wb-space-3)' }} onClick={() => message.success('积分规则已保存')}>保存规则</Button>
+              <Button style={{ marginTop: 'var(--wb-space-3)' }} onClick={() => {
+                if (!hasCampaign) { message.warning('请先创建届次'); return; }
+                ops.savePointRules(campaign.id, rules);
+                message.success('积分规则已保存');
+              }}>保存规则</Button>
             </div>
           </div>
         </div>
@@ -157,7 +317,12 @@ export default function CampaignConfigV2() {
                 <div className="ds">关闭则所有榜单与优秀作品对外不可见</div>
               </div>
               <div className="ct">
-                <Switch defaultChecked={campaign.publicSwitch} onChange={(c) => message.success(c ? '公示已开启' : '公示总闸已关闭，榜单与优秀作品对外不可见')} />
+                <Switch checked={pubOn} onChange={(c) => {
+                  setPubOn(c);
+                  if (!hasCampaign) { message.warning('请先创建届次'); return; }
+                  ops.savePublicSwitch(campaign.id, c);
+                  message.success(c ? '公示已开启' : '公示总闸已关闭，榜单与优秀作品对外不可见');
+                }} />
               </div>
             </div>
             <Button type="primary" style={{ marginTop: 'var(--wb-space-4)' }} onClick={saveVisibility}>保存公示口径</Button>

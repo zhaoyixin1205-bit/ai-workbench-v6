@@ -49,7 +49,7 @@ const ICON: Record<string, React.ReactNode> = {
 };
 
 export default function BLayout() {
-  const { me, flags, db } = useStore();
+  const { me, flags, db, campaign, hasCampaign, setCurrentCampaignId } = useStore();
   const nav = useNavigate();
   const loc = useLocation();
   const path = loc.pathname;
@@ -140,9 +140,14 @@ export default function BLayout() {
           <Space size={8} wrap>
             <Space size={4}>
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>届次</Typography.Text>
+              {/* V7.1：此前 defaultValue 写死 C2026Q4 且无 onChange，选了也不切换 */}
               <Select
-                size="small" defaultValue="C2026Q4" style={{ width: 180 }}
-                options={db.campaigns.map((c) => ({ value: c.id, label: c.name }))}
+                size="small"
+                style={{ width: 180 }}
+                placeholder="尚未创建届次"
+                value={hasCampaign ? campaign.id : undefined}
+                onChange={(v) => setCurrentCampaignId(v)}
+                options={(db.campaigns ?? []).map((c) => ({ value: c.id, label: c.name }))}
               />
             </Space>
             <Tag color="blue" style={{ marginInlineEnd: 0 }}>数据截止 {DEMO_TODAY}（T-1）</Tag>

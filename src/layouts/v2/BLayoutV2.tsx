@@ -62,7 +62,7 @@ const ICON: Record<string, React.ReactNode> = {
 };
 
 export default function BLayoutV2() {
-  const { me, flags, db } = useStore();
+  const { me, flags, db, campaign, hasCampaign, setCurrentCampaignId } = useStore();
   const nav = useNavigate();
   const loc = useLocation();
   const path = loc.pathname;
@@ -139,11 +139,14 @@ export default function BLayoutV2() {
           <div className="wb2-hd-right">
             <Space size={4}>
               <span style={{ fontSize: 12, color: 'var(--wb-ink-3)' }}>届次</span>
+              {/* V7.1：此前 defaultValue 写死 C2026Q4 且无 onChange，选了也不切换 */}
               <Select
                 size="small"
-                defaultValue="C2026Q4"
                 style={{ width: 180 }}
-                options={db.campaigns.map((c) => ({ value: c.id, label: c.name }))}
+                placeholder="尚未创建届次"
+                value={hasCampaign ? campaign.id : undefined}
+                onChange={(v) => setCurrentCampaignId(v)}
+                options={(db.campaigns ?? []).map((c) => ({ value: c.id, label: c.name }))}
               />
             </Space>
             <Tag color="blue" style={{ marginInlineEnd: 0 }}>数据截止 {DEMO_TODAY}（T-1）</Tag>

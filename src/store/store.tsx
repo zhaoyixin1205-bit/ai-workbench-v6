@@ -10,6 +10,8 @@ import type {
   Campaign, Tag, Dept, TopicSelection, BoardConfig, ImportJob, ImportJobItem, Announcement,
   SubmitFlowRule, SubmitFlowLog, ReviewOverride, SceneCard, AttachmentFile, ScheduleRequest,
 } from '@/mock/types';
+// 注意：EMPTY_CAMPAIGN 是值不是类型，必须单独 import，不能在上面的 import type 里
+import { EMPTY_CAMPAIGN } from '@/mock/types';
 
 export interface DB {
   depts: Dept[];
@@ -267,6 +269,12 @@ interface Ctx {
   flags: FeatureFlags;
   setFlags: React.Dispatch<React.SetStateAction<FeatureFlags>>;
   campaign: Campaign;
+  /** V7.1：当前届次 id（个人偏好，存 localStorage）。为空时由 status 派生 */
+  currentCampaignId: string;
+  /** V7.1：切换当前届次。传 '' 表示回到「按 status 自动派生」 */
+  setCurrentCampaignId: (id: string) => void;
+  /** V7.1：是否已创建过届次。false = 空态，页面应引导组织者创建 */
+  hasCampaign: boolean;
   resetDemo: () => Promise<void>;
   /** 可见数据范围过滤（SELF / DEPT_TREE / ALL） */
   visibleUsers: () => User[];
@@ -283,6 +291,8 @@ const StoreCtx = createContext<Ctx | null>(null);
 const LS_KEY = 'wb-workbench-db-v3.0.0';
 const LS_ME = 'wb-workbench-me-v3.0.0';
 const LS_FLAGS = 'wb-workbench-flags-v3.0.0';
+/** V7.1：当前届次选择。与身份、开关一样是个人偏好，不进库（不同人可看不同届次） */
+const LS_CAMPAIGN = 'wb-workbench-campaign-v3.0.0';
 /**
  * 默认身份：V7.1 起通讯录换成钉钉真实数据，演示用的 'uid001' 已不存在。
  * 若沿用旧值会 fallback 到 `db.users[0]`（通讯录里第一个人，是谁完全随机），
@@ -344,6 +354,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [setMode]);
 
   const [meId, setMeId] = useState<string>(() => localStorage.getItem(LS_ME) || DEFAULT_ME_ID);
+  const [currentCampaignId, setCurrentCampaignIdRaw] = useState<string>(
+    () => localStorage.getItem(LS_CAMPAIGN) || ''
+  );
   const [flags, setFlags] = useState<FeatureFlags>(() => {
     try {
       const raw = localStorage.getItem(LS_FLAGS);
@@ -360,6 +373,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(LS_ME, meId);
   }, [meId]);
   useEffect(() => {
+    if (currentCampaignId) localStorage.setItem(LS_CAMPAIGN, currentCampaignId);
+    else localStorage.removeItem(LS_CAMPAIGN);
+  }, [currentCampaignId]);
+  /** V7.1：切换当前届次。若该届次已不存在（被删除），清掉选择回到自动派生 */
+  const setCurrentCampaignId = useCallback(
+    (id: string) => {
+      if (id && !(db.campaigns ?? []).some((c) => c.id === id)) {
+        setCurrentCampaignIdRaw('');
+        return;
+      }
+      setCurrentCampaignIdRaw(id);
+    },
+    [db.campaigns]
+  );
+  useEffect(() => {
     localStorage.setItem(LS_FLAGS, JSON.stringify(flags));
   }, [flags]);
 
@@ -367,10 +395,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     () => db.users.find((x) => x.union_id === meId) ?? db.users[0],
     [db.users, meId]
   );
-  const campaign = useMemo(
-    () => db.campaigns.find((c) => c.status === '进行中') ?? db.campaigns[0],
-    [db.campaigns]
-  );
+  /* V7.1：当前届次。取用顺序：
+   *   ① 用户显式选择的（currentCampaignId）
+   *   ② 唯一的「进行中」届次
+   *   ③ 列表第一条
+   *   ④ 空态兜底 EMPTY_CAMPAIGN —— campaigns 被清空时 campaign 仍不为 undefined，
+   *      否则 11 个组件读 campaign.id / stages / pointRules 会整页白屏。 */
+  const campaign = useMemo<Campaign>(() => {
+    const list = db.campaigns ?? [];
+    if (!list.length) return EMPTY_CAMPAIGN;
+    return (
+      list.find((c) => c.id === currentCampaignId) ??
+      list.find((c) => c.status === '进行中') ??
+      list[0]
+    );
+  }, [db.campaigns, currentCampaignId]);
+  const hasCampaign = (db.campaigns ?? []).length > 0;
 
   /* 首次挂载：向后端要一次全量数据；拿不到就退回本机模式 */
   useEffect(() => {
@@ -525,7 +565,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const value: Ctx = {
     db, setDb, sync, pullRemote, me, switchIdentity, switchToRole, hasRole, flags, setFlags,
-    campaign, resetDemo, visibleUsers, hasTeam, managedDeptIds, scopeRows, log,
+    campaign, currentCampaignId, setCurrentCampaignId, hasCampaign,
+    resetDemo, visibleUsers, hasTeam, managedDeptIds, scopeRows, log,
   };
   return <StoreCtx.Provider value={value}>{children}</StoreCtx.Provider>;
 }

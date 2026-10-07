@@ -139,7 +139,7 @@ export default function WorkDetail() {
                 )}
                 <Divider />
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  评语默认不公示（Q9）；当前展示遵循公示配置：提报详情「{db.campaigns[0].visibility.workDetail}可见」
+                  评语默认不公示（Q9）；当前展示遵循公示配置：提报详情「{db.campaigns?.[0]?.visibility?.workDetail ?? '按配置'}可见」
                 </Typography.Text>
               </>
             )}

@@ -110,6 +110,30 @@ export interface Campaign {
 }
 
 /**
+ * V7.1：「待组织者自行创建届次」后 campaigns 可能是空数组，
+ * 而全站有 11 个组件直接读 `campaign.id / name / stages / pointRules / visibility`，
+ * 空数组会让 `db.campaigns[0]` 变成 undefined 从而整页白屏。
+ * 这里给一个结构完整、内容为空的占位届次，保证任何时刻 campaign 都不是 undefined。
+ * 页面可用 store 的 `hasCampaign` 判断是否处于空态并引导创建。
+ */
+export const EMPTY_CAMPAIGN: Campaign = {
+  id: '__EMPTY__',
+  name: '（尚未创建届次）',
+  start_date: '',
+  end_date: '',
+  status: '未开始',
+  stages: [],
+  visibility: { leaderboard: '全员', workDetail: '本部门', comment: '不公示' },
+  publicSwitch: false,
+  pointRules: [],
+};
+
+/** 判断是否为占位届次（空态）。用 id 判定，不依赖 name 文案 */
+export function isEmptyCampaign(c: Campaign | undefined): boolean {
+  return !c || c.id === EMPTY_CAMPAIGN.id;
+}
+
+/**
  * V4.1：可直接安装的 Skill
  * 三种承载方式可并存（文字说明 / 上传压缩包 / 下载链接），由发布者任选其一或组合：
  *  - UPLOAD：上传 .zip 等 Skill 压缩包（纯前端 mock，只登记文件名与大小，不落二进制）
