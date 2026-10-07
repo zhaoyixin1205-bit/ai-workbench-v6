@@ -8,6 +8,7 @@ import { DEMO_TODAY } from '@/mock/seedBiz';
 import dayjs from 'dayjs';
 import { useSkillAdminConverge } from '@/auth/converge';
 import { ScopeNotice } from '@/components/ScopeNotice';
+import { isCompanyBounty } from '@/constants/bounty';
 
 export default function BountyReview() {
   const { db, me, setDb, log, visibleUsers } = useStore();
@@ -27,7 +28,8 @@ export default function BountyReview() {
   const inScope = (b: Bounty) => {
     if (me.scope_type === 'ALL') return true;
     const ids = new Set(visibleUsers().map((u) => u.union_id));
-    return ids.has(b.owner_union_id) || (!!b.claimant_union_id && ids.has(b.claimant_union_id)) || b.owner_union_id === me.union_id;
+    /** V8-10.07 补：公司虚拟主体发布的悬赏不在 visibleUsers 内，需显式放行，否则后台看不到 */
+    return ids.has(b.owner_union_id) || (!!b.claimant_union_id && ids.has(b.claimant_union_id)) || b.owner_union_id === me.union_id || isCompanyBounty(b);
   };
   const pending = db.bounties.filter((b) => b.status === 'PENDING_REVIEW' && inScope(b));
   const submitted = db.bounties.filter((b) => b.status === 'SUBMITTED' && inScope(b));

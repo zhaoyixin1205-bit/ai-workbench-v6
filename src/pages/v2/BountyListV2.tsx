@@ -10,6 +10,7 @@ import {
 import { TrackTag } from '@/components/ui';
 import { trackVar } from '@/theme/v2/track';
 import type { Bounty, BountyStatus } from '@/mock/types';
+import { claimHint } from '@/constants/bounty';
 import '../../theme/v2/template.css';
 
 /**
@@ -169,6 +170,10 @@ export default function BountyListV2() {
               }}>
                 {x.status === 'PUBLISHED' && x.owner_union_id !== me.union_id && (
                   <Button size="small" type="primary" onClick={() => b.claim(x)}>认领</Button>
+                )}
+                {/* V8-10.07 补：不可认领时给出原因，避免「没按钮又没解释」 */}
+                {claimHint(x, me.union_id) && (
+                  <span className="wb2-note" style={{ alignSelf: 'center' }}>{claimHint(x, me.union_id)}</span>
                 )}
                 {x.status === 'CLAIMED' && x.claimant_union_id === me.union_id && (
                   <>

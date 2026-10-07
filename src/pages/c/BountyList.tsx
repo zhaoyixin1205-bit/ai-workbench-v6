@@ -8,6 +8,7 @@ import { PageHeader, SoftTag, TrackTag } from '@/components/ui';
 import type { Attachment, Bounty, BountyStatus } from '@/mock/types';
 import type { UploadFile } from 'antd';
 import { useFileUpload } from '@/service/useFileUpload';
+import { claimHint } from '@/constants/bounty';
 
 /** V6.0 CR-20：附件白名单与作业提报一致 */
 const ALLOW_EXT = ['zip', 'md', 'yaml', 'pdf', 'docx', 'xlsx', 'png', 'jpg'];
@@ -335,6 +336,12 @@ export default function BountyList() {
                 <Space style={{ marginTop: 14 }} wrap>
                   {b.status === 'PUBLISHED' && b.owner_union_id !== me.union_id && (
                     <Button size="small" type="primary" onClick={() => claim(b)}>认领</Button>
+                  )}
+                  {/* V8-10.07 补：不可认领时给出原因，避免「没按钮又没解释」 */}
+                  {claimHint(b, me.union_id) && (
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                      {claimHint(b, me.union_id)}
+                    </Typography.Text>
                   )}
                   {b.status === 'CLAIMED' && b.claimant_union_id === me.union_id && (
                     <>
