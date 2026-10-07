@@ -4,6 +4,7 @@ import {
 import { PlusOutlined, InboxOutlined, UploadOutlined } from '@ant-design/icons';
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { useStore } from '@/store/store';
 import { COLOR, FONT } from '@/theme/v2';
 import { trackVar } from '@/theme/v2/track';
@@ -533,14 +534,19 @@ export default function ContentAdminV2() {
       ? {
         title: s.title, summary: s.summary, content: s.content, track: s.track,
         emoji: s.emoji, tags: s.tags ?? [], week: s.week, status: s.status,
+        /** V8.2-10.07：场景卡可关联案例，首页胶囊点击直达案例详情 */
+        source_case_id: s.source_case_id ?? undefined,
       }
-      : { title: '', summary: '', content: '', track: '客户赋能', emoji: '💡', tags: [], week: '', status: 'DRAFT' });
+      : {
+        title: '', summary: '', content: '', track: '客户赋能', emoji: '💡',
+        tags: [], week: '', status: 'DRAFT', source_case_id: undefined,
+      });
   };
 
   const saveScene = async () => {
     let vals: {
       title?: string; summary?: string; content?: string; track?: Track; emoji?: string;
-      tags?: string[]; week?: string; status?: SceneCard['status'];
+      tags?: string[]; week?: string; status?: SceneCard['status']; source_case_id?: string;
     };
     try {
       vals = await sceneForm.validateFields();
@@ -564,6 +570,7 @@ export default function ContentAdminV2() {
           week: vals.week ?? s.week,
           status: vals.status ?? s.status,
           published_at: vals.status === 'PUBLISHED' && !s.published_at ? at : s.published_at,
+          source_case_id: vals.source_case_id || undefined,
         } : s)),
       }));
       log('编辑场景卡', vals.title ?? editing.title, `状态 ${contentStatusText(vals.status)}`);
@@ -585,6 +592,7 @@ export default function ContentAdminV2() {
           published_at: vals.status === 'PUBLISHED' ? at : '',
           created_by: me.name,
           created_at: at,
+          source_case_id: vals.source_case_id || undefined,
         }, ...p.sceneCards],
       }));
       log('新建场景卡', vals.title ?? '', `状态 ${contentStatusText(vals.status)} · 创建人 ${me.name}`);
@@ -874,7 +882,14 @@ export default function ContentAdminV2() {
                             </div>
                             <div style={{ fontSize: FONT.caption, color: COLOR.ink3, marginTop: 'var(--wb-space-2)' }}>
                               {c.summary}
-                              {c.source_case_id && ' · 迁移自案例'}
+                              {c.source_case_id && (
+                                <>
+                                  {' · '}
+                                  <Link to={`/cases/${c.source_case_id}`}>
+                                    案例：{(db.cases ?? []).find((x) => x.id === c.source_case_id)?.title ?? c.source_case_id}
+                                  </Link>
+                                </>
+                              )}
                               {' · '}阅读 {c.view_count}
                               {c.pushed_at && ` · 已推送 ${c.pushed_at}`}
                             </div>
@@ -1224,6 +1239,22 @@ export default function ContentAdminV2() {
           </Form.Item>
           <Form.Item name="week" label="归属周次">
             <Input style={{ width: 180 }} placeholder="2026-W40" />
+          </Form.Item>
+          {/* V8.2-10.07：场景卡关联案例 —— 首页胶囊点击直达案例详情 */}
+          <Form.Item
+            name="source_case_id"
+            label="关联案例"
+            extra="关联后，首页点击这张卡会直接打开案例详情（留空则跳案例列表）"
+          >
+            <Select
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              placeholder="选择这张卡对应的完整案例"
+              options={(db.cases ?? []).filter((x) => !x.is_deleted).map((x) => ({
+                value: x.id, label: `${x.id} · ${x.title}（${x.author_name ?? '—'}）`,
+              }))}
+            />
           </Form.Item>
           <Form.Item name="tags" label="标签（可自由创建）">
             <Select mode="tags" placeholder="输入后回车即可创建新标签" options={tagPool.map((t) => ({ value: t, label: `#${t}` }))} />

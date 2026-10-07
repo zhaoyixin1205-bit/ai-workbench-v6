@@ -2,8 +2,9 @@ import {
   Alert, Button, Card, Divider, Empty, Input, InputNumber, Modal, Radio, Segmented, Space, Table,
   Tabs, Tag, Tooltip, Typography, Form, Select, Upload, App as AntApp,
 } from 'antd';
-import { PlusOutlined, InboxOutlined, UploadOutlined } from '@ant-design/icons';
+import { PlusOutlined, InboxOutlined, UploadOutlined, LinkOutlined } from '@ant-design/icons';
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useStore } from '@/store/store';
 import { COLOR, TRACK_COLOR } from '@/theme';
 import { PageHeader, StatCard } from '@/components/ui';
@@ -499,14 +500,19 @@ export default function ContentAdmin() {
       ? {
         title: s.title, summary: s.summary, content: s.content, track: s.track,
         emoji: s.emoji, tags: s.tags ?? [], week: s.week, status: s.status,
+        /** V8.2-10.07：场景卡可关联案例，首页胶囊点击直达案例详情 */
+        source_case_id: s.source_case_id ?? undefined,
       }
-      : { title: '', summary: '', content: '', track: '客户赋能', emoji: '💡', tags: [], week: '', status: 'DRAFT' });
+      : {
+        title: '', summary: '', content: '', track: '客户赋能', emoji: '💡',
+        tags: [], week: '', status: 'DRAFT', source_case_id: undefined,
+      });
   };
 
   const saveScene = async () => {
     let vals: {
       title?: string; summary?: string; content?: string; track?: Track; emoji?: string;
-      tags?: string[]; week?: string; status?: SceneCard['status'];
+      tags?: string[]; week?: string; status?: SceneCard['status']; source_case_id?: string;
     };
     try {
       vals = await sceneForm.validateFields();
@@ -530,6 +536,7 @@ export default function ContentAdmin() {
           week: vals.week ?? s.week,
           status: vals.status ?? s.status,
           published_at: vals.status === 'PUBLISHED' && !s.published_at ? at : s.published_at,
+          source_case_id: vals.source_case_id || undefined,
         } : s)),
       }));
       log('编辑场景卡', vals.title ?? editing.title, `状态 ${vals.status}`);
@@ -551,6 +558,7 @@ export default function ContentAdmin() {
           published_at: vals.status === 'PUBLISHED' ? at : '',
           created_by: me.name,
           created_at: at,
+          source_case_id: vals.source_case_id || undefined,
         }, ...p.sceneCards],
       }));
       log('新建场景卡', vals.title ?? '', `状态 ${vals.status} · 创建人 ${me.name}`);
@@ -810,7 +818,9 @@ export default function ContentAdmin() {
                           <Tag color={c.status === 'PUBLISHED' ? 'green' : c.status === 'DRAFT' ? 'gold' : 'default'}>{c.status}</Tag>
                           {c.week && <Tag>{c.week}</Tag>}
                           {c.source_case_id && (
-                            <Typography.Text type="secondary" style={{ fontSize: 12 }}>迁移自案例</Typography.Text>
+                            <Link to={`/cases/${c.source_case_id}`} style={{ fontSize: 12 }}>
+                              <LinkOutlined /> 案例：{(db.cases ?? []).find((x) => x.id === c.source_case_id)?.title ?? c.source_case_id}
+                            </Link>
                           )}
                           <Typography.Text type="secondary" style={{ fontSize: 12 }}>{c.summary}</Typography.Text>
                         </Space>
@@ -1184,6 +1194,22 @@ export default function ContentAdmin() {
           </Form.Item>
           <Form.Item name="week" label="归属周次">
             <Input style={{ width: 180 }} placeholder="2026-W40" />
+          </Form.Item>
+          {/* V8.2-10.07：场景卡关联案例 —— 首页胶囊点击直达案例详情，不再只是「迁移自案例」的只读信息 */}
+          <Form.Item
+            name="source_case_id"
+            label="关联案例"
+            extra="关联后，首页点击这张卡会直接打开案例详情（留空则跳案例列表）"
+          >
+            <Select
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              placeholder="选择这张卡对应的完整案例"
+              options={(db.cases ?? []).filter((x) => !x.is_deleted).map((x) => ({
+                value: x.id, label: `${x.id} · ${x.title}（${x.author_name ?? '—'}）`,
+              }))}
+            />
           </Form.Item>
           <Form.Item name="tags" label="标签（可自由创建）">
             <Select mode="tags" placeholder="输入后回车即可创建新标签" options={tagPool.map((t) => ({ value: t, label: `#${t}` }))} />
