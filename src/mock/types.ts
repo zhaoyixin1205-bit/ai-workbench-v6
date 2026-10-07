@@ -719,6 +719,43 @@ export interface ExpertReview {
   hidden?: boolean;
 }
 
+/**
+ * V8.3-10.07：专家答疑纪要（真实实体）。
+ *
+ * 背景：专家主页原先的「历史答疑纪要」是页面内硬编码的三条演示数据（标题/日期/检索量都是假的），
+ * 属于「虚拟信息」，已删除。纪要必须来自**真实发生的接诊**：专家在「专家工作台 · 接诊记录」
+ * 对已完成的预约提炼生成，或组织者在后台代提炼，才会出现在专家主页。
+ *
+ * 由此保证：没有真实接诊 → 主页该区块为空态，不会凭空显示内容。
+ */
+export interface ExpertMinute {
+  id: string;
+  expert_id: string;
+  /** 来源接诊单（Booking.id）。有值时详情页标注「提炼自 X 的就诊」 */
+  booking_id?: string;
+  /** 就诊人姓名（从接诊单快照，避免后续用户改名导致对不上） */
+  patient_name?: string;
+  title: string;
+  /** 纪要正文（卡点 → 判断 → 动作 → 建议），≤600 字 */
+  content: string;
+  /** 提炼日期（YYYY-MM-DD） */
+  date: string;
+  tags: string[];
+  /** 提炼人（钉钉身份，不可编辑） */
+  created_by_union_id: string;
+  created_by_name: string;
+  /** 提炼来源：专家本人提炼 / 组织者代提炼 */
+  source: 'EXPERT' | 'ORGANIZER';
+  /** 是否公开到专家主页（false = 仅后台可见） */
+  visible: boolean;
+  /** 检索次数（每次在专家主页点击展开累加） */
+  views: number;
+  created_at: string;
+  updated_at?: string;
+  /** 软删（删除一律软删，与资产/场景卡同一口径） */
+  is_deleted?: boolean;
+}
+
 /* ---------- M7 资产 ---------- */
 export interface AssetApply {
   id: string;

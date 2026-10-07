@@ -1,5 +1,5 @@
 import { Avatar, Button, Card, Col, Empty, List, Progress, Rate, Row, Space, Statistic, Tag, Typography, Divider, App as AntApp, Modal, Input } from 'antd';
-import { ArrowLeftOutlined, MedicineBoxOutlined, StarFilled, TrophyOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, FileTextOutlined, MedicineBoxOutlined, StarFilled, TrophyOutlined } from '@ant-design/icons';
 import { Link, useParams } from 'react-router-dom';
 import { useState } from 'react';
 import { useStore } from '@/store/store';
@@ -13,17 +13,22 @@ export default function ExpertDetail() {
   const { message } = AntApp.useApp();
   const [open, setOpen] = useState(false);
   const [question, setQuestion] = useState('');
+  /** V8.3-10.07：纪要展开行（点击才累加检索次数，避免列表渲染即计数） */
+  const [openMinuteId, setOpenMinuteId] = useState<string | null>(null);
 
   const e = db.experts.find((x) => x.id === id);
   if (!e) return <Card>专家不存在</Card>;
 
   const reviews = db.reviews.filter((r) => r.expert_id === e.id && !r.hidden);
   const schedules = db.schedules.filter((s) => s.expert_id === e.id && s.status === 'OPEN').slice(0, 8);
-  const minutes = [
-    { id: 'M1', title: '提示词调优：让输出从「像财报」变成「人话」', date: '2026-09-22', tags: ['提示词', '客户赋能'], views: 128 },
-    { id: 'M2', title: 'Skill 包结构校验失败的 5 个常见原因', date: '2026-09-19', tags: ['Skill 打包'], views: 96 },
-    { id: 'M3', title: '企业知识库怎么用才不「答非所问」', date: '2026-09-15', tags: ['知识库'], views: 74 },
-  ];
+  /**
+   * V8.3-10.07：答疑纪要改从真实实体 expertMinutes 读取（原先是页面里写死的三条演示数据）。
+   * 口径：本专家 + 未软删 + 已公开；按提炼日期倒序。没有真实接诊提炼 → 走空态，
+   * 不再凭空显示虚拟内容。
+   */
+  const minutes = db.expertMinutes
+    .filter((m) => m.expert_id === e.id && !m.is_deleted && m.visible)
+    .sort((a, b) => b.date.localeCompare(a.date));
 
   const book = () => {
     if (question.trim().length < 5) { message.warning('请填写卡点描述'); return; }
@@ -129,23 +134,50 @@ export default function ExpertDetail() {
             </Card>
           </Col>
           <Col xs={24} lg={10}>
-            <Card title="历史答疑纪要（可检索）">
-              {minutes.map((m, i) => (
+            <Card title={<Space><FileTextOutlined />答疑纪要（{minutes.length}）</Space>}>
+              {minutes.length === 0 ? (
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description={
+                    <span style={{ fontSize: 13, color: COLOR.textSub }}>
+                      暂无答疑纪要 —— 该专家完成接诊并在工作台提炼纪要后，这里会自动展示
+                    </span>
+                  }
+                />
+              ) : minutes.map((m, i) => (
                 <div
                   key={m.id}
                   style={{
-                    padding: '10px 8px', margin: '0 -8px', borderRadius: 10,
+                    padding: '10px 8px', margin: '0 -8px', borderRadius: 10, cursor: 'pointer',
                     borderBottom: i === minutes.length - 1 ? 'none' : '1px dashed #EFF0F3',
                     transition: 'background 0.2s ease',
                   }}
                   onMouseEnter={(ev) => { ev.currentTarget.style.background = COLOR.primaryLight; }}
                   onMouseLeave={(ev) => { ev.currentTarget.style.background = 'transparent'; }}
+                  onClick={() => {
+                    setOpenMinuteId(openMinuteId === m.id ? null : m.id);
+                    if (openMinuteId !== m.id) {
+                      setDb((p) => ({
+                        ...p,
+                        expertMinutes: p.expertMinutes.map((x) => (x.id === m.id ? { ...x, views: x.views + 1 } : x)),
+                      }));
+                    }
+                  }}
                 >
                   <div style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.5 }}>{m.title}</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: COLOR.textMuted, marginTop: 6, flexWrap: 'wrap' }}>
                     <span>{m.date}</span><span>{m.views} 次检索</span>
                     {m.tags.map((t) => <SoftTag key={t} text={t} tone="gray" />)}
                   </div>
+                  {openMinuteId === m.id && (
+                    <div style={{ marginTop: 8, fontSize: 13, lineHeight: 1.75, color: COLOR.textSub, whiteSpace: 'pre-wrap' }}>
+                      {m.content}
+                      <div style={{ fontSize: 11, color: COLOR.textMuted, marginTop: 6 }}>
+                        提炼人：{m.created_by_name}
+                        {m.patient_name ? ` · 提炼自 ${m.patient_name} 的就诊` : ''}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </Card>

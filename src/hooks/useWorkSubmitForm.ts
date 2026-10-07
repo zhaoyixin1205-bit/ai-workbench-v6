@@ -185,7 +185,12 @@ export function useWorkSubmitForm(typeId: string | undefined, caseId: string | n
         mode === 'EXISTING' ? '关联既有选题' : mode === 'CUSTOM' ? `其他·自定义（${customTopic}）` : '不选选题直提'
       }`
     );
-    message.success('提报成功！已触发组织者待办提醒，评分结果将通知你');
+    /**
+     * V8.3-10.07：这里只负责把作业写成 SUBMITTED；AI 评分与推送评委由 store 的流水线自动接手
+     *（此前提交后没有任何评分逻辑，才出现「AI 评分不触发、评委收不到」）。
+     * 文案同步改为真实承诺：自动评分 + 推送评委，而不是空头支票「触发组织者待办」。
+     */
+    message.success('提报成功！系统已自动完成 AI 评分并推送评委打分，结果出来后会在待办里通知你');
     nav('/work');
   };
 

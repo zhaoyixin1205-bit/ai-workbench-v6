@@ -27,6 +27,18 @@ export default function ExpertDetailV2() {
   const { message } = AntApp.useApp();
   const [open, setOpen] = useState(false);
   const [question, setQuestion] = useState('');
+  /** V8.3-10.07：纪要展开行（点击才累加检索次数） */
+  const [openMinuteId, setOpenMinuteId] = useState<string | null>(null);
+
+  /** V8.3-10.07：展开纪要并累加检索次数（不展开不计数） */
+  const toggleMinute = (id: string) => {
+    if (openMinuteId === id) { setOpenMinuteId(null); return; }
+    setOpenMinuteId(id);
+    setDb((p) => ({
+      ...p,
+      expertMinutes: p.expertMinutes.map((x) => (x.id === id ? { ...x, views: x.views + 1 } : x)),
+    }));
+  };
 
   const e = db.experts.find((x) => x.id === id);
 
@@ -43,11 +55,13 @@ export default function ExpertDetailV2() {
 
   const reviews = db.reviews.filter((r) => r.expert_id === e.id && !r.hidden);
   const schedules = db.schedules.filter((s) => s.expert_id === e.id && s.status === 'OPEN').slice(0, 8);
-  const minutes = [
-    { id: 'M1', title: '提示词调优：让输出从「像财报」变成「人话」', date: '2026-09-22', tags: ['提示词', '客户赋能'], views: 128 },
-    { id: 'M2', title: 'Skill 包结构校验失败的 5 个常见原因', date: '2026-09-19', tags: ['Skill 打包'], views: 96 },
-    { id: 'M3', title: '企业知识库怎么用才不「答非所问」', date: '2026-09-15', tags: ['知识库'], views: 74 },
-  ];
+  /**
+   * V8.3-10.07：答疑纪要改读真实实体 expertMinutes（原先为写死的三条演示数据）。
+   * 没有真实接诊提炼 → 空态，不显示任何虚拟内容。
+   */
+  const minutes = db.expertMinutes
+    .filter((m) => m.expert_id === e.id && !m.is_deleted && m.visible)
+    .sort((a, b) => b.date.localeCompare(a.date));
   const goodRate = Math.round((reviews.filter((r) => r.rating >= 4).length / Math.max(1, reviews.length)) * 100);
 
   const book = () => {
@@ -155,23 +169,38 @@ export default function ExpertDetailV2() {
         </div>
 
         <div>
-          {/* ④ 历史答疑纪要 */}
+          {/* ④ 答疑纪要（真实实体，无数据走空态） */}
           <div className="wb2-card" style={{ marginBottom: 'var(--wb-space-4)' }}>
             <div className="wb2-card-pad">
-              <div className="wb2-card-t">历史答疑纪要（可检索）</div>
-              <div className="wb2-list">
-                {minutes.map((m) => (
-                  <div key={m.id} className="wb2-li">
-                    <div className="wb2-li-m">
-                      <div className="wb2-li-t">{m.title}</div>
-                      <div className="wb2-li-s">
-                        {m.date} · {m.views} 次检索
-                        {m.tags.map((t) => <span key={t} className="wb2-tag" style={{ marginLeft: 4 }}>{t}</span>)}
+              <div className="wb2-card-t">答疑纪要（{minutes.length}）</div>
+              {minutes.length === 0 ? (
+                <div style={{ fontSize: 'var(--wb-fs-label)', color: 'var(--wb-ink-3)' }}>
+                  暂无答疑纪要 —— 该专家完成接诊并在工作台提炼纪要后，这里会自动展示
+                </div>
+              ) : (
+                <div className="wb2-list">
+                  {minutes.map((m) => (
+                    <div key={m.id} className="wb2-li" style={{ cursor: 'pointer' }} onClick={() => toggleMinute(m.id)}>
+                      <div className="wb2-li-m">
+                        <div className="wb2-li-t">{m.title}</div>
+                        <div className="wb2-li-s">
+                          {m.date} · {m.views} 次检索
+                          {m.tags.map((t) => <span key={t} className="wb2-tag" style={{ marginLeft: 4 }}>{t}</span>)}
+                        </div>
+                        {openMinuteId === m.id && (
+                          <div style={{ marginTop: 6, color: 'var(--wb-ink-2)', whiteSpace: 'pre-wrap' }}>
+                            {m.content}
+                            <div style={{ fontSize: 'var(--wb-fs-caption)', color: 'var(--wb-ink-3)', marginTop: 4 }}>
+                              提炼人：{m.created_by_name}
+                              {m.patient_name ? ` · 提炼自 ${m.patient_name} 的就诊` : ''}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 

@@ -188,7 +188,12 @@ export default function WorkSubmit() {
         mode === 'EXISTING' ? '关联既有选题' : mode === 'CUSTOM' ? `其他·自定义（${customTopic}）` : '不选选题直提'
       }`
     );
-    message.success('提报成功！已触发组织者待办提醒，评分结果将通知你');
+    /**
+     * V8.3-10.07：这里只需要把作业置为 SUBMITTED，AI 评分与推送评委由 store 里的
+     * 流水线自动接手（在此之前没有任何评分逻辑，所以出现了「AI 评分不触发、评委收不到」）。
+     * 提示文案也据此改写，不再承诺「触发组织者待办」这种实际没做的事。
+     */
+    message.success(`提报成功！系统已自动完成 AI 评分并推送评委打分，结果出来后会在待办里通知你`);
     nav('/work');
   };
 

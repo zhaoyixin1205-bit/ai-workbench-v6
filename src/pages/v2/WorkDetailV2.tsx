@@ -6,6 +6,7 @@ import { SubmitStatusTag } from '@/pages/c/WorkList';
 import { TrackTag, SoftTag } from '@/components/ui';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import type { SubmitStatus } from '@/mock/types';
+import { canApplyAsset } from '@/constants/statusMeta';
 import '../../theme/v2/template.css';
 
 /**
@@ -250,7 +251,7 @@ export default function WorkDetailV2() {
       <div className="wb2-actbar">
         <Button
           icon={<InboxOutlined />}
-          disabled={!['PASSED', 'PUBLISHED', 'REVIEWED'].includes(s.status)}
+          disabled={!canApplyAsset(s.status)}
           onClick={() => { log('发起入库申请', s.code, '进入待初审队列'); }}
         >申请入库</Button>
         <Button

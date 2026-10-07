@@ -1,6 +1,6 @@
 import { Alert, Button, Card, Checkbox, Col, Drawer, Form, Input, Modal, Row, Select, Space, Statistic, Switch, Table, Tabs, Tag, Typography, App as AntApp, message as staticMsg, Upload } from 'antd';
-import { DeleteOutlined, DownloadOutlined, ImportOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons';
-import { useState } from 'react';
+import { DeleteOutlined, DownloadOutlined, FilterOutlined, ImportOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons';
+import { useMemo, useState } from 'react';
 import { useStore } from '@/store/store';
 import { COLOR } from '@/theme';
 import { PageHeader, StatCard } from '@/components/ui';
@@ -11,6 +11,11 @@ import {
   MAX_ROWS, TEMPLATE_TEXT, downloadCsv, parseCsv, validateRows, acceptConflicts, toUsers,
 } from '@/mock/userImport';
 import type { ImportRow } from '@/mock/userImport';
+/* V8.3-10.07：筛选与批量操作的共享判定（v1 / v2 同一口径，禁止两页各写一套） */
+import {
+  applyUserBatchPatch, describeBatchPatch, deptSubtreeIds, hasUserFilter, matchUserFilter, userFilterSummary,
+} from '@/hooks/useUserFilter';
+import type { UserBatchPatch, UserFilterState } from '@/hooks/useUserFilter';
 
 /**
  * U-1 结案：负责人（LEADER）不再是可授予的角色。
@@ -37,9 +42,36 @@ export default function UserAdmin() {
   const [moveRole, setMoveRole] = useState<Role | ''>('');
   /** A-31：调动是否同步调整管辖范围（默认不动，避免误伤借调/兼任场景） */
   const [moveSyncManaged, setMoveSyncManaged] = useState(false);
+  /** V8.3-10.07：筛选面板是否展开 */
+  const [filterOpen, setFilterOpen] = useState(false);
+  /** V8.3-10.07：批量修改的其余字段（部门/追加角色已在上面） */
+  const [batchRemoveRole, setBatchRemoveRole] = useState<Role | ''>('');
+  const [batchTags, setBatchTags] = useState<string[]>([]);
+  const [batchRemoveTags, setBatchRemoveTags] = useState<string[]>([]);
+  const [batchStatus, setBatchStatus] = useState<number | ''>('');
+  const [batchLeader, setBatchLeader] = useState<'' | 'Y' | 'N'>('');
 
-  const users = db.users.filter((u) => u.status !== 99
-    && (!kw || u.name.includes(kw) || u.dept_names.join().includes(kw) || u.title?.includes(kw)));
+  /* ---------- V8.3-10.07：筛选面板 + 批量操作 ---------- */
+  const [filter, setFilter] = useState<UserFilterState>({
+    keyword: '', deptId: '', includeSub: true, role: '', tag: '', status: '', source: '', leader: '',
+  });
+  /** 先把 kw 并进 filter，保证「关键字 + 筛选」是同一份口径（导出与批量都用它） */
+  const filterState = useMemo<UserFilterState>(() => ({ ...filter, keyword: kw }), [filter, kw]);
+  const activeFilter = hasUserFilter(filterState);
+
+  /**
+   * 列表口径（单一真源）：排除软删 → 关键字 → 结构化筛选。
+   * 表格、导出、批量操作三处都读它，杜绝「看到的不是导出的」这类半生效。
+   */
+  const users = useMemo(() => {
+    const rows = db.users.filter((u) => u.status !== 99);
+    const kwText = filterState.keyword.trim();
+    const base = kwText
+      ? rows.filter((u) => u.name.includes(kwText) || u.dept_names.join().includes(kwText) || u.title?.includes(kwText))
+      : rows;
+    const subTree = deptSubtreeIds(db.depts ?? [], filterState.deptId);
+    return base.filter((u) => matchUserFilter(u, filterState, subTree));
+  }, [db.users, db.depts, filterState]);
 
   const grantRole = (unionId: string, role: Role) => {
     setDb((p) => ({
@@ -206,11 +238,13 @@ export default function UserAdmin() {
       ['预注册', '已激活', '已停用', '已离职回收', '已删除'][u.status] ?? String(u.status),
       String(u.points), u.source === 'MANUAL' ? '手工' : '钉钉映射',
     ].join(','));
+    /** V8.3-10.07：口径随筛选条件变化，表头写明当前筛的是什么 */
+    const scopeText = userFilterSummary(filterState, db.depts, db.tags, ROLE_LABEL as unknown as Record<string, string>);
     downloadCsv(
       `用户清单_${DEMO_TODAY}.csv`,
-      `# 统计口径：${kw ? `关键字=${kw}` : '全部用户'}，不含已删除；共 ${users.length} 人\n${head.join(',')}\n${body.join('\n')}`,
+      `# 统计口径：${scopeText}；不含已删除；共 ${users.length} 人\n${head.join(',')}\n${body.join('\n')}`,
     );
-    log('导出用户清单', `共 ${users.length} 人`, `筛选条件：${kw || '全部'}；不含已删除`);
+    log('导出用户清单', `共 ${users.length} 人`, `筛选条件：${scopeText}；不含已删除`);
     message.success(`已导出 ${users.length} 人（表头带口径标注）`);
   };
 
@@ -237,32 +271,74 @@ export default function UserAdmin() {
     });
   };
 
-  /** 编制/调动：批量修改部门归属与角色 */
-  const commitMove = () => {
-    if (selected.length === 0) { message.warning('请先勾选用户'); return; }
+  /** V8.3-10.07：批量修改（部门 / 角色（追加+移除）/ 标签 / 状态 / 负责人） */
+  const buildPatch = (): { patch: UserBatchPatch; dept?: typeof db.depts[number]; empty: boolean } => {
     const dept = db.depts.find((d) => d.dept_id === moveDept);
+    const patch: UserBatchPatch = {
+      dept: dept ? { dept_id: dept.dept_id, name: dept.name } : null,
+      addRoles: moveRole ? [moveRole] : [],
+      removeRoles: batchRemoveRole ? [batchRemoveRole] : [],
+      addTags: batchTags,
+      removeTags: batchRemoveTags,
+      status: batchStatus === '' ? null : batchStatus,
+      leader: batchLeader === '' ? null : batchLeader === 'Y',
+      syncManaged: moveSyncManaged,
+    };
+    const empty = !dept && !moveRole && !batchRemoveRole && batchTags.length === 0
+      && batchRemoveTags.length === 0 && batchStatus === '' && batchLeader === '';
+    return { patch, dept, empty };
+  };
+
+  const commitBatch = () => {
+    if (selected.length === 0) { message.warning('请先勾选用户'); return; }
+    const { patch, dept, empty } = buildPatch();
+    if (empty) { message.warning('请至少选择一项要修改的内容'); return; }
+    /** 涉及积分已发放或角色回收时给一次显式阻断，避免「以为批量改名片其实改了权限」 */
     setDb((p) => ({
       ...p,
-      users: p.users.map((u) => {
-        if (!selected.includes(u.union_id)) return u;
-        return {
-          ...u,
-          dept_id_list: dept ? [dept.dept_id] : u.dept_id_list,
-          dept_names: dept ? [dept.name] : u.dept_names,
-          scope_dept_ids: dept ? [dept.dept_id] : u.scope_dept_ids,
-          scope_type: dept ? 'DEPT_TREE' : u.scope_type,
-          roles: moveRole && !u.roles.includes(moveRole) ? [...u.roles, moveRole] : u.roles,
-          /** A-31：仅在显式勾选时同步管辖范围，未勾选则原样保留（兼容借调 / 兼任） */
-          managed_dept_ids: dept && moveSyncManaged ? [dept.dept_id] : u.managed_dept_ids,
-        };
-      }),
+      users: p.users.map((u) => (selected.includes(u.union_id) ? applyUserBatchPatch(u, patch) : u)),
     }));
-    log('编制调动', `${selected.length} 人`,
-      `调至 ${dept?.name ?? '原部门'}${moveRole ? `，追加角色 ${ROLE_LABEL[moveRole]}` : ''}${moveSyncManaged && dept ? '，管辖范围同步调整' : '，管辖范围保留原值'}`);
-    message.success(dept && moveSyncManaged
-      ? `已调动 ${selected.length} 人，管辖范围同步调整至${dept.name}`
-      : `已调动 ${selected.length} 人（管辖范围未变）`);
-    setMoveOpen(false); setSelected([]); setMoveDept(''); setMoveRole(''); setMoveSyncManaged(false);
+    const detail = describeBatchPatch(
+      patch, dept,
+      ROLE_LABEL as unknown as Record<string, string>,
+      (id) => db.tags.find((t) => t.id === id)?.name ?? id,
+    );
+    log('批量修改用户', `${selected.length} 人`, `${detail}；操作人 ${me.name}`);
+    message.success(`已修改 ${selected.length} 人：${detail}`);
+    setMoveOpen(false);
+    setSelected([]);
+    setMoveDept(''); setMoveRole(''); setMoveSyncManaged(false);
+    setBatchRemoveRole(''); setBatchTags([]); setBatchRemoveTags([]); setBatchStatus(''); setBatchLeader('');
+  };
+
+  /** V8.3-10.07：批量删除（软删除 status=99，仅 ADMIN，二次确认 + 逐人留痕） */
+  const batchDelete = () => {
+    if (selected.length === 0) { message.warning('请先勾选用户'); return; }
+    if (!isAdmin) { message.error('仅系统管理员可执行删除'); return; }
+    const names = db.users.filter((u) => selected.includes(u.union_id)).map((u) => u.name);
+    modal.confirm({
+      title: `确认删除选中的 ${selected.length} 人？`,
+      content: (
+        <div>
+          <div>{names.slice(0, 20).join('、')}{names.length > 20 ? ` 等 ${names.length} 人` : ''}</div>
+          <div style={{ marginTop: 8, color: COLOR.textSub, fontSize: 12 }}>
+            软删除（status=99）：历史提报、评分与积分数据全部保留，仅从在职名单中移除；操作有审计留痕。
+          </div>
+        </div>
+      ),
+      okText: '确认删除',
+      okButtonProps: { danger: true },
+      cancelText: '取消',
+      onOk: () => {
+        setDb((p) => ({
+          ...p,
+          users: p.users.map((u) => (selected.includes(u.union_id) ? { ...u, status: 99 } : u)),
+        }));
+        log('批量删除用户', `${selected.length} 人`, `软删除 status=99，操作人 ${me.name}（仅 ADMIN）；名单：${names.join('、')}`);
+        message.success(`已删除 ${selected.length} 人（软删除并留痕）`);
+        setSelected([]);
+      },
+    });
   };
 
   /** 钉钉全量同步：source=MANUAL 的手工字段（角色/标签）不被覆盖 */
@@ -300,6 +376,15 @@ export default function UserAdmin() {
                 <>
                   <Space style={{ marginBottom: 12 }} wrap>
                     <Input.Search placeholder="搜索姓名 / 部门 / 头衔" style={{ width: 240 }} value={kw} onChange={(e) => setKw(e.target.value)} allowClear />
+                    {/* V8.3-10.07：筛选按钮 —— 部门（含下级）/ 角色 / 标签 / 状态 / 来源 / 负责人 */}
+                    <Button icon={<FilterOutlined />} onClick={() => setFilterOpen(!filterOpen)}>
+                      筛选{activeFilter ? `（已启用）` : ''}
+                    </Button>
+                    {activeFilter && (
+                      <Button type="link" onClick={() => { setKw(''); setFilter({ keyword: '', deptId: '', includeSub: true, role: '', tag: '', status: '', source: '', leader: '' }); }}>
+                        清空筛选
+                      </Button>
+                    )}
                     <Button onClick={syncDingtalk}>手动同步钉钉通讯录</Button>
                     <Button onClick={() => { log('强制下线', '指定用户', '管理员操作'); message.success('已强制下线，Token 立即失效'); }}>强制下线指定用户</Button>
                     {manual && (
@@ -307,10 +392,89 @@ export default function UserAdmin() {
                         <Button type="primary" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>手动新增</Button>
                         <Button icon={<ImportOutlined />} onClick={() => setImpDrawer(true)}>批量导入</Button>
                         <Button icon={<DownloadOutlined />} onClick={exportUsers}>导出筛选结果</Button>
-                        <Button disabled={selected.length === 0} onClick={() => setMoveOpen(true)}>编制/调动（{selected.length}）</Button>
+                        <Button disabled={selected.length === 0} onClick={() => setMoveOpen(true)}>批量修改（{selected.length}）</Button>
+                        <Button danger disabled={selected.length === 0 || !isAdmin} icon={<DeleteOutlined />} onClick={batchDelete}>
+                          批量删除（{selected.length}）
+                        </Button>
                       </>
                     )}
                   </Space>
+
+                  {/* V8.3-10.07：筛选面板（点「筛选」展开；关闭时不影响列表，筛选条件仍生效） */}
+                  {filterOpen && (
+                    <Card size="small" style={{ marginBottom: 12, background: '#FAFBFC' }}>
+                      <Row gutter={[12, 12]}>
+                        <Col xs={24} sm={12} lg={8}>
+                          <div style={{ fontSize: 12, color: COLOR.textSub, marginBottom: 4 }}>部门</div>
+                          <Select
+                            allowClear showSearch style={{ width: '100%' }} placeholder="全部部门"
+                            value={filter.deptId || undefined}
+                            options={db.depts.map((d) => ({ value: d.dept_id, label: `${'　'.repeat(Math.max(0, d.level - 1))}${d.name}` }))}
+                            onChange={(v) => setFilter({ ...filter, deptId: v ?? '' })}
+                          />
+                          <Checkbox
+                            style={{ marginTop: 4 }} checked={filter.includeSub} disabled={!filter.deptId}
+                            onChange={(e) => setFilter({ ...filter, includeSub: e.target.checked })}
+                          >
+                            含下级部门
+                          </Checkbox>
+                        </Col>
+                        <Col xs={12} sm={6} lg={4}>
+                          <div style={{ fontSize: 12, color: COLOR.textSub, marginBottom: 4 }}>角色</div>
+                          <Select
+                            allowClear style={{ width: '100%' }} placeholder="全部角色"
+                            value={filter.role || undefined}
+                            options={(Object.keys(ROLE_LABEL) as Role[]).map((r) => ({ value: r, label: ROLE_LABEL[r] }))}
+                            onChange={(v) => setFilter({ ...filter, role: v ?? '' })}
+                          />
+                        </Col>
+                        <Col xs={12} sm={6} lg={4}>
+                          <div style={{ fontSize: 12, color: COLOR.textSub, marginBottom: 4 }}>人员标签</div>
+                          <Select
+                            allowClear style={{ width: '100%' }} placeholder="全部标签"
+                            value={filter.tag || undefined}
+                            options={db.tags.map((t) => ({ value: t.id, label: t.name }))}
+                            onChange={(v) => setFilter({ ...filter, tag: v ?? '' })}
+                          />
+                        </Col>
+                        <Col xs={12} sm={6} lg={4}>
+                          <div style={{ fontSize: 12, color: COLOR.textSub, marginBottom: 4 }}>状态</div>
+                          <Select
+                            allowClear style={{ width: '100%' }} placeholder="全部状态"
+                            value={filter.status === '' ? undefined : filter.status}
+                            options={[
+                              { value: 0, label: '预注册' }, { value: 1, label: '已激活' },
+                              { value: 2, label: '已停用' }, { value: 3, label: '已离职回收' },
+                            ]}
+                            onChange={(v) => setFilter({ ...filter, status: v === undefined ? '' : v })}
+                          />
+                        </Col>
+                        <Col xs={12} sm={6} lg={4}>
+                          <div style={{ fontSize: 12, color: COLOR.textSub, marginBottom: 4 }}>来源</div>
+                          <Select
+                            allowClear style={{ width: '100%' }} placeholder="全部来源"
+                            value={filter.source || undefined}
+                            options={[{ value: 'DINGTALK', label: '钉钉映射' }, { value: 'MANUAL', label: '手工' }]}
+                            onChange={(v) => setFilter({ ...filter, source: v ?? '' })}
+                          />
+                        </Col>
+                        <Col xs={12} sm={6} lg={4}>
+                          <div style={{ fontSize: 12, color: COLOR.textSub, marginBottom: 4 }}>是否负责人</div>
+                          <Select
+                            allowClear style={{ width: '100%' }} placeholder="不限"
+                            value={filter.leader || undefined}
+                            options={[{ value: 'Y', label: '仅部门负责人' }, { value: 'N', label: '非负责人' }]}
+                            onChange={(v) => setFilter({ ...filter, leader: (v ?? '') as '' | 'Y' | 'N' })}
+                          />
+                        </Col>
+                      </Row>
+                      <div style={{ marginTop: 8, fontSize: 12, color: COLOR.textSub }}>
+                        筛出 <b className="num">{users.length}</b> 人（共 {db.users.filter((u) => u.status !== 99).length} 人）·
+                        当前口径：{userFilterSummary(filterState, db.depts, db.tags, ROLE_LABEL as unknown as Record<string, string>)}
+                        ；导出的就是这份名单
+                      </div>
+                    </Card>
+                  )}
                   {manual && (
                     <Alert type="info" showIcon style={{ marginBottom: 12 }}
                       message={`V4.0 CR-11：手工/批量管理已启用（单次导入上限 ${MAX_ROWS} 行）`}
@@ -483,35 +647,63 @@ export default function UserAdmin() {
         </Form>
       </Modal>
 
-      {/* CR-11：编制 / 调动（支持批量） */}
-      <Modal open={moveOpen} title={`编制 / 调动（已选 ${selected.length} 人）`} onCancel={() => setMoveOpen(false)} onOk={commitMove} okText="确认调动">
+      {/* V8.3-10.07：「编制/调动」升级为「批量修改」——部门、角色（追加/移除）、标签、状态、负责人 */}
+      <Modal open={moveOpen} title={`批量修改（已选 ${selected.length} 人）`} onCancel={() => setMoveOpen(false)} onOk={commitBatch} okText="确认修改" width={620}>
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
-          <div>
-            <div style={{ fontSize: 13, marginBottom: 4 }}>调至部门（留空表示不变更部门）</div>
-            <Select allowClear style={{ width: '100%' }} value={moveDept || undefined} onChange={(v) => setMoveDept(v ?? '')}
-              options={db.depts.map((d) => ({ value: d.dept_id, label: d.name }))} />
-          </div>
-          <div>
-            <div style={{ fontSize: 13, marginBottom: 4 }}>追加角色（留空表示不变更角色）</div>
-            <Select allowClear style={{ width: '100%' }} value={moveRole || undefined} onChange={(v) => setMoveRole((v ?? '') as Role | '')}
-              options={ASSIGNABLE_ROLES.map((v) => ({ value: v, label: ROLE_LABEL[v] }))} />
-          </div>
-          {/* A-31：管辖范围是否随调动同步（默认不勾，兼容借调 / 兼任场景） */}
-          <div>
-            <Checkbox
-              checked={moveSyncManaged}
-              disabled={!moveDept}
-              onChange={(e) => setMoveSyncManaged(e.target.checked)}
-            >
-              同时把管辖范围调整到新部门
-            </Checkbox>
-            <div style={{ fontSize: 11, color: COLOR.textSub, marginTop: 4, marginLeft: 24 }}>
-              管辖范围决定「我的团队」板块能看到谁。<b>勾选</b>＝调到哪就管到哪（适合正式调动）；
-              <b>不勾选</b>＝保留原管辖部门（适合借调 / 兼任）。本期调动不可撤销，请谨慎。
-            </div>
-          </div>
+          <Alert type="info" showIcon style={{ marginBottom: 0 }}
+            message="留空表示不变更"
+            description="批量修改只改勾选到的字段；软删除外的一切操作都可再次修改，历史提报与评分不受影响。删除请点列表上方「批量删除」。" />
+          <Row gutter={12}>
+            <Col span={12}>
+              <div style={{ fontSize: 13, marginBottom: 4 }}>调至部门（留空表示不变更部门）</div>
+              <Select allowClear showSearch style={{ width: '100%' }} value={moveDept || undefined} onChange={(v) => setMoveDept(v ?? '')}
+                options={db.depts.map((d) => ({ value: d.dept_id, label: d.name }))} />
+            </Col>
+            <Col span={12}>
+              <div style={{ fontSize: 13, marginBottom: 4 }}>数据范围随部门同步</div>
+              <Checkbox checked={moveSyncManaged} disabled={!moveDept} onChange={(e) => setMoveSyncManaged(e.target.checked)}>
+                同时把管辖范围调整到新部门
+              </Checkbox>
+            </Col>
+          </Row>
+          <Row gutter={12}>
+            <Col span={12}>
+              <div style={{ fontSize: 13, marginBottom: 4 }}>追加角色（留空表示不变更）</div>
+              <Select allowClear style={{ width: '100%' }} value={moveRole || undefined} onChange={(v) => setMoveRole((v ?? '') as Role | '')}
+                options={ASSIGNABLE_ROLES.map((v) => ({ value: v, label: ROLE_LABEL[v] }))} />
+            </Col>
+            <Col span={12}>
+              <div style={{ fontSize: 13, marginBottom: 4 }}>移除角色（撤销权限）</div>
+              <Select allowClear style={{ width: '100%' }} value={batchRemoveRole || undefined} onChange={(v) => setBatchRemoveRole((v ?? '') as Role | '')}
+                options={(Object.keys(ROLE_LABEL) as Role[]).map((v) => ({ value: v, label: ROLE_LABEL[v] }))} />
+            </Col>
+          </Row>
+          <Row gutter={12}>
+            <Col span={12}>
+              <div style={{ fontSize: 13, marginBottom: 4 }}>追加标签</div>
+              <Select mode="multiple" allowClear style={{ width: '100%' }} value={batchTags} onChange={setBatchTags}
+                options={db.tags.map((t) => ({ value: t.id, label: t.name }))} />
+            </Col>
+            <Col span={12}>
+              <div style={{ fontSize: 13, marginBottom: 4 }}>移除标签</div>
+              <Select mode="multiple" allowClear style={{ width: '100%' }} value={batchRemoveTags} onChange={setBatchRemoveTags}
+                options={db.tags.map((t) => ({ value: t.id, label: t.name }))} />
+            </Col>
+          </Row>
+          <Row gutter={12}>
+            <Col span={12}>
+              <div style={{ fontSize: 13, marginBottom: 4 }}>状态（留空表示不变更）</div>
+              <Select allowClear style={{ width: '100%' }} value={batchStatus === '' ? undefined : batchStatus} onChange={(v) => setBatchStatus(v === undefined ? '' : v)}
+                options={[{ value: 0, label: '预注册' }, { value: 1, label: '已激活' }, { value: 2, label: '已停用' }, { value: 3, label: '已离职回收' }]} />
+            </Col>
+            <Col span={12}>
+              <div style={{ fontSize: 13, marginBottom: 4 }}>部门负责人</div>
+              <Select allowClear style={{ width: '100%' }} value={batchLeader || undefined} onChange={(v) => setBatchLeader((v ?? '') as '' | 'Y' | 'N')}
+                options={[{ value: 'Y', label: '设为部门负责人' }, { value: 'N', label: '取消负责人身份' }]} />
+            </Col>
+          </Row>
           <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-            调动后会同步更新数据范围（DEPT_TREE）；历史提报与评分不受影响。
+            勾选的来源为用户列表（受当前筛选条件约束）；钉钉映射来源的用户在全量同步时不会被批量修改覆盖角色与标签。
           </Typography.Text>
         </Space>
       </Modal>

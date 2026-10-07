@@ -7,6 +7,7 @@ import { SubmitStatusTag } from './WorkList';
 import { TrackTag, SoftTag } from '@/components/ui';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import type { SubmitStatus } from '@/mock/types';
+import { canApplyAsset } from '@/constants/statusMeta';
 
 const FLOW: { status: SubmitStatus[]; label: string; color: string }[] = [
   { status: ['DRAFT'], label: '草稿', color: 'gray' },
@@ -200,7 +201,7 @@ export default function WorkDetail() {
           <div className="wb-card" style={{ marginTop: 16, background: GRADIENT.metric, border: '1px solid #FFE4D9', boxShadow: SHADOW.card }}>
             <Space wrap>
               <Button
-                icon={<InboxOutlined />} disabled={!['PASSED', 'PUBLISHED', 'REVIEWED'].includes(s.status)}
+                icon={<InboxOutlined />} disabled={!canApplyAsset(s.status)}
                 onClick={() => {
                   log('发起入库申请', s.code, '进入待初审队列');
                   message.success('入库申请已提交');

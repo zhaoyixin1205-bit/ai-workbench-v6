@@ -7,7 +7,7 @@ import { COLOR, GRADIENT, TRACK_COLOR } from '@/theme';
 import { PageHeader } from '@/components/ui';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import type { AssignmentSubmit, SubmitStatus } from '@/mock/types';
-import { STATUS_META } from '@/constants/statusMeta';
+import { STATUS_META, canApplyAsset } from '@/constants/statusMeta';
 /* V8.2-10.07：作业公开后成员可主动加入（选修），名单区分必修 / 选修 */
 import { joinableOf, participantsOf } from '@/utils/assignmentParticipants';
 import dayjs from 'dayjs';
@@ -210,7 +210,8 @@ export default function WorkList() {
                   {['SUBMITTED', 'AI_SCORED'].includes(s.status) && !s.late && (
                     <Button size="small" type="link" danger onClick={() => withdraw(s)}>撤回</Button>
                   )}
-                  {['PASSED', 'PUBLISHED', 'REVIEWED'].includes(s.status) && (
+                  {/* V8.3-10.07：口径统一到 canApplyAsset（新增 COMPLETED / CONSENSUS 两个终点态） */}
+                  {canApplyAsset(s.status) && (
                     <Button
                       size="small" type="link"
                       onClick={() => {

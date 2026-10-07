@@ -9,9 +9,12 @@ import type {
   PointRecord, ShopItem, ShopOrder, Board, Post, PostComment, WbUsage, AuditLog, AppMessage,
   Campaign, Tag, Dept, TopicSelection, BoardConfig, ImportJob, ImportJobItem, Announcement,
   SubmitFlowRule, SubmitFlowLog, ReviewOverride, SceneCard, AttachmentFile, ScheduleRequest,
+  ExpertMinute,
 } from '@/mock/types';
 // 注意：EMPTY_CAMPAIGN 是值不是类型，必须单独 import，不能在上面的 import type 里
 import { EMPTY_CAMPAIGN } from '@/mock/types';
+/* V8.3-10.07：作业提报评分流水线（AI 自动评分 → 推送评委 → 真实性复核 → 公示/入库） */
+import { runSubmitPipeline } from '@/service/submitPipeline';
 
 export interface DB {
   depts: Dept[];
@@ -62,6 +65,8 @@ export interface DB {
   attachmentFiles: AttachmentFile[];
   /** V7.0 CR-36 专家自助排班申请（拍板 7-C：提交为申请，组织者审核后生效） */
   scheduleRequests: ScheduleRequest[];
+  /** V8.3-10.07 专家答疑纪要（真实实体；替代原先页面内硬编码的演示纪要） */
+  expertMinutes: ExpertMinute[];
 }
 
 /**
@@ -70,7 +75,7 @@ export interface DB {
  * 不含任何「草稿直接跳到入库」这类越级路径。
  */
 export const DEFAULT_FLOW_RULES: SubmitFlowRule[] = [
-  { id: 'FR1', from_status: 'SUBMITTED', to_status: ['SCORING_AI', 'REVIEWING', 'WITHDRAWN'], enabled: true, remark: '未跑分可退回重跑或直接送人工复核' },
+  { id: 'FR1', from_status: 'SUBMITTED', to_status: ['SCORING_AI', 'AI_SCORED', 'REVIEWING', 'WITHDRAWN'], enabled: true, remark: '未跑分可退回重跑或直接送人工复核' },
   { id: 'FR2', from_status: 'SCORING_AI', to_status: ['SUBMITTED', 'AI_SCORED', 'SCORE_FAILED'], enabled: true, remark: '评分中可退回重跑' },
   { id: 'FR3', from_status: 'AI_SCORED', to_status: ['REVIEWING', 'SUBMITTED', 'SCORE_FAILED'], enabled: true, remark: '出分后可送复核或退回重跑' },
   { id: 'FR4', from_status: 'REVIEWING', to_status: ['REVIEWED', 'AI_SCORED'], enabled: true, remark: '复核中可完成或退回重审' },
@@ -78,7 +83,21 @@ export const DEFAULT_FLOW_RULES: SubmitFlowRule[] = [
   { id: 'FR6', from_status: 'COMPLETED', to_status: ['CONSENSUS', 'REVIEWED', 'ASSET_APPLYING'], enabled: true, remark: '完成后可标记共识或进入入库申请' },
   { id: 'FR7', from_status: 'CONSENSUS', to_status: ['ASSET_APPLYING', 'COMPLETED'], enabled: true, remark: '共识后进入入库或退回已完成' },
   { id: 'FR8', from_status: 'ASSET_APPLYING', to_status: ['ASSET_ONLINE', 'ASSET_REJECTED', 'COMPLETED'], enabled: true, remark: '入库申请可上线 / 驳回 / 退回' },
+  /** V8.3-10.07：AI 评分有自动流水线兜底，这条是异常情况下（评分引擎失败）的人工补跑路径 */
+  { id: 'FR9', from_status: 'SUBMITTED', to_status: ['AI_SCORED'], enabled: true, remark: 'AI 评分未自动完成时，由组织者手动补跑并重跑分' },
 ];
+
+/**
+ * V8.3-10.07：流程规则**只补齐不覆盖**。
+ * 老库里有组织者手工改过的规则（可能关掉了某条路径），这里按 id 把新增的默认规则补进去，
+ * 已有的原样保留 —— 直接整体替换 DEFAULT_FLOW_RULES 会把别人的手工配置吃掉。
+ */
+function mergeFlowRules(stored: SubmitFlowRule[] | undefined): SubmitFlowRule[] {
+  const base = DEFAULT_FLOW_RULES;
+  if (!stored?.length) return base.map((r) => ({ ...r }));
+  const exists = new Set(stored.map((r) => r.id));
+  return [...stored, ...base.filter((r) => !exists.has(r.id)).map((r) => ({ ...r }))];
+}
 
 function initialDB(): DB {
   return {
@@ -99,6 +118,7 @@ function initialDB(): DB {
     sceneCards: biz.SCENE_CARDS,
     attachmentFiles: [],
     scheduleRequests: [],
+    expertMinutes: [],
   };
 }
 
@@ -113,12 +133,13 @@ function hydrate(raw: unknown): DB {
     importJobs: p.importJobs ?? [],
     importJobItems: p.importJobItems ?? [],
     announcements: p.announcements ?? base.announcements,
-    submitFlowRules: p.submitFlowRules ?? base.submitFlowRules,
+    submitFlowRules: mergeFlowRules(p.submitFlowRules),
     submitFlowLogs: p.submitFlowLogs ?? [],
     reviewOverrides: p.reviewOverrides ?? [],
     sceneCards: p.sceneCards ?? base.sceneCards,
     attachmentFiles: p.attachmentFiles ?? [],
     scheduleRequests: p.scheduleRequests ?? [],
+    expertMinutes: p.expertMinutes ?? [],
   };
 }
 
@@ -468,6 +489,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }, 700);
     return () => clearTimeout(timer);
   }, [db, me?.name, setMode]);
+
+  /* ------------------------------------------------------------------
+   * V8.3-10.07：评分流水线自动推进。
+   *
+   * 为什么放在 store 而不是各个页面：只要在**任何**一个页面出现过一次 DB 变更
+   * （提交 / 打分 / 确认真实性 / 别人推送的新数据），流水线就必须跟上，
+   * 否则「作业卡在 SUBMITTED 没人管」这件事换一批页面又会复发。
+   *
+   * 幂等：流水线每步只把状态前移一格，且推送消息按固定 ID 去重，
+   * 所以这里的重复执行不会重复出分、不会重复推送。
+   * ------------------------------------------------------------------ */
+  useEffect(() => {
+    const r = runSubmitPipeline(db);
+    if (!r) return;
+    setDb((prev) => ({ ...prev, ...r.patch }));
+  }, [db]);
 
   /* 轮询：只比版本号，变了才拉全量。本地有未落盘改动时跳过，避免吃掉正在编辑的内容 */
   useEffect(() => {

@@ -1,4 +1,4 @@
-import { Avatar, AutoComplete, Button, DatePicker, Form, Input, InputNumber, Rate, Select, Table, Tabs, App as AntApp } from 'antd';
+import { Avatar, AutoComplete, Button, DatePicker, Form, Input, InputNumber, Rate, Select, Switch, Table, Tabs, App as AntApp } from 'antd';
 import { CalendarOutlined, CheckCircleOutlined, StarFilled, TeamOutlined, PlusOutlined } from '@ant-design/icons';
 import { Link } from 'react-router-dom';
 import { useState } from 'react';
@@ -30,6 +30,10 @@ export default function ExpertWorkbenchV2() {
   const selfScheduleOn = flags.expertSelfSchedule !== false;
   const [applyOpen, setApplyOpen] = useState(false);
   const [applyForm] = Form.useForm();
+  /** V8.3-10.07：答疑纪要提炼（来源必须是「已完成」的真实接诊单） */
+  const [minuteTarget, setMinuteTarget] = useState<{ id: string; name: string; date: string; question: string } | null>(null);
+  const [minuteOpen, setMinuteOpen] = useState(false);
+  const [minuteForm] = Form.useForm();
   const expert = db.experts.find((e) => e.union_id === me.union_id);
 
   if (!expert) {
@@ -104,6 +108,73 @@ export default function ExpertWorkbenchV2() {
       okText: '标记完成',
       onOk: () => finish(b.id),
     });
+  };
+
+  /* ---------- V8.3-10.07：答疑纪要（真实接诊 → 提炼 → 专家主页展示） ---------- */
+  /** 已完成且未被提炼过的接诊单，才能作为纪要来源（杜绝凭空造纪要） */
+  const doneBookings = bookings.filter((b) => b.status === '已完成');
+  const myMinutes = db.expertMinutes
+    .filter((m) => m.expert_id === expert.id && !m.is_deleted)
+    .sort((a, b) => b.date.localeCompare(a.date));
+
+  const openMinute = (b: { id: string; name: string; date: string; question: string }) => {
+    setMinuteTarget(b);
+    minuteForm.resetFields();
+    minuteForm.setFieldsValue({
+      title: `${b.name}：${(b.question ?? '').slice(0, 18) || '答疑要点'}`,
+      date: DEMO_TODAY,
+      tags: [],
+      visible: true,
+    });
+    setMinuteOpen(true);
+  };
+
+  const submitMinute = async () => {
+    let vals: { title?: string; content?: string; date?: string; tags?: string[]; visible?: boolean };
+    try {
+      vals = await minuteForm.validateFields();
+    } catch {
+      message.error('请填写纪要标题与正文');
+      return;
+    }
+    const b = minuteTarget;
+    if (!b) return;
+    const date = (vals.date as string) || DEMO_TODAY;
+    const at = `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`;
+    const id = `EM${Date.now()}`;
+    setDb((p) => ({
+      ...p,
+      expertMinutes: [{
+        id, expert_id: expert.id, booking_id: b.id, patient_name: b.name,
+        title: (vals.title ?? '').trim(),
+        content: (vals.content ?? '').trim(),
+        date, tags: vals.tags ?? [],
+        created_by_union_id: me.union_id, created_by_name: me.name,
+        source: 'EXPERT', visible: vals.visible !== false, views: 0, created_at: at,
+      }, ...p.expertMinutes],
+    }));
+    log('提炼答疑纪要', b.name, `${b.date} 就诊 → ${vals.title}（${vals.visible !== false ? '公开到专家主页' : '暂不公开'}）`);
+    message.success(vals.visible !== false ? '纪要已提炼并公开到你的专家主页' : '纪要已保存（未公开）');
+    setMinuteOpen(false);
+    setMinuteTarget(null);
+    minuteForm.resetFields();
+  };
+
+  const toggleMinuteVisible = (m: { id: string; visible: boolean; title: string }) => {
+    setDb((p) => ({
+      ...p,
+      expertMinutes: p.expertMinutes.map((x) => (x.id === m.id ? { ...x, visible: !x.visible, updated_at: DEMO_TODAY } : x)),
+    }));
+    log(m.visible ? '纪要取消公开' : '纪要公开发布', m.title, m.visible ? '专家主页不再展示' : '专家主页即刻展示');
+    message.success(m.visible ? '已隐藏（专家主页不再展示）' : '已公开到专家主页');
+  };
+
+  const deleteMinute = (id: string) => {
+    setDb((p) => ({
+      ...p,
+      expertMinutes: p.expertMinutes.map((x) => (x.id === id ? { ...x, is_deleted: true, updated_at: DEMO_TODAY } : x)),
+    }));
+    message.success('纪要已删除（软删除，可从审计日志追溯）');
   };
 
   /** 排班状态四档语义（替代 v1 的 SoftTag 多色） */
@@ -325,19 +396,73 @@ export default function ExpertWorkbenchV2() {
                       </div>
                     ))}
                   </div>
+                  {/* V8.3-10.07：答疑纪要提炼（真实接诊 → 纪要 → 专家主页展示） */}
                   <div className="wb2-card">
-                    <div className="hd" style={{ fontWeight: 600, marginBottom: 'var(--wb-space-3)' }}>接诊记录</div>
-                    {bookings.filter((b) => b.status === '已完成').length === 0 ? (
-                      <div style={{ fontSize: 'var(--wb-fs-label)', color: 'var(--wb-ink-3)' }}>暂无</div>
+                    <div className="hd" style={{ fontWeight: 600, marginBottom: 'var(--wb-space-3)' }}>
+                      接诊记录
+                      <span style={{ fontWeight: 400, color: 'var(--wb-ink-3)', marginLeft: 6, fontSize: 'var(--wb-fs-caption)' }}>
+                        已完成后可提炼纪要
+                      </span>
+                    </div>
+                    {doneBookings.length === 0 ? (
+                      <div style={{ fontSize: 'var(--wb-fs-label)', color: 'var(--wb-ink-3)' }}>
+                        暂无已完成接诊，无法提炼纪要
+                      </div>
                     ) : (
                       <div>
-                        {bookings.filter((b) => b.status === '已完成').map((b) => (
-                          <div key={b.id} style={{
-                            display: 'flex', alignItems: 'center', gap: 8,
+                        {doneBookings.map((b) => {
+                          const hasMinute = myMinutes.some((m) => m.booking_id === b.id && !m.is_deleted);
+                          return (
+                            <div key={b.id} style={{
+                              display: 'flex', alignItems: 'center', gap: 8,
+                              padding: '8px 0', borderBottom: '1px solid var(--wb-border-subtle)',
+                              fontSize: 'var(--wb-fs-label)', color: 'var(--wb-ink-2)',
+                            }}>
+                              <TeamOutlined />
+                              <span style={{ flex: '1 1 auto', minWidth: 0 }}>{b.name} · {b.date} {b.slot}</span>
+                              {hasMinute ? (
+                                <span className="wb2-tag ok"><i className="d" />已提炼</span>
+                              ) : (
+                                <Button size="small" type="link" onClick={() => openMinute(b)}>提炼纪要</Button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                  <div className="wb2-card" style={{ marginTop: 'var(--wb-space-4)' }}>
+                    <div className="hd" style={{ fontWeight: 600, marginBottom: 'var(--wb-space-3)' }}>
+                      我的答疑纪要（{myMinutes.length}）
+                    </div>
+                    {myMinutes.length === 0 ? (
+                      <div style={{ fontSize: 'var(--wb-fs-label)', color: 'var(--wb-ink-3)' }}>
+                        还没有纪要；完成一次问诊后点「提炼纪要」，纪要会出现在你的专家主页
+                      </div>
+                    ) : (
+                      <div>
+                        {myMinutes.map((m) => (
+                          <div key={m.id} style={{
                             padding: '8px 0', borderBottom: '1px solid var(--wb-border-subtle)',
-                            fontSize: 'var(--wb-fs-label)', color: 'var(--wb-ink-2)',
+                            fontSize: 'var(--wb-fs-label)',
                           }}>
-                            <TeamOutlined /><span>{b.name} · {b.date} {b.slot}</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ flex: '1 1 auto', minWidth: 0, color: 'var(--wb-ink-1)' }}>{m.title}</span>
+                              <span className="wb2-tag">{m.visible ? '已公开' : '未公开'}</span>
+                              <Button size="small" type="link" onClick={() => toggleMinuteVisible(m)}>
+                                {m.visible ? '隐藏' : '公开'}
+                              </Button>
+                              <Button size="small" type="link" danger onClick={() => ask({
+                                title: '删除该纪要？',
+                                content: `${m.title}（软删除，可在后台审计中追溯）`,
+                                okText: '删除',
+                                danger: true,
+                                onOk: () => deleteMinute(m.id),
+                              })}>删除</Button>
+                            </div>
+                            <div style={{ color: 'var(--wb-ink-3)', marginTop: 2 }}>
+                              {m.date} · {m.views} 次检索{m.patient_name ? ` · 来自 ${m.patient_name} 的就诊` : ''}
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -385,6 +510,40 @@ export default function ExpertWorkbenchV2() {
           </Form.Item>
           <Form.Item name="place_or_link" label="地点/链接">
             <Input placeholder="线上填会议链接，线下填地点" />
+          </Form.Item>
+        </Form>
+      </Dialog>
+
+      {/* V8.3-10.07：答疑纪要提炼 —— 来源固定为本次已完成接诊，不可自由选择，杜绝凭空造纪要 */}
+      <Dialog
+        open={minuteOpen}
+        title="提炼答疑纪要"
+        sub={minuteTarget
+          ? `来源接诊：${minuteTarget.name} · ${minuteTarget.date}。脱敏后再公开，客户名 / 金额 / 联系方式不得出现在纪要中。`
+          : '请先选择一次已完成的接诊'}
+        okText="保存纪要"
+        onOk={() => { void submitMinute(); }}
+        onCancel={() => { setMinuteOpen(false); setMinuteTarget(null); minuteForm.resetFields(); }}
+      >
+        <Form form={minuteForm} layout="vertical" preserve={false}>
+          <Form.Item name="title" label="纪要标题" rules={[{ required: true, message: '请填写标题' }, { max: 40, message: '不超过 40 字' }]}>
+            <Input placeholder="如：Skill 包结构校验失败的 5 个常见原因" maxLength={40} showCount />
+          </Form.Item>
+          <Form.Item
+            name="content" label="纪要正文"
+            rules={[{ required: true, message: '请填写纪要正文' }, { max: 600, message: '不超过 600 字' }]}
+            extra="建议按「卡点 → 判断 → 动作 → 建议」四段写，≤600 字"
+          >
+            <Input.TextArea rows={6} maxLength={600} showCount placeholder={'卡点：\n判断：\n动作：\n建议：'} />
+          </Form.Item>
+          <Form.Item name="date" label="提炼日期" rules={[{ required: true }]}>
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="tags" label="标签">
+            <Select mode="tags" placeholder="回车添加，如：提示词 / Skill 打包" />
+          </Form.Item>
+          <Form.Item name="visible" label="是否公开到专家主页" valuePropName="checked">
+            <Switch checkedChildren="公开" unCheckedChildren="暂存" />
           </Form.Item>
         </Form>
       </Dialog>

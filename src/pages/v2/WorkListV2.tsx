@@ -10,6 +10,7 @@ import { SubmitStatusTag } from '@/pages/c/WorkList';
 import { TrackTag } from '@/components/ui';
 import { trackVar } from '@/theme/v2/track';
 import { DEMO_TODAY } from '@/mock/seedBiz';
+import { canApplyAsset } from '@/constants/statusMeta';
 import '../../theme/v2/template.css';
 
 /**
@@ -177,7 +178,8 @@ export default function WorkListV2() {
                     {['SUBMITTED', 'AI_SCORED'].includes(s.status) && !s.late && (
                       <Button size="small" type="link" danger onClick={() => withdraw(s)}>撤回</Button>
                     )}
-                    {['PASSED', 'PUBLISHED', 'REVIEWED'].includes(s.status) && (
+                    {/* V8.3-10.07：口径统一到 canApplyAsset（新增 COMPLETED / CONSENSUS 两个终点态） */}
+                    {canApplyAsset(s.status) && (
                       <Button size="small" type="link" onClick={() => applyAsset(s)}>申请入库</Button>
                     )}
                   </div>

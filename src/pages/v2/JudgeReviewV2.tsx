@@ -150,6 +150,7 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
     if (opinion.trim().length < 10) { message.warning('复核意见至少 10 字'); return; }
     /** 修订态走另一条分支：新增记录而非覆写 */
     if (reviseTarget) { submitRevise(); return; }
+    const scoredAt = now();
     setDb((p) => ({
       ...p,
       submits: p.submits.map((s) => (s.id === current!.id
@@ -161,24 +162,40 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
         id: `SR-${current!.id}-JD-${Date.now()}`, target_type: 'submit', target_id: current!.id,
         card_id: card.id, card_version: card.version, source: 'JUDGE',
         dim_scores: scores, total, reason: opinion,
-        scorer_union_id: me.union_id, scorer_name: me.name, created_at: DEMO_TODAY + ' 18:40',
+        scorer_union_id: me.union_id, scorer_name: me.name, created_at: scoredAt,
       }],
+      /** V8.3-10.07：打分是链路上的一环，必须留流转痕；随后由流水线自动推送「真实性复核」待办 */
+      submitFlowLogs: [{
+        id: `FL${Date.now()}`, submit_id: current!.id,
+        from_status: current!.status, to_status: 'REVIEWED',
+        operator: me.name, reason: `${card.name} ${card.version} 四维合计 ${total}`, created_at: scoredAt,
+      }, ...p.submitFlowLogs],
     }));
     log('评委复核打分', current!.code, `四维合计 ${total}，意见：${opinion.slice(0, 20)}…`);
-    message.success(`复核完成，最终分按 AI ${card.ai_weight}% + 评委 ${card.judge_weight}% 合成`);
+    message.success(`复核完成，最终分按 AI ${card.ai_weight}% + 评委 ${card.judge_weight}% 合成；已推送组织者做真实性复核`);
     setCurrent(null); setScores({}); setOpinion('');
   };
 
   /** V3.0 保留路径：judge.confirmMode 关闭时的三问抽查 */
   const submitSpot = () => {
     if (!spot || !spot.q1 || !spot.q2 || !spot.q3) { message.warning('3 问必须全部填写'); return; }
+    /**
+     * V8.3-10.07：三问抽查是「真实性复核」的另一条表单形态，链路终点必须与 confirmMode 路径一致
+     * （旧实现写 PASSED，导致这条路的作业永远触发不到「确认公示 / 可申请入库」的推送）。
+     */
+    const spotAt = now();
     setDb((p) => ({
       ...p,
       submits: p.submits.map((s) => (s.id === current!.id
-        ? { ...s, status: 'PASSED', spot_check: { ...spot, result: '通过', by: me.name } } : s)),
+        ? { ...s, status: 'COMPLETED', spot_check: { ...spot, result: '通过', by: me.name } } : s)),
+      submitFlowLogs: [{
+        id: `FL${Date.now()}`, submit_id: current!.id,
+        from_status: current!.status, to_status: 'COMPLETED',
+        operator: me.name, reason: '三问抽查结论：通过', created_at: spotAt,
+      }, ...p.submitFlowLogs],
     }));
     log('3 问抽查', current!.code, '结论：通过');
-    message.success('抽查结论：通过');
+    message.success('抽查结论：通过，已进入「已完成」并推送组织者确认公示');
     setSpot(null); setCurrent(null);
   };
 
@@ -190,18 +207,30 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
       return;
     }
     const prevStatus = current!.status;
-    const nextStatus: AssignmentSubmit['status'] = confirm.result === '真实' ? 'PASSED' : 'REVIEWING';
+    /**
+     * V8.3-10.07：链路末端的统一 —— 真实 → COMPLETED（V6.0 CR-19 口径，公示不再是前置条件），
+     * 而不是老的 PASSED。走到 COMPLETED 后流水线会自动推送「组织者确认公示 / 员工可申请入库」。
+     */
+    const nextStatus: AssignmentSubmit['status'] = confirm.result === '真实' ? 'COMPLETED' : 'REVIEWING';
+    const confirmedAt = now();
     setDb((p) => ({
       ...p,
       submits: p.submits.map((s) => (s.id === current!.id
         ? {
             ...s, status: nextStatus,
-            confirmed: { by: me.name, at: now(), result: confirm.result, note: confirm.note || undefined },
+            confirmed: { by: me.name, at: confirmedAt, result: confirm.result, note: confirm.note || undefined },
             /** deepSpotCheck 开启且已填写时，仍写入 deprecated 的三问字段（保留历史读取） */
             spot_check: deepSpot && confirm.q1 && confirm.q2 && confirm.q3
               ? { q1: confirm.q1, q2: confirm.q2, q3: confirm.q3, result: '通过', by: me.name }
               : s.spot_check,
           } : s)),
+      submitFlowLogs: [{
+        id: `FL${Date.now()}`, submit_id: current!.id,
+        from_status: prevStatus, to_status: nextStatus,
+        operator: me.name,
+        reason: `真实性确认：${confirm.result}${confirm.note ? `（${confirm.note.slice(0, 20)}…）` : ''}`,
+        created_at: confirmedAt,
+      }, ...p.submitFlowLogs],
     }));
     log(
       confirm.result === '真实' ? '真实性确认通过' : '真实性确认存疑',
@@ -588,7 +617,7 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
                 <i style={{ width: `${progressPct}%`, background: COLOR.primary }} />
               </div>
               <div style={{ fontSize: FONT.caption, color: COLOR.ink3, marginTop: 'var(--wb-space-2)' }}>
-                复核进度：{judgedCount}/{db.submits.length}（{progressPct}%）；复核未完成不进入公示
+                复核进度：{judgedCount}/{db.submits.length}（{progressPct}%）；复核通过后自动流转「已完成」，再由组织者确认是否公示、员工可申请入库
               </div>
               <div style={{ marginTop: 'var(--wb-space-4)' }}>
                 {confirmMode ? (

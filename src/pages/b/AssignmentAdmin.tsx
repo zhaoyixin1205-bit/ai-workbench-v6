@@ -15,6 +15,8 @@ import AssignmentParticipants from '@/components/AssignmentParticipants';
 import { statusText, statusOptions, TYPE_STATUS_TEXT } from '@/constants/statusMeta';
 /* V7.0 CR-35：评分结果回写改为真实「下载模板 → 上传解析 → 三态回执」 */
 import BatchImport from '@/components/BatchImport';
+/* V8.3-10.07：补跑 AI 评分走与自动流水线同一份算法（避免前后台两个分） */
+import { aiRescore, needsAiScore } from '@/service/submitPipeline';
 
 /** V6.0 CR-23：流程编排的操作对象（最小必要字段） */
 type BountyFlowTarget = {
@@ -130,6 +132,20 @@ export default function AssignmentAdmin() {
   const toStatus = (id: string, next: SubmitStatus) => {
     setDb((p) => ({ ...p, submits: p.submits.map((s) => (s.id === id ? { ...s, status: next } : s)) }));
     message.success('状态已流转');
+  };
+
+  /**
+   * V8.3-10.07：单条「补跑 AI 评分」（FR9）
+   * 旧按钮只改状态不出分 —— 组织者点完「标记已跑分」，作业带着空的 AI 分进了评委视野，
+   * 评委只能对着「—」打分，于是看起来仍然像是「必须人工标记才往下走」。
+   * 现在正常链路已由 store 流水线自动推进，这里只作为异常兜底入口。
+   */
+  const rescore = (r: { id: string; code: string }) => {
+    const res = aiRescore(db, r.id, me.name, `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`);
+    if (!res.ok || !res.patch) { message.error(res.error ?? '补跑失败'); return; }
+    setDb((p) => ({ ...p, ...res.patch }));
+    log('补跑 AI 评分', r.code, `${res.cardLabel} → ${res.total} 分（操作人 ${me.name}）`);
+    message.success(`已补跑 AI 评分：${res.total} 分（${res.cardLabel}），随后会自动推送评委`);
   };
 
   /** 公示口径兼容：新标记位优先，旧 PUBLISHED 状态仍算已公示（历史数据） */
@@ -406,7 +422,8 @@ export default function AssignmentAdmin() {
                         ? <Typography.Text type="secondary" style={{ fontSize: 12 }}>只读</Typography.Text>
                         : (
                           <Space size={4}>
-                            {r.status === 'SUBMITTED' && <Button size="small" type="link" onClick={() => toStatus(r.id, 'AI_SCORED')}>标记已跑分</Button>}
+                            {/* V8.3-10.07：「标记已跑分」→ 真正出分的「补跑 AI 评分」（正常链路已自动，此处为兜底） */}
+                            {needsAiScore(r) && <Button size="small" type="link" onClick={() => rescore(r)}>补跑 AI 评分</Button>}
                             {r.status === 'AI_SCORED' && <Button size="small" type="link" onClick={() => toStatus(r.id, 'REVIEWING')}>送复核</Button>}
                             {/* V6.0 CR-19：复核完 → 已完成（公示不再是前置条件）→ 可选标记已共识 */}
                             {flowV2 && r.status === 'REVIEWED' && <Button size="small" type="link" onClick={() => toStatus(r.id, 'COMPLETED')}>标记已完成</Button>}
@@ -441,7 +458,8 @@ export default function AssignmentAdmin() {
                   { t: '总提报数', v: inScope.length },
                   { t: '待评分', v: inScope.filter((s) => s.status === 'SUBMITTED').length },
                   { t: '已跑分', v: inScope.filter((s) => s.ai_score !== undefined).length },
-                  { t: '待复核', v: inScope.filter((s) => s.status === 'AI_SCORED').length },
+                  /* V8.3-10.07：出分后流水线会自动推给评委并转 REVIEWING，故待评委处理 = AI_SCORED ∪ REVIEWING */
+                  { t: '待评委打分', v: inScope.filter((s) => s.status === 'AI_SCORED' || s.status === 'REVIEWING').length },
                   { t: '已完成', v: inScope.filter((s) => s.status === 'COMPLETED' || s.status === 'CONSENSUS').length },
                   /* V6.0 CR-19：已公示口径 = 标记位 ∪ 旧 PUBLISHED 状态，防止「作业完成了但看板显示未公示」 */
                   { t: '已公示', v: publishedCount },

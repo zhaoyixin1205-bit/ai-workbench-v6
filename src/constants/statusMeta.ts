@@ -64,6 +64,21 @@ export const TYPE_STATUS_TEXT: Record<string, string> = {
   ARCHIVED: '已归档',
 };
 
+/**
+ * V8.3-10.07：哪些状态下「员工可申请入库」—— 全站唯一口径。
+ *
+ * 此前 WorkList / WorkDetail 各自写了一份 `['PASSED','PUBLISHED','REVIEWED'].includes(status)`，
+ * 而 V6.0 CR-19 之后链路终点改成了 COMPLETED（公示不再是前置条件），
+ * 两条口径一旦漂移，就会出现「作业完成了但入口没有」。四个入口统一读这里。
+ */
+export const ASSET_APPLY_STATUSES: SubmitStatus[] = [
+  'PASSED', 'PUBLISHED', 'REVIEWED', 'COMPLETED', 'CONSENSUS',
+];
+
+export function canApplyAsset(status: SubmitStatus | string | undefined): boolean {
+  return ASSET_APPLY_STATUSES.includes(status as SubmitStatus);
+}
+
 /** 生成下拉选项：value 保持原枚举（不改动筛选逻辑），label 为中文 */
 export function statusOptions(extra?: SubmitStatus[]) {
   return [...ALL_SUBMIT_STATUSES, ...(extra ?? [])].map((v) => ({
