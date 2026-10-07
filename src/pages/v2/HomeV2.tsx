@@ -67,7 +67,8 @@ export default function HomeV2() {
     { key: 'asset', done: db.assetApplies.some((a) => a.applicant_union_id === me.union_id), text: '作品还没申请入库', action: '去申请', to: '/assets' },
   ].filter((t) => !t.done).slice(0, 3);
 
-  const hotCases = [...db.cases].sort((a, b) => b.view_count - a.view_count).slice(0, 5);
+  /** V8-10.07：案例精选改「最新发布优先」—— 新案例（如远程数据分析报告）能在首页露出 */
+  const hotCases = [...db.cases].sort((a, b) => (b.created_at > a.created_at ? 1 : -1)).slice(0, 5);
   const bounties = db.bounties.filter((b) => b.status === 'PUBLISHED').slice(0, 4);
   const hotPosts = [...db.posts]
     .filter((p) => p.status === '正常')
@@ -190,7 +191,7 @@ export default function HomeV2() {
           <div className="vl accent">{stats.submitRate}%</div>
           <div className="sb"><Delta v={12.4} /><Sparkline data={SPARK.submit} color="var(--wb-track-1)" /></div>
           <div style={{ fontSize: 'var(--wb-fs-caption)', color: 'var(--wb-ink-3)', marginTop: 6 }}>
-            {stats.submitted}/{stats.cadreCount} 人 · 口径：干部
+            {stats.submitted}/{stats.cadreCount} 人 · 口径：干部+核心骨干
           </div>
         </div>
         <div className="wb2-metric">
@@ -210,7 +211,7 @@ export default function HomeV2() {
           <div className="vl">{stats.activateRate}%</div>
           <div className="sb"><Delta v={6.2} /><Sparkline data={SPARK.activate} color="var(--wb-info)" /></div>
           <div style={{ fontSize: 'var(--wb-fs-caption)', color: 'var(--wb-ink-3)', marginTop: 6 }}>
-            {stats.activated}/{stats.cadreCount} 人已激活
+            {stats.activated}/{stats.cadreCount} 人已激活 · 口径：干部+核心骨干
           </div>
         </div>
       </div>
@@ -227,9 +228,10 @@ export default function HomeV2() {
         <div className="wb2-hscroll">
           {hotCases.map((c) => {
             const skillN = flags.caseSkillPackage !== false ? (c.skill_packages?.length ?? 0) : 0;
+            /* V8-10.07：`.eq` = 等高修饰类，案例外框大小一致 */
             return (
               <Link key={c.id} to={`/cases/${c.id}`} style={{ display: 'block' }}>
-                <div className="wb2-ccard" style={{ borderLeft: `3px solid ${TRACK_COLOR[c.track] ?? 'var(--wb-track-1)'}` }}>
+                <div className="wb2-ccard eq" style={{ borderLeft: `3px solid ${TRACK_COLOR[c.track] ?? 'var(--wb-track-1)'}` }}>
                   <div className="ct">{c.title}</div>
                   <div className="cd" style={{ marginTop: 8 }}>{c.author_name} · {c.duration}</div>
                   <div className="cf">

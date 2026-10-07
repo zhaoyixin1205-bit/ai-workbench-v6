@@ -212,6 +212,30 @@
   flex: 1 1 auto;
 }
 
+/* V8-10.07：案例卡片等高（.eq）—— 案例精选外框大小一致，底部数据条吸底。
+   只作用于案例卡片，不影响复用 .wb2-ccard 的悬赏列表 / 评分卡列表。 */
+.wb2-ccard.eq {
+  min-height: 188px;
+}
+/* 网格内：HoverCard 包裹层撑满单元格，卡片跟着拉伸 → 同行等高；
+   grid-auto-rows: 1fr 让所有行等高 → 全部卡片外框大小一致 */
+.wb2-cgrid { grid-auto-rows: 1fr; }
+.wb2-cgrid > * { display: flex; }
+.wb2-cgrid > * > .wb2-ccard { flex: 1 1 auto; }
+/* 首页横向滚动条：flex 容器无法拉伸，直接锁死高度 */
+.wb2-hscroll > * > .wb2-ccard.eq,
+.wb2-hscroll .wb2-ccard.eq { height: 188px; }
+.wb2-ccard.eq .ct {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 42px;
+}
+.wb2-ccard.eq .cf {
+  margin-top: auto;
+}
+
 /* ---------------- 细线列表（作业等状态型数据） ---------------- */
 .wb2-list {
   background: var(--wb-surface-card);

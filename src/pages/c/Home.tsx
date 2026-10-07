@@ -46,7 +46,8 @@ export default function Home() {
     activate: [41, 48, 52, 57, 61, 64, 68, 72],
   };
 
-  const hotCases = [...db.cases].sort((a, b) => b.view_count - a.view_count).slice(0, 5);
+  /** V8-10.07：案例精选改「最新发布优先」—— 新案例（如远程数据分析报告）能在首页露出，而非被 0 热度埋没 */
+  const hotCases = [...db.cases].sort((a, b) => (b.created_at > a.created_at ? 1 : -1)).slice(0, 5);
   const bounties = db.bounties.filter((b) => b.status === 'PUBLISHED').slice(0, 4);
   const hotPosts = [...db.posts].filter((p) => p.status === '正常').sort((a, b) => b.like_count + b.comment_count * 3 - (a.like_count + a.comment_count * 3)).slice(0, 3);
   /**
@@ -203,8 +204,8 @@ export default function Home() {
           <MetricCard
             icon={<RiseOutlined />} label="本届提交率" value={`${stats.submitRate}%`}
             delta={12.4} spark={SPARK.submit}
-            hint="分母＝带「干部」标签且在职的人数（默认 39 人）；提交过任意一期作业即计入分子，草稿不算。"
-            extra={`${stats.submitted}/${stats.cadreCount} 人 · 口径：干部`}
+            hint="分母＝带「干部」或「核心骨干」标签且在职的人数（默认 47 人，来自钉钉《用户标签》名单）；提交过任意一期作业即计入分子，草稿不算。"
+            extra={`${stats.submitted}/${stats.cadreCount} 人 · 口径：干部+核心骨干`}
             tone="primary"
           />
         </Col>
@@ -231,7 +232,7 @@ export default function Home() {
             icon={<ThunderboltOutlined />} label="激活率" value={`${stats.activateRate}%`}
             delta={6.2} spark={SPARK.activate}
             hint="激活＝WorkBuddy 管理后台同步到「活跃天数 > 0」。本系统不自算，取后台同步值。"
-            extra={`${stats.activated}/${stats.cadreCount} 人已激活`}
+            extra={`${stats.activated}/${stats.cadreCount} 人已激活 · 口径：干部+核心骨干`}
             tone="blue"
           />
         </Col>
@@ -271,17 +272,18 @@ export default function Home() {
                   </div>
                 }
               >
+                {/* V8-10.07：外框大小一致 —— 固定宽 216 + 固定高 196，底部数据条 marginTop:auto 吸底 */}
                 <Link to={`/cases/${c.id}`} style={{ flex: '0 0 216px', display: 'block' }}>
-                  <div className="wb-card wb-card-hover" style={{ padding: 16, height: '100%' }}>
+                  <div className="wb-card wb-card-hover" style={{ padding: 16, height: 196, display: 'flex', flexDirection: 'column' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12, gap: 8 }}>
                       <CoverBlock emoji={c.cover} track={c.track} size={40} />
                       <TrackTag track={c.track} level={c.level} />
                     </div>
                     <div style={{
-                      fontWeight: 700, fontSize: 15, lineHeight: 1.45, minHeight: 44,
+                      fontWeight: 700, fontSize: 15, lineHeight: 1.45, height: 44,
                       display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
                     }}>{c.title}</div>
-                    <div style={{ color: COLOR.textMuted, fontSize: 12, marginTop: 10, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <div style={{ color: COLOR.textMuted, fontSize: 12, marginTop: 'auto', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                       <span><FireOutlined /> {c.view_count}</span>
                       <span>👍 {c.like_count}</span>
                       <span>⏱ {c.duration}</span>

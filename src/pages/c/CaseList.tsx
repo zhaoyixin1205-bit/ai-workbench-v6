@@ -256,7 +256,8 @@ export default function CaseList() {
                     }
                   >
                     <Link to={`/cases/${c.id}`}>
-                      <div className="wb-card wb-card-hover" style={{ padding: 18, height: '100%' }}>
+                      {/* V8-10.07：外框大小一致 —— 最小高度统一，标题/痛点均 2 行截断 */}
+                      <div className="wb-card wb-card-hover" style={{ padding: 18, height: '100%', minHeight: 244 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
                           <CoverBlock emoji={c.cover} track={c.track} size={44} />
                           <TrackTag track={c.track} />

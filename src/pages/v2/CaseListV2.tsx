@@ -178,8 +178,9 @@ export default function CaseListV2() {
                     </div>
                   }
                 >
+                  {/* V8-10.07：`.eq` 等高修饰类，案例外框大小一致 */}
                   <div
-                    className="wb2-ccard"
+                    className="wb2-ccard eq"
                     style={{ borderLeft: `3px solid ${trackVar(c.track)}` }}
                     onClick={() => nav(`/cases/${c.id}`)}
                   >

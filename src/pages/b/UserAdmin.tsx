@@ -391,7 +391,7 @@ export default function UserAdmin() {
               children: (
                 <>
                   <Alert type="info" showIcon style={{ marginBottom: 12 }}
-                    message="平台开放全员，但考核指标分母按标签切分，默认「干部 / 核心 39 人」"
+                    message="平台开放全员，但考核指标分母按标签切分，默认「干部 + 核心骨干」（钉钉《用户标签》名单，共 47 人）"
                     description="打标方式：① 按部门批量打标；② 按人员名单导入；③ 单人手动调整；④ 规则自动打标（预留）。标签不互斥，统计时按所选标签取并集去重。" />
                   <Table
                     size="small" rowKey="id" pagination={false} dataSource={db.tags}

@@ -586,7 +586,15 @@ export function useStats() {
       if (!tag) return [] as User[];
       return db.users.filter((x) => x.tags.includes(tag.id));
     };
-    const cadre = tagUsers('CADRE');
+    /**
+     * V8-10.07：进度看板默认分母 = 干部 ∪ 核心骨干
+     * 口径来自钉钉表格《用户标签》（52 人权威名单），见 scripts/apply-v8.mjs。
+     * 此前只取 CADRE（且是钉钉标签派生的 114 人），与人工名单口径不一致。
+     */
+    const cadreUnion = new Set(
+      [...tagUsers('CADRE'), ...tagUsers('BACKBONE')].map((x) => x.union_id)
+    );
+    const cadre = db.users.filter((x) => cadreUnion.has(x.union_id));
     const submittedIds = new Set(
       db.submits.filter((s) => s.status !== 'DRAFT' && s.status !== 'WITHDRAWN').map((s) => s.union_id)
     );

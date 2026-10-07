@@ -445,7 +445,7 @@ export default function UserAdminV2() {
                 <>
                   <div className="wb2-alert" style={{ marginBottom: 'var(--wb-space-4)' }}>
                     <div className="bd">
-                      <div className="t">平台开放全员，但考核指标分母按标签切分，默认「干部 / 核心 39 人」</div>
+                      <div className="t">平台开放全员，但考核指标分母按标签切分，默认「干部 + 核心骨干」（钉钉《用户标签》名单，共 47 人）</div>
                       <div className="d">打标方式：① 按部门批量打标；② 按人员名单导入；③ 单人手动调整；④ 规则自动打标（预留）。标签不互斥，统计时按所选标签取并集去重。</div>
                     </div>
                   </div>
