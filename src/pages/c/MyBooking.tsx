@@ -1,3 +1,4 @@
+import { noticeCancelToExpert } from '@/service/bookingNotice';
 import { Button, Card, Empty, Rate, Space, Typography, Modal, Input, Switch, App as AntApp } from 'antd';
 import { ArrowLeftOutlined, CheckCircleOutlined, CalendarOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import { Link } from 'react-router-dom';
@@ -30,8 +31,28 @@ export default function MyBooking() {
       title: '取消该预约？',
       content: '开始前 2 小时内不可取消（记为已使用）；因专家原因取消不计入学员。',
       onOk: () => {
-        setDb((p) => ({ ...p, bookings: p.bookings.map((x) => (x.id === b.id ? { ...x, status: '已取消' } : x)) }));
-        message.success('已取消，号源已释放');
+        setDb((p) => {
+          /** V8.3-10.08 需求③.4：取消要「回补号源 + 通知专家」。
+            * 原实现只改 status，却提示「号源已释放」—— 号源其实没回补，
+            * 专家那边该时段的名额被永久占掉（数据与提示不符的真 bug）。 */
+          const expert = p.experts.find((e) => e.id === b.expert_id);
+          return {
+            ...p,
+            schedules: p.schedules.map((sc) =>
+              sc.id === b.schedule_id
+                ? { ...sc, booked: Math.max(0, (sc.booked ?? 1) - 1), status: 'OPEN' as const }
+                : sc
+            ),
+            messages: expert
+              ? noticeCancelToExpert(p.messages, {
+                  expertUnionId: expert.union_id, expertName: expert.name, actorName: me.name,
+                  date: b.date, slot: b.slot,
+                }, '学员主动取消')
+              : p.messages,
+            bookings: p.bookings.map((x) => (x.id === b.id ? { ...x, status: '已取消' } : x)),
+          };
+        });
+        message.success('已取消，号源已回补并通知专家');
       },
     });
   };

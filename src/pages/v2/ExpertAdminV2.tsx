@@ -1,3 +1,4 @@
+import { noticeRescheduleToStudents } from '@/service/bookingNotice';
 import { AutoComplete, Button, DatePicker, Form, Input, InputNumber, Select, Table, Tabs, App as AntApp } from 'antd';
 import { StarFilled } from '@ant-design/icons';
 import { useState } from 'react';
@@ -102,6 +103,15 @@ export default function ExpertAdminV2() {
         schedules: p.schedules.map((x) => (x.id === s.id
           ? { ...x, ...next, source: 'MANUAL' as const, updated_by: me.name, updated_at: at }
           : x)),
+        /** V8.3-10.08 需求③.4：改期要真的通知已预约学员。
+         *  原实现只在 log 里写了「已触发改约通知」，没有任何消息落库 —— 学员那头毫无感知。 */
+        messages: noticeRescheduleToStudents(
+          p.messages,
+          p.bookings
+            .filter((b) => b.schedule_id === s.id && b.status === '待就诊')
+            .map((b) => ({ union_id: b.union_id, name: b.name })),
+          { date: s.date, slot: s.slot, nextDate: next.date, nextSlot: next.slot }
+        ),
       }));
       log('修改已发布排班', `${db.experts.find((e) => e.id === s.expert_id)?.name ?? s.expert_id} ${s.date} ${s.slot}`,
         `改为 ${next.date} ${next.slot} / 容量 ${next.capacity}；原已约 ${s.booked} 人${s.booked > 0 ? '，已触发改约通知' : ''}`);

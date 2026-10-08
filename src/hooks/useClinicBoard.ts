@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { App as AntApp } from 'antd';
 import { useStore } from '@/store/store';
 import { DEMO_TODAY } from '@/mock/seedBiz';
+import { noticeBookedToExpert } from '@/service/bookingNotice';
 import type { ExpertSchedule } from '@/mock/types';
 
 /**
@@ -55,6 +56,11 @@ export function useClinicBoard() {
     if (!expert) { message.warning('未选择专家'); return; }
     setDb((p) => ({
       ...p,
+      // V8.3-10.08 需求③.4：预约成功后给专家发站内消息（原来只有一句「已推送钉钉待办」的文案）
+      messages: noticeBookedToExpert(p.messages, {
+        expertUnionId: expert.union_id, expertName: expert.name, actorName: me.name,
+        date: sc.date, slot: sc.slot,
+      }),
       schedules: p.schedules.map((x) =>
         x.id === sc.id
           ? { ...x, booked: x.booked + 1, status: x.booked + 1 >= x.capacity ? 'FULL' : 'OPEN' }
@@ -92,7 +98,7 @@ export function useClinicBoard() {
       ],
     }));
     log('预约专家号源', `${expert.name} ${sc.date} ${sc.slot}`, '号源原子扣减成功');
-    message.success('预约成功！开始前 24 小时与 1 小时各推送一次钉钉待办');
+    message.success(`预约成功！已通知 ${expert.name}（钉钉待办将在免登打通后接入）`);
     setBooking(null);
     setQuestion('');
   };
