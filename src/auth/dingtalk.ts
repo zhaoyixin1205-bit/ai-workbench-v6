@@ -112,12 +112,23 @@ export async function loginWithCode(code: string, state: string): Promise<
   }>('/api/auth/dingtalk/exchange', { code, state });
   if (!body) return { ok: false, error: '无法连接服务端，请检查网络后重试' };
   if (!body.ok || !body.unionId) return { ok: false, error: body.error ?? '免登失败，请重试' };
+  /**
+   * ⚠️⚠️ `token` 必须在这里赋值（2026-10-08 线上「扫码成功却进不去」的真凶）。
+   *
+   * 之前漏了这一行：服务端明明签发了数据面会话 token，前端却从不写进 localStorage，
+   * 于是 `if (profile.token)` 恒为假 → 后续拉数据**永远不带 token** → 必然 401 →
+   * 清身份 → 又回登录页。表现极像"钉钉有问题"，实际是前端漏接了一个字段。
+   */
+  if (!body.token) {
+    return { ok: false, error: '服务端未返回会话凭证（缺少 token），请稍后重试或联系组织者' };
+  }
   const profile: DingtalkProfile = {
     unionId: body.unionId,
     name: body.name ?? '',
     roles: body.roles ?? [],
     scopeType: body.scopeType ?? 'SELF',
     jobNumber: body.jobNumber ?? '',
+    token: body.token,
   };
   /** 与旧身份键同写：store 的 me 会用它解析出完整用户与角色 */
   localStorage.setItem(LS_ME, profile.unionId);

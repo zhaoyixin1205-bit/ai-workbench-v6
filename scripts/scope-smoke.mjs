@@ -172,6 +172,24 @@ check('D4 降级选人路径也要重拉（否则看到的是上一个人的裁�
   const login = readFile('src/pages/Login.tsx');
   return /void pullRemote\(\)/.test(login) ? true : '降级选人后没有重拉数据';
 });
+/* ---- E组：exchange 响应字段必须被完整接住（2026-10-08 第二个真凶） ---- */
+check('E1 loginWithCode 必须把响应里的 token 赋进 profile（漏了则永远 401）', () => {
+  const dt = readFile('src/auth/dingtalk.ts');
+  // 取 profile 对象字面量那一段单独判定，避免误命中别处的 token
+  const m = /const profile: DingtalkProfile = \{([\s\S]*?)\}/.exec(dt);
+  if (!m) return '未找到 profile 对象字面量';
+  return /token:\s*body\.token/.test(m[1]) ? true : `profile 里没有 token: body.token —— 这一行漏了会导致 token 永不落地、每次拉数据都401`;
+});
+check('E2 服务端未返回 token 时必须直接报错（不能静默继续）', () => {
+  const dt = readFile('src/auth/dingtalk.ts');
+  return /if \(!body\.token\)/.test(dt) ? true : '缺 token 时没有显式失败，会退化成难以排查的 401 循环';
+});
+check('E3 DingtalkProfile.token 保持可选（字段只增不删），但落库前有运行时校验', () => {
+  const dt = readFile('src/auth/dingtalk.ts');
+  const hasField = /token\?:\s*string/.test(dt);
+  const hasGuard = /if \(!body\.token\)/.test(dt);
+  return hasField && hasGuard ? true : 'token 字段声明或运行时校验缺失';
+});
 
 /* ------------------------------------------------------------------ */
 const failed = results.filter((r) => !r.ok);
