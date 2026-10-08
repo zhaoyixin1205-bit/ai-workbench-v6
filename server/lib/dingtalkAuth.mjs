@@ -47,7 +47,13 @@ export function authorizeUrl(cfg, state, redirectUri) {
   const q = new URLSearchParams({
     redirect_uri: redirectUri || cfg.redirectUri,
     response_type: 'code',
-    scope: 'openid',
+    /**
+     * scope 除了 openid，还必须带 Contact.User.Read ——
+     * 第二步「获取当前用户信息」接口校验这个权限，不带会被拒
+     * （Forbidden.AccessDenied.AccessTokenPermissionDenied）。
+     * 钉钉的 scope 用**空格**分隔（官方示例：`scope=openid corpid`）。
+     */
+    scope: 'openid Contact.User.Read',
     client_id: cfg.clientId,
     state,
     prompt: 'consent',
@@ -56,15 +62,19 @@ export function authorizeUrl(cfg, state, redirectUri) {
 }
 
 /**
- * 用 code 换用户身份。
+ * 用 code 换用户身份 —— **钉钉是两步，不是一步**。
  *
- * 端点是 `POST https://api.dingtalk.com/v1.0/oauth2/userAccessToken`
- *（**注意不是** /oauth2/userToken —— 那个路径不存在，会返回 404
- *  "Specified api is not found"，参数也不是 tmp_auth_code 而是 code + grantType）
+ * 第一步：POST https://api.dingtalk.com/v1.0/oauth2/userAccessToken
+ *   请求 { clientId, clientSecret, code, grantType:'authorization_code' }
+ *   响应 **只有** { accessToken, refreshToken, expireIn }，**不含 unionId**
+ *   （踩过一次：误以为这里直接返回 unionId，结果 unionId 恒为空 → 报「未知错误」）
  *
- * 请求体按《获取用户token》官方文档：
- *   { clientId, clientSecret, code, grantType: 'authorization_code' }
- * 响应体（camelCase）：{ accessToken, refreshToken, openId, unionId, expiresIn }
+ * 第二步：GET https://api.dingtalk.com/v1.0/contact/users/me
+ *   Header `x-acs-dingtalk-access-token: <上一步的 accessToken>`
+ *   响应才有 unionId / nick / avatarUrl
+ *   ⚠️ 该接口需要应用开通 **Contact.User.Read（通讯录个人信息读权限）**，
+ *      授权 URL 的 scope 也要带上，否则会返回
+ *      `Forbidden.AccessDenied.AccessTokenPermissionDenied`
  */
 export async function exchangeCodeForUnionId(code, cfg = dingtalkConfig()) {
   if (!cfg.enabled) {
@@ -77,7 +87,9 @@ export async function exchangeCodeForUnionId(code, cfg = dingtalkConfig()) {
     err.code = 'DINGTALK_NO_CODE';
     throw err;
   }
-  const resp = await fetch('https://api.dingtalk.com/v1.0/oauth2/userAccessToken', {
+
+  /* ---- 第一步：code → 用户级 accessToken ---- */
+  const tokenResp = await fetch('https://api.dingtalk.com/v1.0/oauth2/userAccessToken', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -87,18 +99,42 @@ export async function exchangeCodeForUnionId(code, cfg = dingtalkConfig()) {
       grantType: 'authorization_code',
     }),
   });
-  const body = await resp.json().catch(() => ({}));
-  // 钉钉的错误码在 errcode / message 两个字段都可能给
-  const unionId = body?.unionId || body?.union_id || '';
-  if (!resp.ok || !unionId) {
-    const detail = body?.message || body?.errmsg || body?.code || '未知错误';
-    const err = new Error(`钉钉换取身份失败（HTTP ${resp.status}）：${detail}`);
+  const tokenBody = await tokenResp.json().catch(() => ({}));
+  const accessToken = tokenBody?.accessToken || '';
+  if (!tokenResp.ok || !accessToken) {
+    const detail = tokenBody?.message || tokenBody?.errmsg || tokenBody?.code || `响应字段：${Object.keys(tokenBody).join(',') || '空'}`;
+    const err = new Error(`钉钉换取访问凭证失败（HTTP ${tokenResp.status}）：${detail}`);
     err.code = 'DINGTALK_EXCHANGE_FAILED';
     throw err;
   }
+
+  /* ---- 第二步：accessToken → unionId ---- */
+  const meResp = await fetch('https://api.dingtalk.com/v1.0/contact/users/me', {
+    method: 'GET',
+    headers: {
+      'x-acs-dingtalk-access-token': accessToken,
+      'Content-Type': 'application/json',
+    },
+  });
+  const meBody = await meResp.json().catch(() => ({}));
+  const unionId = meBody?.unionId || meBody?.union_id || '';
+  if (!meResp.ok || !unionId) {
+    const code2 = meBody?.code || meBody?.errcode || '';
+    const detail = meBody?.message || meBody?.errmsg || '';
+    /** 权限不足要给出可执行的指引，否则用户只会看到一句「未知错误」 */
+    const hint = /AccessDenied|PermissionDenied|Forbidden/i.test(`${code2}${detail}`)
+      ? '——请在钉钉开放平台为该应用开通「通讯录个人信息读权限（Contact.User.Read）」，并确保授权链接的 scope 含该项'
+      : '';
+    const err = new Error(
+      `钉钉获取用户信息失败（HTTP ${meResp.status}）：${detail || code2 || `响应字段：${Object.keys(meBody).join(',') || '空'}`}${hint}`
+    );
+    err.code = 'DINGTALK_PROFILE_FAILED';
+    throw err;
+  }
+
   return {
     unionId,
-    openId: body.openId || body.open_id || '',
-    nick: body.nick || '',
+    openId: meBody.openId || meBody.open_id || '',
+    nick: meBody.nick || '',
   };
 }
