@@ -15,6 +15,7 @@ import MyTopics from '@/components/MyTopics';
 import { ROLE_LABEL } from '@/mock/types';
 import { SubmitStatusTag } from '@/pages/c/WorkList';
 import { useNoteVisible } from '@/auth/annotation';
+import { BROADCAST, countMyUnread, isMyUnread, markAllMyRead, markRead, sortForInbox } from '@/service/messageCenter';
 import '../../theme/v2/template.css';
 
 /** CR-05：兑换订单状态色（'已发货' / '已完成' 为 CR-05 新增） */
@@ -39,6 +40,8 @@ export default function ProfileV2() {
   const myOrders = db.shopOrders.filter((o) => o.union_id === me.union_id);
   const myBounties = db.bounties.filter((b) => b.owner_union_id === me.union_id || b.claimant_union_id === me.union_id);
   const myMessages = db.messages.filter((m) => m.union_id === 'all' || m.union_id === me.union_id);
+  /** V8.3-10.08 需求⑤：未读口径统一走共享层（本人专属才算红点，广播不占） */
+  const unreadCount = countMyUnread(db.messages, me);
   /** CR-05：兑换四段闭环开关 */
   const shopV2 = flags.shopV2Flow !== false;
 
@@ -268,22 +271,69 @@ export default function ProfileV2() {
             },
             {
               key: 'message',
-              label: <Badge count={myMessages.filter((m) => m.status === '未读').length} size="small">消息中心</Badge>,
+              /* V8.3-10.08 需求⑤：红点口径下沉到 messageCenter（广播不进个人红点），
+                 不再各处 filter，避免 v1/v2 四个调用点算出不同数字 */
+              label: <Badge count={unreadCount} size="small">消息中心</Badge>,
               children: (
                 <>
+                  <div style={{ display: 'flex', alignItems: 'center', marginBottom: 'var(--wb-space-4)' }}>
+                    <span style={{ fontSize: 'var(--wb-fs-caption)', color: 'var(--wb-ink-3)' }}>
+                      未读 {unreadCount} 条 · 共 {myMessages.length} 条（群通知只显示、不占红点）
+                    </span>
+                    <Button
+                      size="small"
+                      style={{ marginLeft: 'auto' }}
+                      disabled={unreadCount === 0}
+                      onClick={() => {
+                        setDb((p) => ({ ...p, messages: markAllMyRead(p.messages, me) }));
+                        message.success('已全部标记为已读');
+                      }}
+                    >
+                      全部已读
+                    </Button>
+                  </div>
                   <div className="wb2-list">
-                    {myMessages.map((m) => (
-                      <div key={m.id} className="wb2-li">
-                        <div className="wb2-li-m">
-                          <div className="wb2-li-t"><BellOutlined /> {m.title}</div>
-                          <div className="wb2-li-s">{m.content}（{m.sent_at}）</div>
+                    {sortForInbox(myMessages, me).map((m) => {
+                      const unread = isMyUnread(m, me);
+                      return (
+                        <div
+                          key={m.id}
+                          className="wb2-li"
+                          role="button"
+                          tabIndex={0}
+                          style={{ cursor: 'pointer', opacity: unread || m.union_id === BROADCAST ? 1 : 0.72 }}
+                          onClick={() => {
+                            if (!unread) return;
+                            setDb((p) => ({ ...p, messages: markRead(p.messages, m.id, me) }));
+                          }}
+                          onKeyDown={(e) => {
+                            if ((e.key === 'Enter' || e.key === ' ') && unread) {
+                              e.preventDefault();
+                              setDb((p) => ({ ...p, messages: markRead(p.messages, m.id, me) }));
+                            }
+                          }}
+                        >
+                          <div className="wb2-li-m">
+                            <div className="wb2-li-t" style={{ fontWeight: unread ? 700 : 400 }}>
+                              <BellOutlined /> {m.title}
+                              {unread && (
+                                <span style={{
+                                  width: 6, height: 6, borderRadius: 999, background: 'var(--wb-primary)',
+                                  display: 'inline-block', flex: 'none',
+                                }} />
+                              )}
+                            </div>
+                            <div className="wb2-li-s">{m.content}（{m.sent_at}）</div>
+                          </div>
+                          <div className="wb2-li-r" style={{ display: 'flex', gap: 6 }}>
+                            <Tag>{m.channel}</Tag>
+                            {m.union_id === BROADCAST
+                              ? <Tag color="purple">全员</Tag>
+                              : unread ? <Tag color="orange">未读</Tag> : <Tag color="default">已读</Tag>}
+                          </div>
                         </div>
-                        <div className="wb2-li-r" style={{ display: 'flex', gap: 6 }}>
-                          <Tag>{m.channel}</Tag>
-                          {m.status === '未读' && <Tag color="orange">未读</Tag>}
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                   <section className="wb2-card" style={{ marginTop: 'var(--wb-space-5)', background: 'var(--wb-surface-sunken)' }}>
                     <div className="wb2-sechd"><div className="t">消息订阅设置</div></div>

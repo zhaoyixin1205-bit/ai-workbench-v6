@@ -15,7 +15,8 @@
     "smoke:v7": "node scripts/v7-smoke.mjs",
     "smoke:pipeline": "node scripts/pipeline-smoke.mjs",
     "smoke:scene": "node scripts/scene-smoke.mjs",
-    "smoke:note": "node scripts/note-smoke.mjs"
+    "smoke:note": "node scripts/note-smoke.mjs",
+    "smoke:message": "node scripts/message-smoke.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "^5.5.1",

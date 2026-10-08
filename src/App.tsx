@@ -129,6 +129,8 @@ function AppShell() {
           {/* V7.0 CR-32：C 端评委评分（菜单位置在「首页」与「案例与选题」之间，仅评委可见） */}
           <Route path="/judge" element={<V2Page v1={<JudgeScore />} v2={<JudgeScoreV2 />} />} />
           <Route path="/bounty" element={<V2Page v1={<BountyList />} v2={<BountyListV2 />} />} />
+          {/* V8.3-10.08 需求④：悬赏详情。同一组件兼列表/详情两态（认领、提交方案等弹窗共用，不复制） */}
+          <Route path="/bounty/:id" element={<V2Page v1={<BountyList />} v2={<BountyListV2 />} />} />
           <Route path="/bounty/create" element={<V2Page v1={<BountyCreate />} v2={<BountyCreateV2 />} />} />
           <Route path="/work" element={<V2Page v1={<WorkList />} v2={<WorkListV2 />} />} />
           <Route path="/work/:id" element={<V2Page v1={<WorkDetail />} v2={<WorkDetailV2 />} />} />

@@ -2,7 +2,7 @@ import { Alert, Button, Form, Input, Modal, Segmented, Tabs, Upload } from 'antd
 import {
   PlusOutlined, ClockCircleOutlined, DownloadOutlined, InboxOutlined, EditOutlined, FileAddOutlined,
 } from '@ant-design/icons';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useStore } from '@/store/store';
 import {
   useBountyBoard, BOUNTY_STATUS_META, BOUNTY_ALLOW_EXT, MODIFY_LIMIT,
@@ -38,9 +38,88 @@ const STATUS_TONE: Partial<Record<BountyStatus, string>> = {
 };
 
 export default function BountyListV2() {
-  const { me } = useStore();
+  const { db, me } = useStore();
   const nav = useNavigate();
+  /**
+   * V8.3-10.08 需求④：悬赏卡片可点进详情。
+   * 实现取舍：不另建详情页组件，而是让本组件同时承担「列表 / 单条详情」两种形态
+   * （/bounty 与 /bounty/:id 指向同一组件）—— 认领、提交方案、修改、补充资料
+   * 这四个弹窗都在本组件里，另建页面就得把这些 Modal 再复制一份，行为迟早漂移。
+   */
+  const { id: detailId } = useParams<{ id?: string }>();
   const b = useBountyBoard();
+  const detail = detailId ? db.bounties.find((x) => x.id === detailId) : undefined;
+
+  /** 操作区：列表与详情共用一套按钮，避免两处按钮逻辑漂移 */
+  const actionsOf = (x: Bounty) => (
+    <div
+      style={{ display: 'flex', gap: 'var(--wb-space-2)', flexWrap: 'wrap', marginTop: 'var(--wb-space-4)' }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {x.status === 'PUBLISHED' && x.owner_union_id !== me.union_id && (
+        <Button size="small" type="primary" onClick={() => b.claim(x)}>认领</Button>
+      )}
+      {/* V8-10.07 补：不可认领时给出原因，避免「没按钮又没解释」 */}
+      {claimHint(x, me.union_id) && (
+        <span className="wb2-note" style={{ alignSelf: 'center' }}>{claimHint(x, me.union_id)}</span>
+      )}
+      {x.status === 'CLAIMED' && x.claimant_union_id === me.union_id && (
+        <>
+          <Button size="small" type="primary" onClick={() => b.openSolutionModal(x, 'SUBMIT')}>提交方案</Button>
+          <Button size="small" danger onClick={() => b.withdraw(x)}>撤回认领</Button>
+        </>
+      )}
+      {/* V6.0 CR-21：已提交及以后开放「修改 / 补充」双通道 */}
+      {b.solutionV2 && ['SUBMITTED', 'APPROVED'].includes(x.status) && x.claimant_union_id === me.union_id && (
+        <>
+          {x.status !== 'APPROVED' ? (
+            <Button
+              size="small" icon={<EditOutlined />}
+              disabled={(x.solution_modify_count ?? 0) >= MODIFY_LIMIT}
+              onClick={() => b.openSolutionModal(x, 'MODIFY')}
+            >
+              修改方案（剩 {MODIFY_LIMIT - (x.solution_modify_count ?? 0)} 次）
+            </Button>
+          ) : (
+            <span className="wb2-note">已通过，仅可补充</span>
+          )}
+          <Button size="small" icon={<FileAddOutlined />} onClick={() => b.openSolutionModal(x, 'SUPPLEMENT')}>补充资料</Button>
+        </>
+      )}
+      {x.status === 'PENDING_REVIEW' && (
+        <span className="wb2-tag wa"><i className="d" />组织者审核中（对外不可见）</span>
+      )}
+      {x.status === 'REJECTED' && x.owner_union_id === me.union_id && (
+        <Button size="small" onClick={() => nav('/bounty/create')}>修改后重提</Button>
+      )}
+    </div>
+  );
+
+  /** 结构化方案块：列表与详情共用（保留旧 solution 字段可读，不丢数据） */
+  const solutionBlock = (x: Bounty) =>
+    (x.solution || x.solution_fields) ? (
+      <div className="wb2-quote ok" style={{ marginTop: 'var(--wb-space-3)' }}>
+        {x.solution_fields ? (
+          <>
+            {x.solution_fields.before_after && <div className="wb2-kv"><b>前后对比：</b>{x.solution_fields.before_after}</div>}
+            {x.solution_fields.scene_desc && <div className="wb2-kv"><b>场景说明：</b>{x.solution_fields.scene_desc}</div>}
+            {x.solution_fields.output_sample && <div className="wb2-kv"><b>产出样本：</b>{x.solution_fields.output_sample}</div>}
+            {x.solution_fields.skill_used && <div className="wb2-kv"><b>所用 Skill：</b>{x.solution_fields.skill_used}</div>}
+          </>
+        ) : (
+          <div className="wb2-kv"><b>方案：</b>{x.solution}</div>
+        )}
+        {!!x.solution_attachments?.length && (
+          <div className="wb2-note">📎 {x.solution_attachments.map((f) => f.name).join('、')}</div>
+        )}
+        {/* V6.0 CR-21：版本链与补充记录可见，证明「修改不覆写」 */}
+        {((x.solution_versions?.length ?? 0) > 1 || (x.supplements?.length ?? 0) > 0) && (
+          <div className="wb2-note">
+            共 {x.solution_versions?.length ?? 0} 个版本 · {x.supplements?.length ?? 0} 条补充（原版本保留可追溯）
+          </div>
+        )}
+      </div>
+    ) : null;
 
   const attBlock = (
     <>
@@ -74,6 +153,202 @@ export default function BountyListV2() {
       </Form.Item>
     </>
   );
+  /**
+   * 三个方案弹窗（提交 / 修改 / 补充）：列表形态与详情形态共用。
+   * V8.3-10.08 需求④：详情页也要能提交方案，所以弹窗不能只挂在列表分支里。
+   */
+  const dialogs = (
+    <>
+        {/* V6.0 CR-20：结构化方案提交（开关关闭时为 V5.0 单文本框） */}
+        <Modal
+          open={!!b.submitting}
+          title={`提交方案 · ${b.submitting?.title}`}
+          onCancel={() => b.setSubmitting(null)}
+          onOk={b.doSubmit}
+          okText="提交方案"
+          destroyOnClose
+          width={640}
+        >
+          <div className="wb2-note" style={{ marginBottom: 12 }}>期望产出：{b.submitting?.expected_output}</div>
+          {!b.solutionV2 ? (
+            <Input.TextArea
+              rows={5} value={b.solution} onChange={(e) => b.setSolution(e.target.value)}
+              placeholder="说明你的解决方案、验证方式与产出物（≥20 字）"
+            />
+          ) : (
+            <Form form={b.solForm} layout="vertical" preserve={false}>
+              <Form.Item name="scene_desc" label="业务场景说明" rules={[{ required: true, message: '请说明业务场景' }]}
+                extra="说清：谁遇到、多久一次、现在怎么解决、代价是什么">
+                <Input.TextArea rows={3} />
+              </Form.Item>
+              <Form.Item name="before_after" label="前后对比" rules={[{ required: true, message: '请填写前后对比' }]}
+                extra="使用前耗时/质量 → 使用后耗时/质量，用数字说话">
+                <Input.TextArea rows={2} placeholder="使用前 2 小时/次 → 使用后 25 分钟/次" />
+              </Form.Item>
+              <Form.Item name="output_sample" label="产出样本" rules={[{ required: true, message: '请粘贴产出样本' }]}>
+                <Input.TextArea rows={3} placeholder="粘贴一段真实产出（注意脱敏）" />
+              </Form.Item>
+              <Form.Item name="skill_used" label="所用 Skill" rules={[{ required: true, message: '请填写所用 Skill' }]}>
+                <Input placeholder="内置 Skill 名称，或自建 Skill 包名称" />
+              </Form.Item>
+              {attBlock}
+            </Form>
+          )}
+        </Modal>
+
+        {/* V6.0 CR-21：方案修改 —— 回退至 SUBMITTED 重走审核 */}
+        <Modal
+          open={!!b.modifyTarget}
+          title={`修改方案 · ${b.modifyTarget?.title}`}
+          onCancel={() => b.setModifyTarget(null)}
+          onOk={b.doModify}
+          okText="提交修改并重走审核"
+          okButtonProps={{ danger: true }}
+          destroyOnClose
+          width={640}
+        >
+          <Alert
+            type="warning" showIcon style={{ marginBottom: 12 }}
+            message="修改会回退状态并重新审核"
+            description={`提交后状态回到「方案已提交」重走审核，原审核记录标记作废但保留为历史版本。剩余修改次数 ${MODIFY_LIMIT - (b.modifyTarget?.solution_modify_count ?? 0)} 次。`}
+          />
+          <Form form={b.solForm} layout="vertical" preserve={false}>
+            <Form.Item name="scene_desc" label="业务场景说明" rules={[{ required: true }]}><Input.TextArea rows={3} /></Form.Item>
+            <Form.Item name="before_after" label="前后对比" rules={[{ required: true }]}><Input.TextArea rows={2} /></Form.Item>
+            <Form.Item name="output_sample" label="产出样本" rules={[{ required: true }]}><Input.TextArea rows={3} /></Form.Item>
+            <Form.Item name="skill_used" label="所用 Skill" rules={[{ required: true }]}><Input /></Form.Item>
+            <Form.Item name="note" label="修改说明" rules={[{ required: true, message: '请填写修改说明' }, { min: 10, message: '至少 10 字，便于组织者比对' }]}>
+              <Input.TextArea rows={2} placeholder="说明改了什么、为什么改（≥10 字）" />
+            </Form.Item>
+            {attBlock}
+          </Form>
+        </Modal>
+
+        {/* V6.0 CR-21：方案补充 —— 仅追加，不改状态与积分 */}
+        <Modal
+          open={!!b.supplementTarget}
+          title={`补充资料 · ${b.supplementTarget?.title}`}
+          onCancel={() => b.setSupplementTarget(null)}
+          onOk={b.doSupplement}
+          okText="提交补充"
+          destroyOnClose
+          width={640}
+        >
+          <Alert
+            type="info" showIcon style={{ marginBottom: 12 }}
+            message="补充不改变状态与积分"
+            description="仅追加新资料，原流程继续推进，审核结论与已入账积分不受影响。"
+          />
+          <Form form={b.solForm} layout="vertical" preserve={false}>
+            <Form.Item name="content" label="补充说明" rules={[{ required: true, message: '请填写补充说明' }]}>
+              <Input.TextArea rows={4} placeholder="补充：更完整的实测数据、第二版产物、客户反馈等" />
+            </Form.Item>
+            {attBlock}
+          </Form>
+        </Modal>
+    </>
+  );
+
+
+  /**
+   * V8.3-10.08 需求④：单条详情形态。
+   * 可见性口径与列表 Tab 一致：MEMBER_DRAFT / PENDING_REVIEW 只有本人与组织者能看，
+   * 否则「知道 id 就能看别人的草稿」，等于后台门禁失效。
+   */
+  if (detailId) {
+    if (!detail) {
+      return (
+        <div className="wb2-empty">
+          <div className="ic"><InboxOutlined /></div>
+          <div className="t">悬赏不存在或已下架</div>
+          <div className="d">它可能被发起人删除，或已由组织者下架</div>
+          <Link to="/bounty"><Button type="primary">回到悬赏榜</Button></Link>
+        </div>
+      );
+    }
+    const mine = detail.owner_union_id === me.union_id;
+    const hidden =
+      ['MEMBER_DRAFT', 'PENDING_REVIEW', 'REJECTED'].includes(detail.status) && !mine
+      && me.roles.includes('ORGANIZER');
+    if (hidden) {
+      return (
+        <div className="wb2-empty">
+          <div className="ic"><InboxOutlined /></div>
+          <div className="t">该悬赏当前对外不可见</div>
+          <div className="d">草稿 / 待审核 / 已驳回的悬赏仅发起人与组织者可见</div>
+          <Link to="/bounty"><Button type="primary">回到悬赏榜</Button></Link>
+        </div>
+      );
+    }
+    return (
+      <div>
+        <Button size="small" style={{ marginBottom: 'var(--wb-space-4)' }} onClick={() => nav('/bounty')}>
+          ← 返回悬赏榜
+        </Button>
+        <section className="wb2-card" style={{ padding: 'var(--wb-space-6)', borderLeft: `3px solid ${trackVar(detail.track)}` }}>
+          <div style={{ display: 'flex', gap: 'var(--wb-space-2)', flexWrap: 'wrap' }}>
+            <span className={`wb2-tag ${STATUS_TONE[detail.status] ?? 'id'}`}>
+              <i className="d" />{BOUNTY_STATUS_META[detail.status].text}
+            </span>
+            <TrackTag track={detail.track} />
+            <span className="wb2-tag run"><i className="d" />{detail.points} 积分</span>
+            <span className="wb2-tag id"><i className="d" />{detail.source}</span>
+          </div>
+          <h2 style={{ fontSize: 24, fontWeight: 800, lineHeight: 1.3, margin: '10px 0 8px' }}>{detail.title}</h2>
+          <div className="wb2-note">
+            发布人 {detail.owner_name}
+            {detail.claimant_name ? ` · 认领人 ${detail.claimant_name}` : ''}
+            {' · '}截止 {detail.due_date}
+            {detail.created_at ? ` · 发布于 ${detail.created_at}` : ''}
+          </div>
+
+          <div className="wb2-sechd" style={{ marginTop: 'var(--wb-space-6)' }}><div className="t">业务痛点</div></div>
+          <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.8 }}>{detail.pain_point}</div>
+
+          {detail.expected_output && (
+            <>
+              <div className="wb2-sechd" style={{ marginTop: 'var(--wb-space-6)' }}><div className="t">期望产出</div></div>
+              <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.8 }}>{detail.expected_output}</div>
+            </>
+          )}
+
+          {detail.reject_reason && (
+            <div className="wb2-quote warn" style={{ marginTop: 'var(--wb-space-4)' }}>
+              <b>驳回理由：</b>{detail.reject_reason}
+            </div>
+          )}
+
+          <div className="wb2-sechd" style={{ marginTop: 'var(--wb-space-6)' }}><div className="t">提交方案</div></div>
+          {solutionBlock(detail) ?? <div className="wb2-note">还没有人提交方案</div>}
+
+          {/* V6.0 CR-21：版本链与补充记录逐条展开，详情页是「可追溯」的主场景 */}
+          {!!detail.solution_versions?.length && (
+            <div className="wb2-sechd" style={{ marginTop: 'var(--wb-space-5)' }}><div className="t">方案版本（修改不覆写）</div></div>
+          )}
+          {detail.solution_versions?.map((v) => (
+            <div key={v.id} className="wb2-kv" style={{ fontSize: 'var(--wb-fs-label)' }}>
+              <b>v{v.version}</b> · {v.operator} · {v.created_at}
+              {v.fields?.scene_desc ? ` — ${v.fields.scene_desc}` : ''}
+            </div>
+          ))}
+          {!!detail.supplements?.length && (
+            <>
+              <div className="wb2-sechd" style={{ marginTop: 'var(--wb-space-5)' }}><div className="t">补充记录</div></div>
+              {detail.supplements.map((s) => (
+                <div key={s.id} className="wb2-kv" style={{ fontSize: 'var(--wb-fs-label)' }}>
+                  {s.content} · {s.operator} · {s.created_at}
+                  {!!s.attachments?.length ? ` · 📎 ${s.attachments.map((f) => f.name).join('、')}` : ''}
+                </div>
+              ))}
+            </>
+          )}
+
+          {actionsOf(detail)}
+        </section>
+        {dialogs}
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -117,8 +392,22 @@ export default function BountyListV2() {
       ) : (
         <div className="wb2-cgrid">
           {b.list.map((x: Bounty) => (
-            <div className="wb2-ccard" key={x.id} style={{ borderLeft: `3px solid ${trackVar(x.track)}` }}>
-              <div className="ct">{x.title}</div>
+            /* V8.3-10.08 需求④：整卡可点进 /bounty/:id；按钮区 stopPropagation 保住原操作 */
+            <div
+              key={x.id}
+              className="wb2-ccard"
+              role="link"
+              tabIndex={0}
+              style={{ borderLeft: `3px solid ${trackVar(x.track)}`, cursor: 'pointer' }}
+              onClick={() => nav(`/bounty/${x.id}`)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  nav(`/bounty/${x.id}`);
+                }
+              }}
+            >
+              <div className="ct">{x.title} ›</div>
               <div style={{ display: 'flex', gap: 'var(--wb-space-2)', flexWrap: 'wrap', marginTop: 'var(--wb-space-2)' }}>
                 <span className={`wb2-tag ${STATUS_TONE[x.status] ?? 'id'}`}>
                   <i className="d" />{BOUNTY_STATUS_META[x.status].text}
@@ -141,164 +430,16 @@ export default function BountyListV2() {
                 </div>
               )}
 
-              {/* V6.0 CR-20：结构化方案展示（旧单文本框数据仍可读，不丢） */}
-              {(x.solution || x.solution_fields) && (
-                <div className="wb2-quote ok" style={{ marginTop: 'var(--wb-space-3)' }}>
-                  {x.solution_fields ? (
-                    <>
-                      {x.solution_fields.before_after && <div className="wb2-kv"><b>前后对比：</b>{x.solution_fields.before_after}</div>}
-                      {x.solution_fields.scene_desc && <div className="wb2-kv"><b>场景说明：</b>{x.solution_fields.scene_desc}</div>}
-                      {x.solution_fields.output_sample && <div className="wb2-kv"><b>产出样本：</b>{x.solution_fields.output_sample}</div>}
-                      {x.solution_fields.skill_used && <div className="wb2-kv"><b>所用 Skill：</b>{x.solution_fields.skill_used}</div>}
-                    </>
-                  ) : (
-                    <div className="wb2-kv"><b>方案：</b>{x.solution}</div>
-                  )}
-                  {!!x.solution_attachments?.length && (
-                    <div className="wb2-note">📎 {x.solution_attachments.map((f) => f.name).join('、')}</div>
-                  )}
-                  {/* V6.0 CR-21：版本链与补充记录可见，证明「修改不覆写」 */}
-                  {((x.solution_versions?.length ?? 0) > 1 || (x.supplements?.length ?? 0) > 0) && (
-                    <div className="wb2-note">
-                      共 {x.solution_versions?.length ?? 0} 个版本 · {x.supplements?.length ?? 0} 条补充（原版本保留可追溯）
-                    </div>
-                  )}
-                </div>
-              )}
+              {/* V6.0 CR-20：结构化方案展示（与详情共用同一块渲染） */}
+              {solutionBlock(x)}
 
-              <div style={{
-                display: 'flex', gap: 'var(--wb-space-2)', flexWrap: 'wrap',
-                marginTop: 'var(--wb-space-4)',
-              }}>
-                {x.status === 'PUBLISHED' && x.owner_union_id !== me.union_id && (
-                  <Button size="small" type="primary" onClick={() => b.claim(x)}>认领</Button>
-                )}
-                {/* V8-10.07 补：不可认领时给出原因，避免「没按钮又没解释」 */}
-                {claimHint(x, me.union_id) && (
-                  <span className="wb2-note" style={{ alignSelf: 'center' }}>{claimHint(x, me.union_id)}</span>
-                )}
-                {x.status === 'CLAIMED' && x.claimant_union_id === me.union_id && (
-                  <>
-                    <Button size="small" type="primary" onClick={() => b.openSolutionModal(x, 'SUBMIT')}>提交方案</Button>
-                    <Button size="small" danger onClick={() => b.withdraw(x)}>撤回认领</Button>
-                  </>
-                )}
-                {/* V6.0 CR-21：已提交及以后开放「修改 / 补充」双通道 */}
-                {b.solutionV2 && ['SUBMITTED', 'APPROVED'].includes(x.status) && x.claimant_union_id === me.union_id && (
-                  <>
-                    {x.status !== 'APPROVED' ? (
-                      <Button
-                        size="small" icon={<EditOutlined />}
-                        disabled={(x.solution_modify_count ?? 0) >= MODIFY_LIMIT}
-                        onClick={() => b.openSolutionModal(x, 'MODIFY')}
-                      >
-                        修改方案（剩 {MODIFY_LIMIT - (x.solution_modify_count ?? 0)} 次）
-                      </Button>
-                    ) : (
-                      <span className="wb2-note">已通过，仅可补充</span>
-                    )}
-                    <Button size="small" icon={<FileAddOutlined />} onClick={() => b.openSolutionModal(x, 'SUPPLEMENT')}>补充资料</Button>
-                  </>
-                )}
-                {x.status === 'PENDING_REVIEW' && (
-                  <span className="wb2-tag wa"><i className="d" />组织者审核中（对外不可见）</span>
-                )}
-                {x.status === 'REJECTED' && x.owner_union_id === me.union_id && (
-                  <Button size="small" onClick={() => nav('/bounty/create')}>修改后重提</Button>
-                )}
-              </div>
+              {actionsOf(x)}
             </div>
           ))}
         </div>
       )}
 
-      {/* V6.0 CR-20：结构化方案提交（开关关闭时为 V5.0 单文本框） */}
-      <Modal
-        open={!!b.submitting}
-        title={`提交方案 · ${b.submitting?.title}`}
-        onCancel={() => b.setSubmitting(null)}
-        onOk={b.doSubmit}
-        okText="提交方案"
-        destroyOnClose
-        width={640}
-      >
-        <div className="wb2-note" style={{ marginBottom: 12 }}>期望产出：{b.submitting?.expected_output}</div>
-        {!b.solutionV2 ? (
-          <Input.TextArea
-            rows={5} value={b.solution} onChange={(e) => b.setSolution(e.target.value)}
-            placeholder="说明你的解决方案、验证方式与产出物（≥20 字）"
-          />
-        ) : (
-          <Form form={b.solForm} layout="vertical" preserve={false}>
-            <Form.Item name="scene_desc" label="业务场景说明" rules={[{ required: true, message: '请说明业务场景' }]}
-              extra="说清：谁遇到、多久一次、现在怎么解决、代价是什么">
-              <Input.TextArea rows={3} />
-            </Form.Item>
-            <Form.Item name="before_after" label="前后对比" rules={[{ required: true, message: '请填写前后对比' }]}
-              extra="使用前耗时/质量 → 使用后耗时/质量，用数字说话">
-              <Input.TextArea rows={2} placeholder="使用前 2 小时/次 → 使用后 25 分钟/次" />
-            </Form.Item>
-            <Form.Item name="output_sample" label="产出样本" rules={[{ required: true, message: '请粘贴产出样本' }]}>
-              <Input.TextArea rows={3} placeholder="粘贴一段真实产出（注意脱敏）" />
-            </Form.Item>
-            <Form.Item name="skill_used" label="所用 Skill" rules={[{ required: true, message: '请填写所用 Skill' }]}>
-              <Input placeholder="内置 Skill 名称，或自建 Skill 包名称" />
-            </Form.Item>
-            {attBlock}
-          </Form>
-        )}
-      </Modal>
-
-      {/* V6.0 CR-21：方案修改 —— 回退至 SUBMITTED 重走审核 */}
-      <Modal
-        open={!!b.modifyTarget}
-        title={`修改方案 · ${b.modifyTarget?.title}`}
-        onCancel={() => b.setModifyTarget(null)}
-        onOk={b.doModify}
-        okText="提交修改并重走审核"
-        okButtonProps={{ danger: true }}
-        destroyOnClose
-        width={640}
-      >
-        <Alert
-          type="warning" showIcon style={{ marginBottom: 12 }}
-          message="修改会回退状态并重新审核"
-          description={`提交后状态回到「方案已提交」重走审核，原审核记录标记作废但保留为历史版本。剩余修改次数 ${MODIFY_LIMIT - (b.modifyTarget?.solution_modify_count ?? 0)} 次。`}
-        />
-        <Form form={b.solForm} layout="vertical" preserve={false}>
-          <Form.Item name="scene_desc" label="业务场景说明" rules={[{ required: true }]}><Input.TextArea rows={3} /></Form.Item>
-          <Form.Item name="before_after" label="前后对比" rules={[{ required: true }]}><Input.TextArea rows={2} /></Form.Item>
-          <Form.Item name="output_sample" label="产出样本" rules={[{ required: true }]}><Input.TextArea rows={3} /></Form.Item>
-          <Form.Item name="skill_used" label="所用 Skill" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="note" label="修改说明" rules={[{ required: true, message: '请填写修改说明' }, { min: 10, message: '至少 10 字，便于组织者比对' }]}>
-            <Input.TextArea rows={2} placeholder="说明改了什么、为什么改（≥10 字）" />
-          </Form.Item>
-          {attBlock}
-        </Form>
-      </Modal>
-
-      {/* V6.0 CR-21：方案补充 —— 仅追加，不改状态与积分 */}
-      <Modal
-        open={!!b.supplementTarget}
-        title={`补充资料 · ${b.supplementTarget?.title}`}
-        onCancel={() => b.setSupplementTarget(null)}
-        onOk={b.doSupplement}
-        okText="提交补充"
-        destroyOnClose
-        width={640}
-      >
-        <Alert
-          type="info" showIcon style={{ marginBottom: 12 }}
-          message="补充不改变状态与积分"
-          description="仅追加新资料，原流程继续推进，审核结论与已入账积分不受影响。"
-        />
-        <Form form={b.solForm} layout="vertical" preserve={false}>
-          <Form.Item name="content" label="补充说明" rules={[{ required: true, message: '请填写补充说明' }]}>
-            <Input.TextArea rows={4} placeholder="补充：更完整的实测数据、第二版产物、客户反馈等" />
-          </Form.Item>
-          {attBlock}
-        </Form>
-      </Modal>
+      {dialogs}
     </div>
   );
 }

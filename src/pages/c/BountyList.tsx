@@ -1,6 +1,6 @@
 import { Button, Card, Col, Empty, Row, Segmented, Space, Typography, Tabs, Modal, Input, Form, Upload, Alert, App as AntApp } from 'antd';
 import { PlusOutlined, ClockCircleOutlined, DownloadOutlined, InboxOutlined, EditOutlined, FileAddOutlined } from '@ant-design/icons';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useMemo, useState } from 'react';
 import { useStore } from '@/store/store';
 import { COLOR } from '@/theme';
@@ -31,6 +31,13 @@ const STATUS_META: Record<BountyStatus, { text: string; color: string }> = {
 export default function BountyList() {
   const { db, me, setDb, log, flags } = useStore();
   const nav = useNavigate();
+  /**
+   * V8.3-10.08 需求④：悬赏卡片可点进详情（与 v2 同源同 URL 形态 /bounty/:id）。
+   * 做法与 v2 一致：同一组件承担列表/详情两种形态，三个方案弹窗留在页面末尾，
+   * 详情态照样能提交方案（不复制 Modal）。
+   */
+  const { id: detailId } = useParams<{ id?: string }>();
+  const detail = detailId ? db.bounties.find((x) => x.id === detailId) : undefined;
   const { message, modal } = AntApp.useApp();
   const [tab, setTab] = useState('all');
   const [filter, setFilter] = useState('全部');
@@ -238,8 +245,160 @@ export default function BountyList() {
     setSupplementTarget(b);
   };
 
+  /**
+   * V8.3-10.08 需求④：详情可见性口径与列表 Tab 对齐 ——
+   * MEMBER_DRAFT / PENDING_REVIEW / REJECTED 仅发起人与组织者可见，
+   * 否则「拿到 id 就能看别人草稿」，后台门禁形同虚设。
+   */
+  const detailHidden = (b: Bounty) =>
+    ['MEMBER_DRAFT', 'PENDING_REVIEW', 'REJECTED'].includes(b.status)
+    && b.owner_union_id !== me.union_id
+    && !me.roles.includes('ORGANIZER');
+
+  /** 操作区：列表卡片与详情页共用一套按钮，避免两处漂移 */
+  const actionsOf = (b: Bounty) => (
+    <>
+      {b.status === 'PUBLISHED' && b.owner_union_id !== me.union_id && (
+        <Button size="small" type="primary" onClick={() => claim(b)}>认领</Button>
+      )}
+      {/* V8-10.07 补：不可认领时给出原因，避免「没按钮又没解释」 */}
+      {claimHint(b, me.union_id) && (
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>{claimHint(b, me.union_id)}</Typography.Text>
+      )}
+      {b.status === 'CLAIMED' && b.claimant_union_id === me.union_id && (
+        <>
+          <Button size="small" type="primary" onClick={() => openSolutionModal(b, 'SUBMIT')}>提交方案</Button>
+          <Button size="small" danger onClick={() => withdraw(b)}>撤回认领</Button>
+        </>
+      )}
+      {/* V6.0 CR-21：已提交及以后开放「修改 / 补充」双通道 */}
+      {solutionV2 && ['SUBMITTED', 'APPROVED'].includes(b.status) && b.claimant_union_id === me.union_id && (
+        <>
+          {b.status !== 'APPROVED' ? (
+            <Button
+              size="small" icon={<EditOutlined />}
+              disabled={(b.solution_modify_count ?? 0) >= MODIFY_LIMIT}
+              onClick={() => openSolutionModal(b, 'MODIFY')}
+            >
+              修改方案（剩 {MODIFY_LIMIT - (b.solution_modify_count ?? 0)} 次）
+            </Button>
+          ) : (
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>已通过，仅可补充</Typography.Text>
+          )}
+          <Button size="small" icon={<FileAddOutlined />} onClick={() => openSolutionModal(b, 'SUPPLEMENT')}>补充资料</Button>
+        </>
+      )}
+      {b.status === 'PENDING_REVIEW' && (
+        <SoftTag text="组织者审核中（对外不可见）" tone="gold" />
+      )}
+      {b.status === 'REJECTED' && b.owner_union_id === me.union_id && (
+        <Button size="small" onClick={() => nav('/bounty/create')}>修改后重提</Button>
+      )}
+    </>
+  );
+
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
+      {/* V8.3-10.08 需求④：详情态不显示列表头与筛选，直接给一条悬赏的完整信息 */}
+      {detailId ? (
+        <>
+          <Button size="small" style={{ alignSelf: 'flex-start' }} onClick={() => nav('/bounty')}>← 返回悬赏榜</Button>
+          {!detail ? (
+            <Card>
+              <Empty description="悬赏不存在或已下架">
+                <Link to="/bounty"><Button type="primary">回到悬赏榜</Button></Link>
+              </Empty>
+            </Card>
+          ) : detailHidden(detail) ? (
+            <Card>
+              <Empty description="该悬赏当前对外不可见">
+                <Typography.Text type="secondary">草稿 / 待审核 / 已驳回的悬赏仅发起人与组织者可见</Typography.Text>
+                <div style={{ marginTop: 12 }}><Link to="/bounty"><Button type="primary">回到悬赏榜</Button></Link></div>
+              </Empty>
+            </Card>
+          ) : (
+            <Card>
+              <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                <Space wrap size={6}>
+                  <SoftTag
+                    text={STATUS_META[detail.status].text}
+                    tone={detail.status === 'APPROVED' ? 'green' : detail.status === 'REJECTED' ? 'red' : detail.status === 'PENDING_REVIEW' ? 'gold' : detail.status === 'PUBLISHED' ? 'primary' : 'blue'}
+                  />
+                  <TrackTag track={detail.track} />
+                  <span style={{ background: COLOR.primaryLight, color: '#C2410C', fontSize: 12, fontWeight: 700, padding: '2px 10px', borderRadius: 6 }} className="num">{detail.points} 积分</span>
+                  <span style={{ background: '#F7F1E6', color: COLOR.textSub, fontSize: 11, padding: '2px 8px', borderRadius: 6 }}>{detail.source}</span>
+                </Space>
+                <Typography.Title level={3} style={{ margin: 0 }}>{detail.title}</Typography.Title>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  发布人 {detail.owner_name}{detail.claimant_name ? ` · 认领人 ${detail.claimant_name}` : ''}
+                  {' · '}截止 {detail.due_date}{detail.created_at ? ` · 发布于 ${detail.created_at}` : ''}
+                </Typography.Text>
+
+                <Typography.Text strong>业务痛点</Typography.Text>
+                <Typography.Paragraph style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>{detail.pain_point}</Typography.Paragraph>
+
+                {detail.expected_output && (
+                  <>
+                    <Typography.Text strong>期望产出</Typography.Text>
+                    <Typography.Paragraph style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>{detail.expected_output}</Typography.Paragraph>
+                  </>
+                )}
+
+                {detail.reject_reason && (
+                  <div style={{ padding: 10, background: '#FEF2F2', borderRadius: 10, fontSize: 12, color: '#B91C1C' }}>
+                    <b>驳回理由：</b>{detail.reject_reason}
+                  </div>
+                )}
+
+                <Typography.Text strong>提交方案</Typography.Text>
+                {(detail.solution || detail.solution_fields) ? (
+                  <div style={{ padding: 10, background: '#ECFDF5', borderRadius: 10, fontSize: 12, lineHeight: 1.6 }}>
+                    {detail.solution_fields ? (
+                      <>
+                        {detail.solution_fields.before_after && <div><b>前后对比：</b>{detail.solution_fields.before_after}</div>}
+                        {detail.solution_fields.scene_desc && <div style={{ marginTop: 4 }}><b>场景说明：</b>{detail.solution_fields.scene_desc}</div>}
+                        {detail.solution_fields.output_sample && <div style={{ marginTop: 4 }}><b>产出样本：</b>{detail.solution_fields.output_sample}</div>}
+                        {detail.solution_fields.skill_used && <div style={{ marginTop: 4 }}><b>所用 Skill：</b>{detail.solution_fields.skill_used}</div>}
+                      </>
+                    ) : (
+                      <div><b>方案：</b>{detail.solution}</div>
+                    )}
+                  </div>
+                ) : (
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>还没有人提交方案</Typography.Text>
+                )}
+
+                {/* V6.0 CR-21：版本链与补充记录逐条展开（详情页是可追溯的主场景） */}
+                {!!detail.solution_versions?.length && (
+                  <>
+                    <Typography.Text strong>方案版本（修改不覆写）</Typography.Text>
+                    {detail.solution_versions.map((v) => (
+                      <div key={v.id} style={{ fontSize: 12, color: COLOR.textSub }}>
+                        v{v.version} · {v.operator} · {v.created_at}
+                        {v.fields?.scene_desc ? ` — ${v.fields.scene_desc}` : ''}
+                      </div>
+                    ))}
+                  </>
+                )}
+                {!!detail.supplements?.length && (
+                  <>
+                    <Typography.Text strong>补充记录</Typography.Text>
+                    {detail.supplements.map((s) => (
+                      <div key={s.id} style={{ fontSize: 12, color: COLOR.textSub }}>
+                        {s.content} · {s.operator} · {s.created_at}
+                        {!!s.attachments?.length ? ` · 📎 ${s.attachments.map((f) => f.name).join('、')}` : ''}
+                      </div>
+                    ))}
+                  </>
+                )}
+
+                <Space wrap>{actionsOf(detail)}</Space>
+              </Space>
+            </Card>
+          )}
+        </>
+      ) : (
+        <>
       <PageHeader
         title="悬赏榜"
         desc="真实业务痛点 → 可认领任务；成员也可发起，审核通过后展示"
@@ -276,9 +435,22 @@ export default function BountyList() {
         <Row gutter={[16, 16]}>
           {list.map((b) => (
             <Col xs={24} lg={12} key={b.id}>
-              <div className="wb-card wb-card-hover" style={{ padding: 18, height: '100%', display: 'flex', flexDirection: 'column' }}>
+              {/* V8.3-10.08 需求④：整卡可点进 /bounty/:id；按钮区 stopPropagation 保住原操作 */}
+              <div
+                className="wb-card wb-card-hover"
+                role="link"
+                tabIndex={0}
+                style={{ padding: 18, height: '100%', display: 'flex', flexDirection: 'column', cursor: 'pointer' }}
+                onClick={() => nav(`/bounty/${b.id}`)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    nav(`/bounty/${b.id}`);
+                  }
+                }}
+              >
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
-                  <Typography.Text strong style={{ fontSize: 16, lineHeight: 1.45 }}>{b.title}</Typography.Text>
+                  <Typography.Text strong style={{ fontSize: 16, lineHeight: 1.45 }}>{b.title} ›</Typography.Text>
                   <SoftTag
                     text={STATUS_META[b.status].text}
                     tone={b.status === 'APPROVED' ? 'green' : b.status === 'REJECTED' ? 'red' : b.status === 'PENDING_REVIEW' ? 'gold' : b.status === 'PUBLISHED' ? 'primary' : 'blue'}
@@ -335,50 +507,15 @@ export default function BountyList() {
                   </div>
                 )}
 
-                <Space style={{ marginTop: 14 }} wrap>
-                  {b.status === 'PUBLISHED' && b.owner_union_id !== me.union_id && (
-                    <Button size="small" type="primary" onClick={() => claim(b)}>认领</Button>
-                  )}
-                  {/* V8-10.07 补：不可认领时给出原因，避免「没按钮又没解释」 */}
-                  {claimHint(b, me.union_id) && (
-                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      {claimHint(b, me.union_id)}
-                    </Typography.Text>
-                  )}
-                  {b.status === 'CLAIMED' && b.claimant_union_id === me.union_id && (
-                    <>
-                      <Button size="small" type="primary" onClick={() => openSolutionModal(b, 'SUBMIT')}>提交方案</Button>
-                      <Button size="small" danger onClick={() => withdraw(b)}>撤回认领</Button>
-                    </>
-                  )}
-                  {/* V6.0 CR-21：已提交及以后开放「修改 / 补充」双通道 */}
-                  {solutionV2 && ['SUBMITTED', 'APPROVED'].includes(b.status) && b.claimant_union_id === me.union_id && (
-                    <>
-                      {b.status !== 'APPROVED' ? (
-                        <Button
-                          size="small" icon={<EditOutlined />}
-                          disabled={(b.solution_modify_count ?? 0) >= MODIFY_LIMIT}
-                          onClick={() => openSolutionModal(b, 'MODIFY')}
-                        >
-                          修改方案（剩 {MODIFY_LIMIT - (b.solution_modify_count ?? 0)} 次）
-                        </Button>
-                      ) : (
-                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>已通过，仅可补充</Typography.Text>
-                      )}
-                      <Button size="small" icon={<FileAddOutlined />} onClick={() => openSolutionModal(b, 'SUPPLEMENT')}>补充资料</Button>
-                    </>
-                  )}
-                  {b.status === 'PENDING_REVIEW' && (
-                    <SoftTag text="组织者审核中（对外不可见）" tone="gold" />
-                  )}
-                  {b.status === 'REJECTED' && b.owner_union_id === me.union_id && (
-                    <Button size="small" onClick={() => nav('/bounty/create')}>修改后重提</Button>
-                  )}
+                <Space style={{ marginTop: 14 }} wrap onClick={(e) => e.stopPropagation()}>
+                  {actionsOf(b)}
                 </Space>
               </div>
             </Col>
           ))}
         </Row>
+      )}
+        </>
       )}
 
       {/* V6.0 CR-20：结构化方案提交（开关关闭时为 V5.0 单文本框） */}

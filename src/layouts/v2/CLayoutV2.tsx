@@ -17,6 +17,7 @@ import { HelperBar } from '@/components/ui';
 import { useUIVersion } from '@/ui/UIVersionProvider';
 import { versionSwitchVisible } from '@/ui/version';
 import { useGlobalSearch } from '@/hooks/useGlobalSearch';
+import { countMyUnread } from '@/service/messageCenter';
 import '../../theme/v2/shell.css';
 
 /**
@@ -119,9 +120,8 @@ export default function CLayoutV2() {
   /** 分组下拉展开态：hover 与 click 共用（触屏无 hover，故必须支持点击） */
   const [openGroup, setOpenGroup] = useState<'act' | 'grow' | null>(null);
 
-  const unread = db.messages.filter(
-    (m) => m.status === '未读' && (m.union_id === 'all' || m.union_id === me.union_id)
-  ).length;
+  /** V8.3-10.08 需求⑤：红点口径下沉到 messageCenter —— 广播不再计入个人未读 */
+  const unread = countMyUnread(db.messages, me);
 
   const currentPath = '/' + (loc.pathname.split('/')[1] ?? '');
 

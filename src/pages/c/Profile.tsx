@@ -9,6 +9,7 @@ import MyTopics from '@/components/MyTopics';
 import { ROLE_LABEL } from '@/mock/types';
 import { SubmitStatusTag } from './WorkList';
 import { useNoteVisible } from '@/auth/annotation';
+import { BROADCAST, countMyUnread, isMyUnread, markAllMyRead, markRead, sortForInbox } from '@/service/messageCenter';
 
 /** V4.0 CR-05：兑换订单状态色
  * '待核销' / '已核销' / '已取消' 为 V3.0 原值；'已发货' / '已完成' 为 CR-05 新增 */
@@ -33,6 +34,8 @@ export default function Profile() {
   const myOrders = db.shopOrders.filter((o) => o.union_id === me.union_id);
   const myBounties = db.bounties.filter((b) => b.owner_union_id === me.union_id || b.claimant_union_id === me.union_id);
   const myMessages = db.messages.filter((m) => m.union_id === 'all' || m.union_id === me.union_id);
+  /** V8.3-10.08 需求⑤：未读口径统一走共享层（本人专属才算红点，广播不占） */
+  const unreadCount = countMyUnread(db.messages, me);
   /** V4.0 CR-05：兑换四段闭环（下单 → 核销 → 发货 → 完成） */
   const shopV2 = flags.shopV2Flow !== false;
 
@@ -263,20 +266,53 @@ export default function Profile() {
               ),
             },
             {
-              key: 'message', label: <Badge count={myMessages.filter((m) => m.status === '未读').length} size="small">消息中心</Badge>,
+              key: 'message',
+              /* V8.3-10.08 需求⑤：与 v2 同源，未读口径统一走 messageCenter */
+              label: <Badge count={unreadCount} size="small">消息中心</Badge>,
               children: (
                 <>
+                  <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
+                    <span style={{ fontSize: 12, color: '#857E90' }}>
+                      未读 {unreadCount} 条 · 共 {myMessages.length} 条（群通知只显示、不占红点）
+                    </span>
+                    <Button
+                      size="small"
+                      style={{ marginLeft: 'auto' }}
+                      disabled={unreadCount === 0}
+                      onClick={() => {
+                        setDb((p) => ({ ...p, messages: markAllMyRead(p.messages, me) }));
+                        message.success('已全部标记为已读');
+                      }}
+                    >
+                      全部已读
+                    </Button>
+                  </div>
                   <List
-                    dataSource={myMessages}
-                    renderItem={(m) => (
-                      <List.Item actions={[<Tag key="c">{m.channel}</Tag>, m.status === '未读' ? <Tag key="u" color="orange">未读</Tag> : null]}>
-                        <List.Item.Meta
-                          avatar={<BellOutlined />}
-                          title={m.title}
-                          description={<span style={{ fontSize: 12 }}>{m.content}（{m.sent_at}）</span>}
-                        />
-                      </List.Item>
-                    )}
+                    dataSource={sortForInbox(myMessages, me)}
+                    renderItem={(m) => {
+                      const unread = isMyUnread(m, me);
+                      return (
+                        <List.Item
+                          onClick={() => {
+                            if (!unread) return;
+                            setDb((p) => ({ ...p, messages: markRead(p.messages, m.id, me) }));
+                          }}
+                          style={{ cursor: 'pointer', opacity: unread || m.union_id === BROADCAST ? 1 : 0.72 }}
+                          actions={[
+                            <Tag key="c">{m.channel}</Tag>,
+                            m.union_id === BROADCAST
+                              ? <Tag key="b" color="purple">全员</Tag>
+                              : unread ? <Tag key="u" color="orange">未读</Tag> : <Tag key="r">已读</Tag>,
+                          ]}
+                        >
+                          <List.Item.Meta
+                            avatar={<BellOutlined style={{ color: unread ? '#FF6B35' : undefined }} />}
+                            title={<span style={{ fontWeight: unread ? 700 : 400 }}>{m.title}</span>}
+                            description={<span style={{ fontSize: 12 }}>{m.content}（{m.sent_at}）</span>}
+                          />
+                        </List.Item>
+                      );
+                    }}
                   />
                   <Card size="small" title="消息订阅设置" style={{ marginTop: 12 }}>
                     <Space direction="vertical" size={8} style={{ width: '100%' }}>
