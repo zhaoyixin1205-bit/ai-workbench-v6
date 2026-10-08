@@ -201,7 +201,7 @@ check('E9 作者：无关联案例时取场景卡创建人', () => {
 });
 check('E10 赛道：案例自带 track 优先', () => {
   const b = S.groupSceneByCase([mk({ track: '客户赋能', source_case_id: 'W1' })], [mkCase({ id: 'W1', track: '团队提效' })]);
-  return b[0].track === '团队提效' && b[0].ink === '#0369A1' ? true : JSON.stringify({ t: b[0].track, i: b[0].ink });
+  return b[0].track === '团队提效' && b[0].ink === '#12845F' ? true : JSON.stringify({ t: b[0].track, i: b[0].ink });
 });
 check('E11 赛道：无案例时按组内多数赛道兜底', () => {
   const b = S.groupSceneByCase([

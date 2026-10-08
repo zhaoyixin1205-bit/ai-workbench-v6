@@ -311,45 +311,6 @@
   flex: 0 0 auto;
 }
 
-/* V9.1：待办行前置图标 chip —— 空卡单行时给视线一个落点（首页「我的待办」） */
-.wb2-todo-ico {
-  flex: 0 0 auto;
-  width: 34px;
-  height: 34px;
-  border-radius: var(--wb-radius-md);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
-  color: var(--wb-primary-ink);
-  background: var(--wb-primary-soft);
-  border: 1px solid var(--wb-border-subtle);
-}
-
-/* V9.1：悬赏积分徽章 —— 数字从裸文本升级为暖橙胶囊，强化「值多少分」的激励感 */
-.wb2-pts {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 12px;
-  border-radius: var(--wb-radius-pill);
-  font-size: var(--wb-fs-label);
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: var(--wb-primary-ink);
-  background: var(--wb-primary-soft);
-  border: 1px solid var(--wb-primary-subtle);
-  white-space: nowrap;
-}
-
-/* V9.1：v2 作用域下把 AntD Card（如首页「我的团队」TeamBoard）对齐暖白卡片语言。
-   ⚠️ 必须 data-ui 前缀守卫：template.css 会被 v1 页面的共享组件（SceneBoard）连带加载，
-   无守卫会污染 v1 的 AntD Card。 */
-body[data-ui='v2'] .ant-card {
-  border-radius: var(--wb-radius-lg);
-  border-color: var(--wb-border-subtle);
-  box-shadow: var(--wb-shadow-card);
-}
-
 /* ---------------- 标签（中性底 + 彩色点） ---------------- */
 .wb2-tag {
   display: inline-flex;
@@ -602,17 +563,6 @@ body[data-ui='v2'] .ant-card {
   background: var(--wb-gradient-brand);
   color: #fff;
   overflow: hidden;
-}
-/* V9.1：三段渐变简化后，紫/粉紫只保留右上一个低透明度光斑（小面积点缀，
-   呼应手册「IP 彩色只点缀」原则；主体纯橙系，不再大面积混色）。 */
-.wb2-hero::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(300px 210px at 86% 0%, rgba(139, 92, 246, 0.18), transparent 62%),
-    radial-gradient(240px 180px at 64% 118%, rgba(236, 72, 153, 0.12), transparent 60%);
-  pointer-events: none;
 }
 .wb2-hero::after {
   content: '';

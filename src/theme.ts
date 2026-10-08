@@ -43,14 +43,13 @@ export const COLOR = {
 export const GRADIENT = {
   primary: 'linear-gradient(135deg, #FF6B35 0%, #FF8F5E 55%, #FF9D70 100%)',
   primaryDark: 'linear-gradient(135deg, #E85A28 0%, #FF6B35 100%)',
-  /** V9.1-10.08：原三段渐变（橙→粉紫→紫）线上反馈过于花哨，与 tokens.css
-   *  --wb-gradient-brand 同源简化为橙系深浅渐变；紫/粉紫只做 Hero 角落小面积光斑。
+  /** V9.0：页面级大横幅统一用手册同款三段渐变（橙 → 粉紫 → 紫）；
    *  小面积（头像/图标）仍用 primary 纯橙渐变，避免花。 */
-  hero: 'linear-gradient(135deg, #FF8A3D 0%, #FF6B35 55%, #F05A28 100%)',
+  hero: 'linear-gradient(135deg, #FF6B35 0%, #EC4899 55%, #8B5CF6 100%)',
   subtle: 'linear-gradient(180deg, #FFFFFF 0%, #FFFDFA 100%)',
   metric: 'linear-gradient(135deg, #FFFFFF 0%, #FFF8F5 100%)',
-  /** V9.1-10.08：同上，与 tokens.css --wb-gradient-brand 三处同源（用于 Hero / 主 CTA / 成就区） */
-  brand: 'linear-gradient(135deg, #FF8A3D 0%, #FF6B35 55%, #F05A28 100%)',
+  /** V9.0：手册同款品牌渐变（橙 → 粉紫 → 紫），用于 Hero / 主 CTA / 成就区 */
+  brand: 'linear-gradient(135deg, #FF6B35 0%, #EC4899 55%, #8B5CF6 100%)',
   /** V9.0：紫倾向的柔和渐变，用于辅区块（比橙浅，避免整页都在强调） */
   soft: 'linear-gradient(135deg, #F6F1FF 0%, #FFF0F6 100%)',
 };

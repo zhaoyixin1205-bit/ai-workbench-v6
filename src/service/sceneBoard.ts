@@ -55,17 +55,16 @@ export interface SceneBandVM {
   ink: string;
 }
 
-/** 赛道 → 视觉：三赛道各一色（V9.1-10.08 对齐《橙白 IP 手册》：紫粉 / 浅蓝弱化 / 橙；
- *  原绿色系不在手册色板内，替换为手册的「浅蓝弱化」档） */
+/** 赛道 → 视觉：三赛道各一色（参考图：蓝紫 / 绿 / 橙） */
 export const SCENE_BAND_STYLE: Record<string, { gradient: string; ink: string }> = {
-  客户赋能: { gradient: 'linear-gradient(105deg,#f6f1ff 0%,#faf3ff 55%,#fff0f6 100%)', ink: '#6D28D9' },
-  团队提效: { gradient: 'linear-gradient(105deg,#eff8ff 0%,#f2f9ff 55%,#eef6ff 100%)', ink: '#0369A1' },
-  销售提效: { gradient: 'linear-gradient(105deg,#fff3e8 0%,#ffeddd 60%,#ffe3c9 100%)', ink: '#C2410C' },
+  客户赋能: { gradient: 'linear-gradient(105deg,#e8ecff 0%,#f3e9ff 55%,#ffe9f3 100%)', ink: '#4B5BD7' },
+  团队提效: { gradient: 'linear-gradient(105deg,#e6f9ec 0%,#eefbe6 55%,#dff5f0 100%)', ink: '#12845F' },
+  销售提效: { gradient: 'linear-gradient(105deg,#fff3e0 0%,#ffe7cc 60%,#ffd9b8 100%)', ink: '#C2410C' },
 };
-/** 历史脏数据出现三赛道以外的 track 时用它兜底，不静默丢卡（V9.1：暖中性底对齐暖白体系） */
+/** 历史脏数据出现三赛道以外的 track 时用它兜底，不静默丢卡 */
 const SCENE_BAND_FALLBACK: { gradient: string; ink: string } = {
-  gradient: 'linear-gradient(105deg,#fbf6ef 0%,#f7f1e6 100%)',
-  ink: '#514B5B',
+  gradient: 'linear-gradient(105deg,#eef1f7 0%,#e9edf5 55%,#e6eaf2 100%)',
+  ink: '#44546B',
 };
 
 export function bandStyleOf(track: string): { gradient: string; ink: string } {
