@@ -1,10 +1,11 @@
 import { useEffect } from 'react';
 import { HashRouter, Route, Routes, Navigate } from 'react-router-dom';
-import { StoreProvider } from '@/store/store';
+import { StoreProvider, useStore } from '@/store/store';
 import UIVersionProvider, { useUIVersion } from '@/ui/UIVersionProvider';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import BootSkeleton from '@/components/BootSkeleton';
 import NotFound from '@/pages/NotFound';
+import Login from '@/pages/Login';
 import CLayout from '@/layouts/CLayout';
 import BLayout from '@/layouts/BLayout';
 import CLayoutV2 from '@/layouts/v2/CLayoutV2';
@@ -119,6 +120,15 @@ function BShell() {
  */
 function AppShell() {
   useFileBackendProbe();
+  /**
+   * V8.3-10.08 需求①：未登录拦截。
+   *
+   * 这里是「所有人进站都是管理员」的修复落点 —— store 已不再兜底到 users[0]，
+   * 未登录时 me 是 ANON_USER（空身份），我们直接渲染登录页而不是业务页面。
+   * 放在 Router 之外：连路由壳（顶栏/菜单）都不渲染，避免未登录者看到任何数据入口。
+   */
+  const { meMissing } = useStore();
+  if (meMissing) return <Login />;
   return (
     <HashRouter>
       <Routes>

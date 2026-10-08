@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { createFileRepository, newFileMeta, makeObjectKey } from './lib/fileRepo.mjs';
 import { createStateStore } from './lib/stateStore.mjs';
 import { validateSkillZip } from './lib/zip.mjs';
+import { authorizeUrl, dingtalkConfig, exchangeCodeForUnionId, newState } from './lib/dingtalkAuth.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST = process.env.DIST_DIR || path.join(__dirname, '..', 'dist');
@@ -93,6 +94,9 @@ function canDownload(meta, actor) {
 let repo;
 let state;
 
+/** V8.3-10.08 需求①：免登 state 短时缓存（内存即可，服务重启即失效反而更安全） */
+const authStates = new Map();
+
 async function handle(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const { pathname } = url;
@@ -120,6 +124,81 @@ async function handle(req, res) {
   }
 
   /* ---- 业务数据（V6.1：替换 localStorage，多人共享整包 + 乐观锁） ---- */
+
+  /* ================================================================
+   * V8.3-10.08 需求①：钉钉免登
+   *
+   * 三个端点：
+   *   GET  /api/auth/dingtalk/config     前端问「有没有配免登」（不返回任何密钥）
+   *   GET  /api/auth/dingtalk/start      下发授权 URL 与 state（CSRF 防护）
+   *   POST /api/auth/dingtalk/exchange   code → union_id → 业务库身份 + 角色摘要
+   * 未配置时 enabled:false，前端降级为身份选择页（演示/本地不受影响）。
+   * ================================================================ */
+  if (pathname === '/api/auth/dingtalk/config' && req.method === 'GET') {
+    const cfg = dingtalkConfig();
+    return sendJson(res, 200, { ok: true, enabled: cfg.enabled, clientId: cfg.enabled ? cfg.clientId : '' });
+  }
+
+  if (pathname === '/api/auth/dingtalk/start' && req.method === 'GET') {
+    const cfg = dingtalkConfig();
+    if (!cfg.enabled) return sendJson(res, 200, { ok: true, enabled: false });
+    const state = newState();
+    const redirectUri = cfg.redirectUri || `http://${req.headers.host}/auth/dingtalk/callback`;
+    /** state 落短时缓存：回调时比对，防伪造与串号 */
+    authStates.set(state, Date.now() + 5 * 60 * 1000);
+    // 清理过期项（顺手做掉，不额外起定时器）
+    for (const [k, exp] of authStates) if (exp < Date.now()) authStates.delete(k);
+    return sendJson(res, 200, { ok: true, enabled: true, state, url: authorizeUrl(cfg, state, redirectUri) });
+  }
+
+  if (pathname === '/api/auth/dingtalk/exchange' && req.method === 'POST') {
+    const read = await readBody(req, 8 * 1024);
+    let payload = {};
+    try {
+      payload = JSON.parse(read.buf?.toString('utf8') || '{}');
+    } catch {
+      return sendJson(res, 400, { ok: false, error: '请求体不是合法 JSON' });
+    }
+    const { code, state: clientState } = payload ?? {};
+    // state 校验：必须是本服务签发且未过期的（防 CSRF / 防伪造回调）
+    const exp = clientState ? authStates.get(clientState) : undefined;
+    if (!exp || exp < Date.now()) {
+      return sendJson(res, 400, { ok: false, error: 'state 无效或已过期，请重新发起免登' });
+    }
+    authStates.delete(clientState);
+
+    let identity;
+    try {
+      identity = await exchangeCodeForUnionId(code);
+    } catch (e) {
+      return sendJson(res, 401, { ok: false, error: e.message, code: e.code ?? 'DINGTALK_FAILED' });
+    }
+
+    /** 用 union_id 在业务库里找人 —— union_id 与钉钉侧同一套标识，无需映射表 */
+    const s = await state.read();
+    const users = s?.data?.users ?? [];
+    const me = users.find((u) => u.union_id === identity.unionId);
+    if (!me) {
+      return sendJson(res, 403, {
+        ok: false,
+        error: '已通过钉钉身份验证，但该成员不在工作台名单里（请联系组织者开通）',
+        code: 'NOT_IN_WORKBENCH',
+        unionId: identity.unionId,
+      });
+    }
+    if (me.status === 99) {
+      return sendJson(res, 403, { ok: false, error: '该成员已离职回收，无法登录', code: 'USER_DISABLED', unionId: identity.unionId });
+    }
+    // 只回身份与角色摘要，权限判定仍在前端 access 层（后端不表态授权）
+    return sendJson(res, 200, {
+      ok: true,
+      unionId: me.union_id,
+      name: me.name,
+      roles: me.roles,
+      scopeType: me.scope_type,
+      jobNumber: me.job_number,
+    });
+  }
 
   // 读取全量。data 为 null 表示「服务端还没有数据」，前端用种子播种后写回。
   if (pathname === '/api/state' && req.method === 'GET') {

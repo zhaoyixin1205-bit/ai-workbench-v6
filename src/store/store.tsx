@@ -297,6 +297,11 @@ interface Ctx {
   /** V6.1：手动拉取服务端最新数据（冲突后点「刷新」时用） */
   pullRemote: () => Promise<void>;
   me: User;
+  /**
+   * V8.3-10.08 需求①：是否处于「未登录」状态。
+   * true 时 me 是 ANON_USER（空身份），App 层据此渲染登录页而不是业务页面。
+   */
+  meMissing: boolean;
   /** 一键切换演示身份（PRD 3.2 双维授权：角色 + 数据范围） */
   switchIdentity: (unionId: string) => void;
   switchToRole: (role: Role) => void;
@@ -329,12 +334,16 @@ const LS_FLAGS = 'wb-workbench-flags-v3.0.0';
 /** V7.1：当前届次选择。与身份、开关一样是个人偏好，不进库（不同人可看不同届次） */
 const LS_CAMPAIGN = 'wb-workbench-campaign-v3.0.0';
 /**
- * 默认身份：V7.1 起通讯录换成钉钉真实数据，演示用的 'uid001' 已不存在。
- * 若沿用旧值会 fallback 到 `db.users[0]`（通讯录里第一个人，是谁完全随机），
- * 等于任何人打开都顶着别人的身份。故显式兜底到组织者本人（工号 E02107）。
- * 用户点「切换身份」后以 localStorage 为准，不受此常量影响。
+ * ⚠️ V8.3-10.08 需求①：默认身份已**取消**。
+ *
+ * 背景：原实现有两个兜底 —— `LS_ME` 无值时取 DEFAULT_ME_ID（组织者），
+ * 且 `me = find(meId) ?? db.users[0]`。两者叠加的结果是
+ * **任何人通过网址进入都是「赵冰艳」视角**（她既是 users[0] 又是 ORGANIZER + scope_ALL）。
+ *
+ * 现在：没有身份就是没有身份。`me` 解析不到用户时返回 undefined，
+ * 由 App 层渲染登录页（钉钉扫码 / 按角色选人），进站即先确认「你是谁」。
  */
-const DEFAULT_ME_ID = 'uQAkcBWeXVgDWRa3ZFiiUxgiEiE';
+const DEFAULT_ME_ID = '';
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [db, setDb] = useState<DB>(() => {
@@ -426,10 +435,46 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(LS_FLAGS, JSON.stringify(flags));
   }, [flags]);
 
-  const me = useMemo(
-    () => db.users.find((x) => x.union_id === meId) ?? db.users[0],
+  /**
+ * 未登录占位身份。
+ *
+ * 关键设计：把「解析不到身份」的失败方向从 **fail-open（顶成 users[0] = 全域管理员）**
+ * 改成 **fail-safe（空身份 = 什么都看不到）**。这样即使哪一层漏了登录拦截，
+ * 最多是「页面空白/无数据」，绝不会「看到别人的全量数据」。
+ * App 层另有 `meMissing` 标记会直接渲染登录页（见 AppShell）。
+ */
+const ANON_USER: User = {
+  union_id: '',
+  name: '未登录',
+  job_number: '',
+  mobile: '',
+  dept_id_list: [],
+  dept_names: [],
+  title: '',
+  roles: [],
+  scope_type: 'SELF',
+  scope_dept_ids: [],
+  tags: [],
+  status: 3,
+  points: 0,
+  is_dept_leader: false,
+  created_at: '',
+  source: 'MANUAL',
+};
+
+/**
+ * V8.3-10.08 需求①：**取消 `?? db.users[0]` 兜底**。
+ *
+ * 那一行就是「所有人进站都是管理员」的病根 —— 身份键缺失或失效时静默顶成通讯录里的第一个人
+ * （恰好是组织者，ORGANIZER + scope_ALL = 什么都能看）。现在顶成 ANON_USER：
+ * 类型保持 User（全站零改动），但语义是「无身份」，由 App 层拦到登录页。
+ */
+const me = useMemo(
+    () => db.users.find((x) => x.union_id === meId) ?? ANON_USER,
     [db.users, meId]
   );
+/** 是否处于「未登录」状态（App 层据此渲染登录页） */
+const meMissing = me.union_id === '';
   /* V7.1：当前届次。取用顺序：
    *   ① 用户显式选择的（currentCampaignId）
    *   ② 唯一的「进行中」届次
@@ -621,7 +666,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const value: Ctx = {
-    db, setDb, sync, pullRemote, me, switchIdentity, switchToRole, hasRole, flags, setFlags,
+    db, setDb, sync, pullRemote, me, meMissing, switchIdentity, switchToRole, hasRole, flags, setFlags,
     campaign, currentCampaignId, setCurrentCampaignId, hasCampaign,
     resetDemo, visibleUsers, hasTeam, managedDeptIds, scopeRows, log,
   };
