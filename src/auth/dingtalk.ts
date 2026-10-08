@@ -14,6 +14,12 @@
 
 const CFG_KEY = 'wb-dingtalk-cfg-v1';
 const LS_ME = 'wb-workbench-me-v3.0.0';
+/**
+ * V8.3-10.08 需求①收尾：数据面会话 token。
+ * 与 union_id 分开存：token 是**服务端签发的凭证**，改 localStorage 伪造 union_id
+ * 没有有效 token，数据面照样按真实身份裁剪（根治「F12 改身份」）。
+ */
+const LS_TOKEN = 'wb-session-token-v1';
 
 export interface DingtalkProfile {
   unionId: string;
@@ -21,6 +27,7 @@ export interface DingtalkProfile {
   roles: string[];
   scopeType: string;
   jobNumber: string;
+  token?: string;
 }
 
 async function jsonPost<T>(url: string, body: unknown): Promise<T | null> {
@@ -77,7 +84,7 @@ export async function loginWithCode(code: string, state: string): Promise<
 > {
   const body = await jsonPost<{
     ok: boolean; error?: string; unionId?: string; name?: string; roles?: string[];
-    scopeType?: string; jobNumber?: string;
+    scopeType?: string; jobNumber?: string; token?: string;
   }>('/api/auth/dingtalk/exchange', { code, state });
   if (!body) return { ok: false, error: '无法连接服务端，请检查网络后重试' };
   if (!body.ok || !body.unionId) return { ok: false, error: body.error ?? '免登失败，请重试' };
@@ -90,6 +97,8 @@ export async function loginWithCode(code: string, state: string): Promise<
   };
   /** 与旧身份键同写：store 的 me 会用它解析出完整用户与角色 */
   localStorage.setItem(LS_ME, profile.unionId);
+  /** 数据面会话凭证：/api/state 的读写都要带它 */
+  if (profile.token) localStorage.setItem(LS_TOKEN, profile.token);
   try {
     sessionStorage.setItem('wb-dingtalk-last', JSON.stringify({ name: profile.name, at: Date.now() }));
   } catch { /* ignore */ }
@@ -99,6 +108,7 @@ export async function loginWithCode(code: string, state: string): Promise<
 /** 退出登录：清掉身份键，回到未登录态（不清业务缓存，避免误删他人共享数据） */
 export function logout() {
   localStorage.removeItem(LS_ME);
+  localStorage.removeItem(LS_TOKEN);
   try {
     sessionStorage.removeItem('wb-dingtalk-last');
   } catch { /* ignore */ }
@@ -110,5 +120,13 @@ export function hasIdentity(): boolean {
     return !!localStorage.getItem(LS_ME);
   } catch {
     return false;
+  }
+}
+/** 取当前会话 token（无免登 / 本地开发时为 null，此时服务端不做鉴权） */
+export function getSessionToken(): string {
+  try {
+    return localStorage.getItem(LS_TOKEN) || '';
+  } catch {
+    return '';
   }
 }

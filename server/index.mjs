@@ -18,6 +18,8 @@ import { createFileRepository, newFileMeta, makeObjectKey } from './lib/fileRepo
 import { createStateStore } from './lib/stateStore.mjs';
 import { validateSkillZip } from './lib/zip.mjs';
 import { authorizeUrl, dingtalkConfig, exchangeCodeForUnionId, newState } from './lib/dingtalkAuth.mjs';
+import { issueToken, readToken, verifyToken } from './lib/session.mjs';
+import { mergeProtected, scopeData } from './lib/dataScope.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST = process.env.DIST_DIR || path.join(__dirname, '..', 'dist');
@@ -189,7 +191,7 @@ async function handle(req, res) {
     if (me.status === 99) {
       return sendJson(res, 403, { ok: false, error: '该成员已离职回收，无法登录', code: 'USER_DISABLED', unionId: identity.unionId });
     }
-    // 只回身份与角色摘要，权限判定仍在前端 access 层（后端不表态授权）
+    // 只回身份与角色摘要；**同时签发数据面会话 token**（前端之后每次读写 /api/state 都要带）
     return sendJson(res, 200, {
       ok: true,
       unionId: me.union_id,
@@ -197,15 +199,35 @@ async function handle(req, res) {
       roles: me.roles,
       scopeType: me.scope_type,
       jobNumber: me.job_number,
+      token: issueToken(me.union_id),
     });
   }
 
   // 读取全量。data 为 null 表示「服务端还没有数据」，前端用种子播种后写回。
   if (pathname === '/api/state' && req.method === 'GET') {
     const s = await state.read();
+    /**
+     * V8.3-10.08 需求①收尾：按身份裁剪数据面。
+     * 未配置免登时保持开放（本地开发 / 演示）；配置了免登则必须带 token，
+     * 且**按业务库里查到的身份**过滤 —— 前端传来的任何身份声明都不可信。
+     */
+    const authOn = dingtalkConfig().enabled;
+    let data = s.data;
+    if (authOn) {
+      const token = readToken(req);
+      const uid = token ? verifyToken(token) : null;
+      if (!uid) {
+        return sendJson(res, 401, { ok: false, error: '会话已过期，请重新通过钉钉登录', code: 'NO_SESSION' });
+      }
+      const meRow = (s.data?.users ?? []).find((u) => u.union_id === uid);
+      if (!meRow) {
+        return sendJson(res, 403, { ok: false, error: '该成员已不在名单内，请联系组织者', code: 'NOT_IN_WORKBENCH' });
+      }
+      data = scopeData(s.data, meRow);
+    }
     return sendJson(res, 200, {
       ok: true,
-      data: s.data,
+      data,
       version: s.version,
       updated_at: s.updated_at,
       updated_by: s.updated_by,
@@ -233,7 +255,27 @@ async function handle(req, res) {
     if (!payload || typeof payload.data !== 'object' || payload.data === null) {
       return sendJson(res, 400, { ok: false, error: '缺少 data 字段' });
     }
-    const r = await state.write(payload.data, payload.baseVersion, payload.by);
+    /**
+     * V8.3-10.08 需求①收尾：写入前的合并保护。
+     * 前端拿到的是裁剪后的子集，直接整包写回会把组织者与他人数据抹掉。
+     * 这里对受限集合做「只采纳本人条目、其余沿用服务端数据」的处理。
+     */
+    let writeData = payload.data;
+    if (dingtalkConfig().enabled) {
+      const token = readToken(req);
+      const uid = token ? verifyToken(token) : null;
+      if (!uid) {
+        return sendJson(res, 401, { ok: false, error: '会话已过期，请重新通过钉钉登录', code: 'NO_SESSION' });
+      }
+      const current = await state.read();
+      const meRow = (current?.data?.users ?? []).find((u) => u.union_id === uid);
+      if (!meRow) {
+        return sendJson(res, 403, { ok: false, error: '该成员已不在名单内', code: 'NOT_IN_WORKBENCH' });
+      }
+      writeData = mergeProtected(current?.data, payload.data, meRow);
+    }
+
+    const r = await state.write(writeData, payload.baseVersion, payload.by);
     if (!r.ok) {
       // 409 而不是静默覆盖：把「你的修改被别人冲掉」变成一次明确的、可感知的事件
       return sendJson(res, 409, {

@@ -7,7 +7,30 @@
  *  3. data 为 null 表示「服务端还没有数据」，由前端用种子播种后写回，无需手工初始化数据库。
  */
 
+import { getSessionToken } from '@/auth/dingtalk';
+
 const TIMEOUT_MS = 8000;
+
+/**
+ * V8.3-10.08 需求①收尾：所有数据面请求都带会话 token。
+ * 服务端配了免登时，缺 token 会被 401 拒（并返回「请重新登录」）。
+ */
+function authHeaders(): Record<string, string> {
+  const t = getSessionToken();
+  return t ? { 'X-WB-Token': t } : {};
+}
+
+/**
+ * 401 = 会话失效（token 过期或被篡改）。
+ * 此时**清掉本地身份与 token**：store 的 meMissing 会变 true，App 立刻回到登录页。
+ * 不这么做的话，用户会卡在一个「拉不到数据」的页面上，不知道该重新扫码。
+ */
+function handleUnauthorized() {
+  try {
+    localStorage.removeItem('wb-workbench-me-v3.0.0');
+    localStorage.removeItem('wb-session-token-v1');
+  } catch { /* ignore */ }
+}
 
 export interface StateEnvelope {
   ok: boolean;
@@ -28,8 +51,12 @@ async function getJson<T>(url: string): Promise<T | null> {
   try {
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
-    const res = await fetch(url, { signal: ctl.signal, headers: { Accept: 'application/json' } });
+    const res = await fetch(url, { signal: ctl.signal, headers: { Accept: 'application/json', ...authHeaders() } });
     clearTimeout(timer);
+    if (res.status === 401) {
+      handleUnauthorized();
+      return null;
+    }
     if (!res.ok) return null;
     return (await res.json()) as T;
   } catch {
@@ -57,7 +84,7 @@ export async function pushState(data: unknown, baseVersion: number, by: string):
     const res = await fetch('/api/state', {
       method: 'PUT',
       signal: ctl.signal,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ data, baseVersion, by }),
     });
     clearTimeout(timer);
@@ -70,6 +97,10 @@ export async function pushState(data: unknown, baseVersion: number, by: string):
         error: String(body.error ?? '数据已被他人更新'),
         version: Number(cur.version ?? 0),
       };
+    }
+    if (res.status === 401) {
+      handleUnauthorized();
+      return { ok: false, conflict: false, error: '会话已过期，请重新登录' };
     }
     if (!res.ok) return { ok: false, conflict: false, error: String(body.error ?? `写入失败（HTTP ${res.status}）`) };
     return { ok: true, version: Number(body.version ?? 0) };
