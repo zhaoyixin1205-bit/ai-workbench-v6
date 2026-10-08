@@ -52,8 +52,12 @@ export default function Login({ callbackPath = '' }: { callbackPath?: string }) 
       // 用 replace 清掉 URL 上的授权码，避免刷新时重复兑换（code 一次性）
       window.history.replaceState({}, '', window.location.pathname || '/');
       if (r.ok) {
-        /** 关键：必须走 store 的 switchIdentity，只写 localStorage 不会触发重渲染 */
-        switchIdentity(r.profile.unionId);
+        /**
+         * 关键：必须走 store 的 switchIdentity，只写 localStorage 不会触发重渲染。
+         * `force: true` —— 这是「登录落地身份」，不是「应用内切换身份」，
+         * 否则免登锁定后连登录都进不去。
+         */
+        switchIdentity(r.profile.unionId, { force: true });
         if (callbackPath) go(callbackPath);
       } else {
         setErr(r.error);
@@ -80,8 +84,9 @@ export default function Login({ callbackPath = '' }: { callbackPath?: string }) 
     return groups;
   }, [db.users]);
 
+  /** 降级模式下的「选人登录」同理：force 落地身份 */
   const pick = (unionId: string) => {
-    switchIdentity(unionId);
+    switchIdentity(unionId, { force: true });
     if (callbackPath) go(callbackPath);
   };
 

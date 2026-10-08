@@ -39,7 +39,7 @@ const NAV: { key: string; icon: React.ReactNode; label: string; mobile?: string 
 ];
 
 export default function CLayout() {
-  const { me, flags, db } = useStore();
+  const { me, flags, db, authLocked } = useStore();
   const nav = useNavigate();
   const loc = useLocation();
   /** V4.1 Moka P10：帮助弹窗（悬浮帮助条入口） */
@@ -137,13 +137,13 @@ export default function CLayout() {
               />
             </Badge>
           </Tooltip>
-          <span className="only-pc"><RoleSwitcher /></span>
+          <span className="only-pc">{!authLocked && <RoleSwitcher />}</span>
         </Space>
       </Header>
 
       <Content className="wb-body-with-tabbar">
         <div className="wb-container" style={{ paddingTop: 24, paddingBottom: 32 }}>
-          <span className="only-mobile" style={{ display: 'block', marginBottom: 12 }}><RoleSwitcher /></span>
+          <span className="only-mobile" style={{ display: 'block', marginBottom: 12 }}>{!authLocked && <RoleSwitcher />}</span>
           <div className="wb-page" key={loc.pathname}>
             {guard.ok ? <Outlet /> : <NoAccess result={guard} roles={me.roles} />}
           </div>

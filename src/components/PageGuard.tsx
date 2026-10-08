@@ -1,6 +1,7 @@
 import { Button, Result, Space, Tag, Typography } from 'antd';
 import { ArrowLeftOutlined, HomeOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
+import { useStore } from '@/store/store';
 import RoleSwitcher from '@/components/RoleSwitcher';
 import { ROLE_LABEL } from '@/mock/types';
 import type { Role } from '@/mock/types';
@@ -20,6 +21,11 @@ export default function NoAccess({
   onBackText?: string;
 }) {
   const nav = useNavigate();
+  /**
+   * V8.3-10.08 需求①：403 页上的「换个身份试试」入口也必须锁 ——
+   * 否则成员被拒后当场就能切成组织者，403 形同虚设。
+   */
+  const { authLocked } = useStore();
   const needRoles = result.access.roles ?? [];
   const isFlag = result.kind === 'FLAG';
   const required = needRoles.length ? needRoles : undefined;
@@ -63,7 +69,8 @@ export default function NoAccess({
           ) : (
             <Button icon={<HomeOutlined />} onClick={() => nav('/')}>返回工作台</Button>
           )}
-          <RoleSwitcher />
+          {/* 免登锁定时不提供「换身份」后门 */}
+          {!authLocked && <RoleSwitcher />}
         </Space>
       }
     />

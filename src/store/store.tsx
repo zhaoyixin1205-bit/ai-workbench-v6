@@ -3,6 +3,7 @@ import { fetchState, fetchStateVersion, pushState, resetRemoteState } from '@/se
 import type { ReactNode } from 'react';
 import * as org from '@/mock/seedOrg';
 import { deptSubtreeUnion } from '@/service/deptTree';
+import { isDingtalkEnabled } from '@/auth/dingtalk';
 import * as biz from '@/mock/seedBiz';
 import type {
   User, Role, CaseItem, Topic, Bounty, AssignmentType, AssignmentPeriod, AssignmentSubmit,
@@ -302,8 +303,20 @@ interface Ctx {
    * true 时 me 是 ANON_USER（空身份），App 层据此渲染登录页而不是业务页面。
    */
   meMissing: boolean;
-  /** 一键切换演示身份（PRD 3.2 双维授权：角色 + 数据范围） */
-  switchIdentity: (unionId: string) => void;
+  /**
+   * 切换身份。
+   * `opts.force` 仅供**登录页首次落地身份**使用（此时还没有「当前身份」可言）。
+   * 免登开启时不带 force 的切换一律拒绝 —— 身份已由钉钉说了算，
+   * 右上角那个「切换角色」入口必须失效，否则等于给了权限后门。
+   */
+  switchIdentity: (unionId: string, opts?: { force?: boolean }) => void;
+  /**
+   * V8.3-10.08 需求①：身份是否已被钉钉免登**锁定**。
+   *
+   * true  = 后端配了免登，身份由钉钉通讯录决定，**任何人都不能再切换**；
+   * false = 本地开发 / 演示 / 未配置免登，允许按角色切换（否则本地没法测多角色）。
+   */
+  authLocked: boolean;
   switchToRole: (role: Role) => void;
   hasRole: (...roles: Role[]) => boolean;
   flags: FeatureFlags;
@@ -398,6 +411,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [setMode]);
 
   const [meId, setMeId] = useState<string>(() => localStorage.getItem(LS_ME) || DEFAULT_ME_ID);
+  /**
+   * V8.3-10.08 需求①：探测后端是否启用钉钉免登 → 决定要不要锁死身份切换。
+   * 挂载即探测一次（失败按未启用处理，本地无后端时仍可切角色调试）。
+   */
+  const [authLocked, setAuthLocked] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    void isDingtalkEnabled().then((on) => {
+      if (alive) setAuthLocked(on);
+    });
+    return () => { alive = false; };
+  }, []);
   const [currentCampaignId, setCurrentCampaignIdRaw] = useState<string>(
     () => localStorage.getItem(LS_CAMPAIGN) || ''
   );
@@ -589,9 +614,28 @@ const meMissing = me.union_id === '';
     return () => clearInterval(timer);
   }, [setMode]);
 
-  const switchIdentity = useCallback((unionId: string) => setMeId(unionId), []);
+  /**
+   * V8.3-10.08 需求①：切换身份。
+   * 免登开启（authLocked）时，只有登录页的 `force` 落地能改身份，
+   * 右上角「切换角色」与任何其他调用都会被拒绝，保持当前身份不变。
+   */
+  const authLockedRef = useRef(authLocked);
+  authLockedRef.current = authLocked;
+
+  const switchIdentity = useCallback((unionId: string, opts?: { force?: boolean }) => {
+    if (authLockedRef.current && !opts?.force) {
+      // 锁定状态下静默拒绝：身份由钉钉免登确定，不允许在应用内改换他人视角
+      if (typeof console !== 'undefined') {
+        console.warn('[authLocked] 已忽略身份切换请求：当前为钉钉免登模式，身份不可切换');
+      }
+      return;
+    }
+    setMeId(unionId);
+  }, []);
   const switchToRole = useCallback(
     (role: Role) => {
+      /** 免登锁定时同样拒绝「按角色切换」，与 switchIdentity 口径一致 */
+      if (authLockedRef.current) return;
       const target = db.users.find((x) => x.roles.includes(role));
       if (target) setMeId(target.union_id);
     },
@@ -601,7 +645,12 @@ const meMissing = me.union_id === '';
   const resetDemo = useCallback(async () => {
     const ok = await resetRemoteState(me?.name ?? '');
     localStorage.removeItem(LS_KEY);
-    setMeId('uid001');
+    /**
+     * V8.3-10.08 需求①：重置演示数据**不再顺手改身份**。
+     * 原先写死 setMeId('uid001')，在免登锁定时等于绕过锁定把人切成别人；
+     * 而且 'uid001' 在真实钉钉数据里根本不存在，只会得到一个空身份。
+     */
+    setMeId(authLockedRef.current ? meId : '');
     if (ok) {
       // 服务端已清空（version+1）→ 先取回新版本号再播种，否则回写会撞上乐观锁
       const env = await fetchState();
@@ -666,7 +715,7 @@ const meMissing = me.union_id === '';
   );
 
   const value: Ctx = {
-    db, setDb, sync, pullRemote, me, meMissing, switchIdentity, switchToRole, hasRole, flags, setFlags,
+    db, setDb, sync, pullRemote, me, meMissing, authLocked, switchIdentity, switchToRole, hasRole, flags, setFlags,
     campaign, currentCampaignId, setCurrentCampaignId, hasCampaign,
     resetDemo, visibleUsers, hasTeam, managedDeptIds, scopeRows, log,
   };

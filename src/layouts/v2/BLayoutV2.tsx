@@ -63,7 +63,7 @@ const ICON: Record<string, React.ReactNode> = {
 };
 
 export default function BLayoutV2() {
-  const { me, flags, db, campaign, hasCampaign, setCurrentCampaignId } = useStore();
+  const { me, flags, db, campaign, hasCampaign, setCurrentCampaignId, authLocked } = useStore();
   /** V8.6-10.08：口径 / 规则注解仅运营方与管理员可见 */
   const note = useNoteVisible();
 
@@ -156,7 +156,7 @@ export default function BLayoutV2() {
             {note && <Tag color="blue" style={{ marginInlineEnd: 0 }}>数据截止 {DEMO_TODAY}（T-1）</Tag>}
             <SyncBadge />
             <Button size="small" icon={<ExportOutlined />}>导出</Button>
-            <RoleSwitcher />
+            {!authLocked && <RoleSwitcher />}
           </div>
         </header>
 

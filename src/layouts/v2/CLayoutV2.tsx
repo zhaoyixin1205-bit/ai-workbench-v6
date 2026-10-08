@@ -108,7 +108,7 @@ function SyncDot() {
 }
 
 export default function CLayoutV2() {
-  const { db, me, flags } = useStore();
+  const { db, me, flags, authLocked } = useStore();
   const nav = useNavigate();
   const loc = useLocation();
   const { version, setVersion } = useUIVersion();
@@ -305,7 +305,7 @@ export default function CLayoutV2() {
               <Button size="small" shape="circle" icon={<BellOutlined />} onClick={() => nav('/me?tab=message')} />
             </Badge>
           </Tooltip>
-          <RoleSwitcher />
+          {!authLocked && <RoleSwitcher />}
         </div>
       </header>
 
@@ -319,7 +319,7 @@ export default function CLayoutV2() {
           <Badge count={unread} size="small" offset={[-2, 2]}>
             <Button size="small" shape="circle" icon={<BellOutlined />} onClick={() => nav('/me?tab=message')} />
           </Badge>
-          <RoleSwitcher />
+          {!authLocked && <RoleSwitcher />}
         </div>
       </header>
 
@@ -362,7 +362,7 @@ export default function CLayoutV2() {
       <main className="wb-body-with-tabbar" style={{ flex: 1 }}>
         <div className="wb-container" style={{ paddingTop: 'var(--wb-space-6)', paddingBottom: 'var(--wb-space-7)' }}>
           <div className="only-mobile" style={{ display: 'block', marginBottom: 'var(--wb-space-4)' }}>
-            <RoleSwitcher />
+            {!authLocked && <RoleSwitcher />}
           </div>
 
           {/* 面包屑：v1 C 端没有，v2 新增 */}
