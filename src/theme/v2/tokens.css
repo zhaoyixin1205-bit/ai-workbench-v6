@@ -4,6 +4,16 @@
  * ⚠️ 本文件是 P2 提案 §2 + P2.5 视觉稿第 3 轮定稿后的**落地基准**，值与视觉稿一一对应。
  * 现状（v1）全库 103 个颜色字面量、0 个 CSS 变量；本文件是收口的第一步。
  *
+ * ⚠️ V9.0-10.08 暖白迁移（依据《橙白 · IP彩色系 UI 设计参考手册》）：
+ *   原体系是**冷灰蓝**（页面底 #F5F7FC / 描边 #D6DFEE / 冷墨 #0F172A / 卡片零投影 / 圆角 12px），
+ *   与手册的「白底橙主 + 大圆角 + 柔和暖影 + 紫粉点缀」有结构性差异。本次整体迁移为**暖白派**：
+ *     ① 页面底改暖白 #FFFDFA，描边改暖 #F2EBDD，不再用冷调分隔；
+ *     ② 墨色微暖（#2B2A33 系），保留四级阶梯以保证表格/说明文字对比度；
+ *     ③ 卡片/列表加**暖调柔影** rgba(120,70,20,…)，替代「零投影 + 描边」的冷平质感；
+ *     ④ 圆角放大到 6/8/16/20（原 4/6/12），接近手册的 10/14/20 区间但不牺牲控件密度；
+ *     ⑤ 引入紫 / 粉紫 / 橙黄三档 IP 点缀色做「小面积强调」，浅蓝最少。
+ *   主色 **不改**：#FF6B35 已是品牌既定色，与手册 #FF6B1C 同色系，换值收益小于全站返工成本。
+ *
  * 用法：
  *   1. CSS 里写 var(--wb-primary)
  *   2. TS 内联样式写 WB.color.primary（见 ./index.ts，由本文件同源导出）
@@ -17,34 +27,50 @@
   --wb-primary: #ff6b35;
   --wb-primary-hover: #f05a28;
   --wb-primary-active: #d94e1f;
-  --wb-primary-soft: #fff1eb;
-  --wb-primary-subtle: #ffe4d9;
+  --wb-primary-soft: #fff3e8; /* 手册 orange-light：暖底不刺眼 */
+  --wb-primary-subtle: #ffe8d9;
   /* Hero 渐变末端（原 template.css 内联 #ff8f5e，P3-6 收编为令牌） */
-  --wb-primary-light: #ff8f5e;
+  --wb-primary-light: #ff9f76;
   /* 品牌色上的「墨色」：白底 / 暖底都可读的深橙，用于强调文字与品牌按钮 */
   --wb-primary-ink: #c2410c;
 
   --wb-info: #2563eb;
   --wb-info-hover: #1d4ed8;
-  --wb-info-soft: #eff6ff;
+  --wb-info-soft: #eff8ff;
 
-  /* ========== 2. 中性（冷调，染墨不用纯黑） ========== */
-  --wb-ink-1: #0f172a; /* 标题、数值 */
-  --wb-ink-2: #44546b; /* 正文 */
-  --wb-ink-3: #7c8ca6; /* 说明、占位 */
-  --wb-ink-4: #bcc8dc; /* 禁用、行分隔 */
+  /* ========== 1.5 IP 彩色系点缀（V9.0 新增，取自《橙白 IP 手册》） ==========
+     只做**小面积强调**：8px 圆点、3px 左条、标签浅底、渐变 CTA。
+     禁止铺成大块底色 —— 手册原则「白色承载一切，橙色是主角，紫/粉/橙黄只点缀」。 */
+  --wb-accent-purple: #8b5cf6; /* 帐Sir 紫 · 第二强调色 */
+  --wb-accent-purple-deep: #6d28d9;
+  --wb-accent-purple-soft: #f6f1ff;
+  --wb-accent-magenta: #ec4899; /* 粉紫 · 渐变末梢 / 成就徽章 */
+  --wb-accent-magenta-soft: #fff0f6;
+  --wb-accent-amber: #ffb020; /* 橙黄 · 宇航员，队列/进行中状态 */
+  --wb-accent-amber-soft: #fff7e6;
+  --wb-accent-sky: #38bdf8; /* 浅蓝 · 最少用，仅数据/信息辅助 */
+  --wb-accent-sky-soft: #eff8ff;
+
+  /* 品牌渐变：橙 → 粉紫 → 紫（手册的同款三段渐变，用于 Hero / 主 CTA） */
+  --wb-gradient-brand: linear-gradient(135deg, #ff6b35 0%, #ec4899 55%, #8b5cf6 100%);
+
+  /* ========== 2. 中性（暖墨，与暖白底同源） ========== */
+  --wb-ink-1: #2b2a33; /* 标题、数值（手册 text-main） */
+  --wb-ink-2: #514b5b; /* 正文（手册 text-sub #6E6B76 偏浅，压深一档保对比） */
+  --wb-ink-3: #857e90; /* 说明、占位 */
+  --wb-ink-4: #bab3c1; /* 禁用、行分隔 */
 
   /* ========== 3. 表面（5 层，页面靠底色交替制造节奏） ========== */
-  --wb-surface-page: #f5f7fc; /* 页面底（最下层） */
+  --wb-surface-page: #fffdfa; /* 页面底（暖白，手册 warm-bg） */
   --wb-surface-card: #ffffff; /* 卡片面（上层） */
-  --wb-surface-band: #e9edfd; /* 冷调区块底（靛蓝，与橙构成冷暖对比） */
-  --wb-surface-brand: #fff3ea; /* 暖调区块底（与主色同源） */
-  --wb-surface-cool: #eaf4ff; /* 冷调信息块（提示 / 数据区） */
-  --wb-surface-sunken: #e8eef9; /* 表头、凹陷区 */
+  --wb-surface-band: #f6f1ff; /* 区块底（紫浅，替代原冷调靛蓝） */
+  --wb-surface-brand: #fff3e8; /* 暖调区块底（与主色同源） */
+  --wb-surface-cool: #eff8ff; /* 信息块（提示 / 数据区） */
+  --wb-surface-sunken: #fbf6ef; /* 表头、凹陷区（暖灰） */
 
-  --wb-border: #d6dfee;
-  --wb-border-strong: #bcc8dc; /* 输入框描边 */
-  --wb-border-subtle: #e9eff9; /* 行分隔（最弱档） */
+  --wb-border: #f2ebdd; /* 暖描边（手册 warm-border） */
+  --wb-border-strong: #e4d7c3; /* 输入框描边 */
+  --wb-border-subtle: #f7f1e6; /* 行分隔（最弱档） */
 
   /* ========== 4. 状态色（配额封顶 3 个） ========== */
   --wb-success: #059669;
@@ -78,16 +104,21 @@
   --wb-space-8: 40px;
   --wb-space-9: 48px;
 
-  /* ========== 8. 圆角（4 档；v1 是 12 档） ========== */
-  --wb-radius-sm: 4px; /* 小标签、进度条 */
-  --wb-radius-md: 6px; /* 按钮、输入框（对齐 AntD 默认） */
-  --wb-radius-lg: 12px; /* 卡片、弹窗 */
+  /* ========== 8. 圆角（V9.0 放大到暖派区间；原为 4/6/12） ========== */
+  --wb-radius-sm: 6px; /* 小标签、进度条 */
+  --wb-radius-md: 8px; /* 按钮、输入框 */
+  --wb-radius-lg: 16px; /* 卡片、列表行、弹窗（手册 14-20） */
+  --wb-radius-xl: 20px; /* 页面级大区块、Hero */
   --wb-radius-pill: 999px; /* 状态点、头像 */
 
-  /* ========== 9. 阴影（卡片一律 none；浮层仅 2 级） ========== */
+  /* ========== 9. 阴影（V9.0：由「卡片零投影」改为暖调柔影） ==========
+     手册原则：大圆角 + 柔和暖影替代锋利商务风。rgb(120,70,20) 是暖褐，
+     在暖白底上比冷灰影更「贴纸」、不和橙色主色打架。 */
   --wb-shadow-none: none;
-  --wb-shadow-popover: 0 4px 12px rgba(15, 23, 42, 0.08);
-  --wb-shadow-modal: 0 12px 32px rgba(15, 23, 42, 0.12);
+  --wb-shadow-card: 0 1px 2px rgba(120, 70, 20, 0.05), 0 6px 16px rgba(120, 70, 20, 0.06);
+  --wb-shadow-card-hover: 0 10px 24px rgba(120, 70, 20, 0.1);
+  --wb-shadow-popover: 0 6px 18px rgba(120, 70, 20, 0.1);
+  --wb-shadow-modal: 0 16px 40px rgba(120, 70, 20, 0.16);
 
   /* ========== 10. 层级 ========== */
   --wb-z-base: 0;

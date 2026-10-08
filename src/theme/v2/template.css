@@ -99,18 +99,21 @@
   flex: 1 1 auto;
 }
 
-/* ---------------- 指标条 ---------------- */
+/* ---------------- 指标条 ----------------
+   V9.0：卡片底色换卡片面 + 暖影，栅格间隙 12 → 16，卡内 padding 12/16 → 16/20。
+   指标卡是页面上第二眼看到的东西，稀一点才显贵（否则像 Excel 表头）。 */
 .wb2-metrics {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: var(--wb-space-4);
-  margin-bottom: var(--wb-space-5);
+  gap: var(--wb-space-5);
+  margin-bottom: var(--wb-space-6);
 }
 .wb2-metric {
   background: var(--wb-surface-card);
-  border: 1px solid var(--wb-border);
+  border: 1px solid var(--wb-border-subtle);
   border-radius: var(--wb-radius-lg);
-  padding: var(--wb-space-4) var(--wb-space-5);
+  box-shadow: var(--wb-shadow-card);
+  padding: var(--wb-space-5) 20px;
 }
 .wb2-metric .lb {
   font-size: var(--wb-fs-label);
@@ -140,15 +143,18 @@
   grid-template-columns: repeat(3, 1fr);
 }
 
-/* ---------------- 通用卡片 / 分区 ---------------- */
+/* ---------------- 通用卡片 / 分区 ----------------
+   V9.0：描边降一档（--wb-border → border-subtle）+ 暖影替代零投影。
+   为什么描边反而变淡：加了阴影之后不需要靠深色描边「框住」卡片，
+   描边再深就是「描边 + 阴影」双线，视觉会脏。 */
 .wb2-card {
   background: var(--wb-surface-card);
-  border: 1px solid var(--wb-border);
+  border: 1px solid var(--wb-border-subtle);
   border-radius: var(--wb-radius-lg);
-  box-shadow: var(--wb-shadow-none);
+  box-shadow: var(--wb-shadow-card);
 }
 .wb2-card-pad {
-  padding: var(--wb-space-5) var(--wb-space-6);
+  padding: var(--wb-space-6) 28px;
 }
 .wb2-card-t {
   font-size: var(--wb-fs-subtitle);
@@ -159,29 +165,35 @@
 .wb2-grid2 {
   display: grid;
   grid-template-columns: 1.5fr 1fr;
-  gap: var(--wb-space-5);
+  gap: var(--wb-space-6);
   align-items: start;
 }
 
-/* ---------------- 卡片列表（案例与选题） ---------------- */
+/* ---------------- 卡片栅格（案例与选题） ----------------
+   V9.0：间隙 12 → 18，卡内 padding 16 → 22，卡本身加暖影 + hover 抬升。
+   hover 由「换底色」改为「抬升 + 描边转橙」：换底色会把相邻卡的视觉重心抢走，
+   抬升是空间语言，更符合手册的「简洁互联网风」。 */
 .wb2-cgrid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: var(--wb-space-4);
+  gap: 18px;
 }
 .wb2-ccard {
   background: var(--wb-surface-card);
-  border: 1px solid var(--wb-border);
+  border: 1px solid var(--wb-border-subtle);
   border-radius: var(--wb-radius-lg);
-  padding: var(--wb-space-5);
+  box-shadow: var(--wb-shadow-card);
+  padding: 22px;
   display: flex;
   flex-direction: column;
   cursor: pointer;
-  transition: border-color var(--wb-motion-fast), background var(--wb-motion-fast);
+  transition: transform var(--wb-motion-fast), box-shadow var(--wb-motion-fast),
+              border-color var(--wb-motion-fast);
 }
 .wb2-ccard:hover {
-  border-color: var(--wb-border-strong);
-  background: var(--wb-surface-band);
+  transform: translateY(-3px);
+  box-shadow: var(--wb-shadow-card-hover);
+  border-color: var(--wb-primary-subtle);
 }
 .wb2-ccard .ct {
   font-size: var(--wb-fs-subtitle);
@@ -236,26 +248,34 @@
   margin-top: auto;
 }
 
-/* ---------------- 细线列表（作业等状态型数据） ---------------- */
+/* ---------------- 列表（V9.0-10.08：由「细线列表」改为卡片化列表） ----------------
+   旧写法：一张白卡包住所有行 + 1px 分隔线 —— 信息密度高但挤，行与行之间没有呼吸。
+   改法：每行独立圆角卡 + 12px 间隙，悬停整行抬升并换暖影。
+   好处：①一眼看出「这是 N 条独立记录」；②点击热区更大；③与手册「大留白 · 模块化分区」一致。
+   ⚠️ .wb2-list 不再自带描边/overflow：它只是卡片的容器，描边下沉到 .wb2-li，
+      否则子卡片的圆角会被外层 overflow:hidden 切掉。 */
 .wb2-list {
-  background: var(--wb-surface-card);
-  border: 1px solid var(--wb-border);
-  border-radius: var(--wb-radius-lg);
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: var(--wb-space-4);
 }
 .wb2-li {
   display: flex;
   align-items: center;
-  gap: var(--wb-space-4);
-  padding: var(--wb-space-4) var(--wb-space-5);
-  border-bottom: 1px solid var(--wb-border-subtle);
-  min-height: 56px;
-}
-.wb2-li:last-child {
-  border-bottom: none;
+  gap: var(--wb-space-5);
+  padding: var(--wb-space-5) 20px;
+  background: var(--wb-surface-card);
+  border: 1px solid var(--wb-border-subtle);
+  border-radius: var(--wb-radius-lg);
+  box-shadow: var(--wb-shadow-card);
+  min-height: 64px;
+  transition: transform var(--wb-motion-fast), box-shadow var(--wb-motion-fast),
+              border-color var(--wb-motion-fast);
 }
 .wb2-li:hover {
-  background: var(--wb-surface-sunken);
+  transform: translateY(-2px);
+  box-shadow: var(--wb-shadow-card-hover);
+  border-color: var(--wb-primary-subtle);
 }
 .wb2-li-dot {
   width: 6px;
@@ -532,12 +552,15 @@
 }
 .wb2-kv b { color: var(--wb-ink-1); font-weight: 600; }
 
-/* 首页 Hero（品牌暖色带，零投影、渐变用令牌） */
+/* 首页/身份卡 Hero（V9.0：换手册同款品牌三段渐变 橙→粉紫→紫）
+   原来是单橙 120deg 渐变；粉紫收在 55% 处，紫压住右下角，
+   中段不经过「脏粉」，白字对比度全段可读（粉紫 #EC4899 与白字对比 ≈ 3.2:1，
+   只承担装饰，正文仍靠白底 pill 与加粗大字）。 */
 .wb2-hero {
   position: relative;
-  border-radius: var(--wb-radius-lg);
+  border-radius: var(--wb-radius-xl);
   padding: var(--wb-space-7) var(--wb-space-8);
-  background: linear-gradient(120deg, var(--wb-primary) 0%, var(--wb-primary-light) 100%);
+  background: var(--wb-gradient-brand);
   color: #fff;
   overflow: hidden;
 }

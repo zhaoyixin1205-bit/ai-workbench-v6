@@ -65,7 +65,7 @@ export default function Shop() {
       </Row>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
-        <div className="wb-card" style={{ padding: 18, background: GRADIENT.primary, color: '#fff', border: 'none', boxShadow: SHADOW.button }}>
+        <div className="wb-card" style={{ padding: 18, background: GRADIENT.brand, color: '#fff', border: 'none', boxShadow: SHADOW.button }}>
           <div style={{ fontSize: 13, opacity: 0.92 }}><WalletOutlined /> 我的可用积分</div>
           <div className="num" style={{ fontSize: 34, fontWeight: 800, marginTop: 6, letterSpacing: '-0.02em' }}>{myPoints}</div>
           <div style={{ fontSize: 11, opacity: 0.9, marginTop: 4 }}>排名还会继续变，快去做任务</div>

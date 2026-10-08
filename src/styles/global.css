@@ -8,21 +8,24 @@ body,
   margin: 0;
   padding: 0;
 }
+/* V9.0-10.08 暖白迁移：页面底 / 文字 / 滚动条统一走 --wb-* 令牌。
+   global.css 在 tokens.css 之后加载（见 main.tsx 的 import 顺序），所以这里可以直接用变量，
+   v1 与 v2 从此共用同一个色源，不会再出现「改了令牌 v1 没跟上」的漂移。 */
 body {
-  background: #f5f7fb;
-  color: #1f2937;
+  background: var(--wb-surface-page);
+  color: var(--wb-ink-1);
   font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', -apple-system, BlinkMacSystemFont, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   /* 更柔和的滚动条（仅 webkit） */
   scrollbar-width: thin;
-  scrollbar-color: #e5e7eb transparent;
+  scrollbar-color: var(--wb-border) transparent;
 }
 body::-webkit-scrollbar {
   width: 8px;
 }
 body::-webkit-scrollbar-thumb {
-  background: #d1d5db;
+  background: var(--wb-border-strong);
   border-radius: 4px;
 }
 body::-webkit-scrollbar-track {
@@ -54,13 +57,14 @@ a {
   padding: 0 24px;
 }
 
-/* 卡片体系：参考 getdesign.md 的浮起感 */
+/* 卡片体系：参考 getdesign.md 的浮起感
+   V9.0：描边与阴影改暖派（--wb-border-subtle + 暖褐影），padding 20 → 24 给内容更多呼吸。 */
 .wb-card {
-  background: #fff;
-  border: 1px solid #f3f4f6;
-  border-radius: 16px;
-  padding: 20px;
-  box-shadow: 0 2px 8px rgba(31, 41, 55, 0.06), 0 1px 2px rgba(31, 41, 55, 0.04);
+  background: var(--wb-surface-card);
+  border: 1px solid var(--wb-border-subtle);
+  border-radius: var(--wb-radius-lg);
+  padding: 24px;
+  box-shadow: var(--wb-shadow-card);
 }
 /* V4.1 Moka §6：入场快出慢停，位移统一小位移（上浮 2px），不缩放 */
 .wb-card-hover {
@@ -70,9 +74,9 @@ a {
   will-change: transform, box-shadow;
 }
 .wb-card-hover:hover {
-  box-shadow: rgba(30, 36, 53, 0.16) 0 7px 14px;
+  box-shadow: var(--wb-shadow-card-hover);
   transform: translateY(-2px);
-  border-color: #ffe4d9;
+  border-color: var(--wb-primary-subtle);
 }
 .wb-card-hover:active {
   transform: translateY(-1px);
@@ -511,26 +515,54 @@ body[data-ui="v1"] .ant-popover-inner{
 
 /* —— 其它细节 —— */
 body[data-ui="v1"] .ant-divider{
-  border-color: #f3f4f6 !important;
+  border-color: var(--wb-border-subtle) !important;
 }
-body[data-ui="v1"] .ant-list-item{
-  border-block-end-color: #f3f4f6 !important;
+
+/* —— V9.0 卡片化列表 ——
+   v1 页面大量直接使用 AntD List（个人中心、作品列表、社区、站点消息…），逐个改 JSX 成本高且易漂移；
+   这里在 CSS 层一次性把所有「垂直信息列表」的行改成独立圆角卡，
+   视觉上与 v2 的 .wb2-li（theme/v2/template.css）对齐 —— 两版共用一套尺度，改一处两版同步。
+   ⚠️ 排除 .ant-list-grid：图片墙 / 卡片墙本身就是栅格，再套一层卡片会变成「卡中卡」。 */
+body[data-ui="v1"] .ant-list:not(.ant-list-grid) ul.ant-list-items{
+  display: flex;
+  flex-direction: column;
+  gap: var(--wb-space-4);
+  margin: 0;
+  padding: 0;
+}
+body[data-ui="v1"] .ant-list:not(.ant-list-grid) .ant-list-item{
+  border-block-end: none !important;
+  border: 1px solid var(--wb-border-subtle) !important;
+  border-radius: var(--wb-radius-lg);
+  background: var(--wb-surface-card);
+  box-shadow: var(--wb-shadow-card);
+  padding: 18px 20px;
+  transition: box-shadow var(--wb-motion-fast), transform var(--wb-motion-fast),
+              border-color var(--wb-motion-fast);
+}
+body[data-ui="v1"] .ant-list:not(.ant-list-grid) .ant-list-item:hover{
+  border-color: var(--wb-primary-subtle) !important;
+  box-shadow: var(--wb-shadow-card-hover);
+  transform: translateY(-1px);
+}
+body[data-ui="v1"] .ant-list-item-action{
+  margin-inline-start: var(--wb-space-5);
 }
 body[data-ui="v1"] .ant-descriptions-item-label{
-  color: #6b7280 !important;
+  color: var(--wb-ink-2) !important;
   font-size: 13px;
 }
 body[data-ui="v1"] .ant-collapse{
-  border: 1px solid #f3f4f6;
-  border-radius: 14px;
+  border: 1px solid var(--wb-border-subtle);
+  border-radius: var(--wb-radius-lg);
   overflow: hidden;
 }
 body[data-ui="v1"] .ant-alert{
-  border-radius: 12px;
+  border-radius: var(--wb-radius-lg);
   border: none;
 }
 body[data-ui="v1"] .ant-empty-description{
-  color: #9ca3af;
+  color: var(--wb-ink-3);
   font-size: 13px;
 }
 body[data-ui="v1"] .ant-progress-text{

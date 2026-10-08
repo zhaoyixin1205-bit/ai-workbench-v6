@@ -1,51 +1,77 @@
 import type { ThemeConfig } from 'antd';
 
-/** PRD 第 9 章 UI/UE 设计规范 — 色彩体系（表 79）
+/**
+ * PRD 第 9 章 UI/UE 设计规范 — 色彩体系（表 79）
  *  参考 getdesign.md 提升质感：保持浅色主战场，但加入更深的阴影、渐变、更克制的辅助色
+ *
+ * ⚠️ V9.0-10.08 暖白迁移（依据《橙白 · IP彩色系 UI 设计参考手册》）：
+ *   底色 / 描边 / 墨色整体由冷灰蓝换为暖白系，与 v2 令牌（src/theme/v2/tokens.css）保持同乔木调，
+ *   否则会出现「v1 冷、v2 暖」的版本漂移。主色 #FF6B35 不动（品牌既定色）。
  */
 export const COLOR = {
   primary: '#FF6B35',
   primaryPressed: '#E55D2B',
-  primaryLight: '#FFF1EB',
+  primaryLight: '#FFF3E8', // 手册 orange-light
   primarySoft: '#FFE4D9',
   info: '#2563EB',
   ai: '#7C3AED',
   success: '#059669',
   warning: '#F59E0B',
   error: '#DC2626',
-  bg: '#F5F7FB',
-  bgDeep: '#EEF0F4',
+  bg: '#FFFDFA', // 暖白底（原 #F5F7FB）
+  bgDeep: '#FBF6EF', // 暖灰凹陷（原 #EEF0F4）
   card: '#FFFFFF',
-  border: '#E5E7EB',
-  borderLight: '#F3F4F6',
-  text: '#1F2937',
-  textSub: '#6B7280',
-  textMuted: '#9CA3AF',
+  border: '#F2EBDD', // 暖描边（原 #E5E7EB）
+  borderLight: '#F7F1E6',
+  text: '#2B2A33',
+  textSub: '#514B5B',
+  textMuted: '#857E90',
   darkHeader: '#111827',
   darkHeaderText: '#F9FAFB',
+  /* ---- V9.0 IP 彩色系点缀：只做小面积强调，不铺大块底色 ---- */
+  purple: '#8B5CF6',
+  purpleDeep: '#6D28D9',
+  purpleLight: '#F6F1FF',
+  magenta: '#EC4899',
+  magentaLight: '#FFF0F6',
+  amber: '#FFB020',
+  amberLight: '#FFF7E6',
+  sky: '#38BDF8',
+  skyLight: '#EFF8FF',
 } as const;
 
 export const GRADIENT = {
   primary: 'linear-gradient(135deg, #FF6B35 0%, #FF8F5E 55%, #FF9D70 100%)',
   primaryDark: 'linear-gradient(135deg, #E85A28 0%, #FF6B35 100%)',
-  hero: 'linear-gradient(135deg, #FF6B35 0%, #FF7B47 40%, #FF9A6C 100%)',
-  subtle: 'linear-gradient(180deg, #FFFFFF 0%, #FAFBFC 100%)',
+  /** V9.0：页面级大横幅统一用手册同款三段渐变（橙 → 粉紫 → 紫）；
+   *  小面积（头像/图标）仍用 primary 纯橙渐变，避免花。 */
+  hero: 'linear-gradient(135deg, #FF6B35 0%, #EC4899 55%, #8B5CF6 100%)',
+  subtle: 'linear-gradient(180deg, #FFFFFF 0%, #FFFDFA 100%)',
   metric: 'linear-gradient(135deg, #FFFFFF 0%, #FFF8F5 100%)',
+  /** V9.0：手册同款品牌渐变（橙 → 粉紫 → 紫），用于 Hero / 主 CTA / 成就区 */
+  brand: 'linear-gradient(135deg, #FF6B35 0%, #EC4899 55%, #8B5CF6 100%)',
+  /** V9.0：紫倾向的柔和渐变，用于辅区块（比橙浅，避免整页都在强调） */
+  soft: 'linear-gradient(135deg, #F6F1FF 0%, #FFF0F6 100%)',
 };
 
+/**
+ * V9.0-10.08：阴影由中性灰 rgba(31,41,55) 改为暖褐 rgba(120,70,20)。
+ * 原因：暖白底上打冷灰影会「发脏」，暖褐影在视觉上像白纸落在木桌上，
+ * 与橙色主色同源，同时保留原有的四级强度语义（浮起 / 悬浮 / 抬升 / 发光）。
+ */
 export const SHADOW = {
-  card: '0 2px 8px rgba(31, 41, 55, 0.06), 0 1px 2px rgba(31, 41, 55, 0.04)',
-  cardHover: '0 12px 28px rgba(31, 41, 55, 0.10), 0 4px 8px rgba(31, 41, 55, 0.05)',
-  elevated: '0 8px 24px rgba(31, 41, 55, 0.08), 0 2px 4px rgba(31, 41, 55, 0.04)',
+  card: '0 2px 8px rgba(120, 70, 20, 0.06), 0 1px 2px rgba(120, 70, 20, 0.04)',
+  cardHover: '0 12px 28px rgba(120, 70, 20, 0.10), 0 4px 8px rgba(120, 70, 20, 0.05)',
+  elevated: '0 8px 24px rgba(120, 70, 20, 0.08), 0 2px 4px rgba(120, 70, 20, 0.04)',
   button: '0 4px 12px rgba(255, 107, 53, 0.22)',
   buttonHover: '0 6px 16px rgba(255, 107, 53, 0.30)',
-  dropdown: '0 8px 30px rgba(31, 41, 55, 0.12)',
-  inset: 'inset 0 1px 2px rgba(31, 41, 55, 0.05)',
+  dropdown: '0 8px 30px rgba(120, 70, 20, 0.12)',
+  inset: 'inset 0 1px 2px rgba(120, 70, 20, 0.05)',
   /* ---- V4.1 Moka 复刻：阴影不用纯黑，强调元素用品牌色光晕代替灰影 ---- */
   /** 极轻浮起（列表行、小卡默认态） */
-  flat: 'rgba(133, 138, 180, 0.14) 0 2px 4px',
+  flat: 'rgba(120, 70, 20, 0.14) 0 2px 4px',
   /** 悬浮卡 / 下拉 / hover 预览 */
-  float: 'rgba(30, 36, 53, 0.16) 0 7px 14px',
+  float: 'rgba(120, 70, 20, 0.16) 0 7px 14px',
   /** 品牌色光晕：被强调的元素看起来在「发光」而不是「浮起来」 */
   glow: 'rgba(255, 138, 96, 0.28) 0 14px 28px, rgba(255, 138, 96, 0.16) 0 6px 10px',
   glowSoft: 'rgba(255, 138, 96, 0.20) 0 8px 20px',
@@ -108,9 +134,11 @@ export const theme: ThemeConfig = {
       defaultShadow: 'none',
       borderRadius: 10,
     },
-    Table: { headerBg: '#FAFBFC', borderColor: COLOR.borderLight },
+    Table: { headerBg: COLOR.bgDeep, borderColor: COLOR.borderLight, cellPaddingBlock: 16, cellPaddingInline: 20, rowHoverBg: '#FDF8F1' },
     Layout: { bodyBg: COLOR.bg, headerBg: COLOR.card, headerHeight: 64 },
     Tabs: { itemSelectedColor: COLOR.primary, inkBarColor: COLOR.primary, margin: 8 },
+    /* V9.0：列表行距放松，与 v2 的 .wb2-li 卡片列表在尺度上对齐 */
+    List: { itemPadding: '18px 20px', metaMarginBottom: 6 },
     Menu: { itemSelectedBg: COLOR.primaryLight, itemSelectedColor: COLOR.primary },
     Tag: { borderRadius: 6, defaultBg: COLOR.primaryLight, defaultColor: COLOR.primary },
     Progress: { defaultColor: COLOR.primary },

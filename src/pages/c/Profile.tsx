@@ -40,7 +40,8 @@ export default function Profile() {
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <div className="wb-card" style={{ padding: 24, background: GRADIENT.primary, color: '#fff', border: 'none', boxShadow: SHADOW.button, position: 'relative', overflow: 'hidden' }}>
+      {/* 身份卡：V9.0 换品牌三段渐变，与 v2 .wb2-hero 对齐 */}
+      <div className="wb-card" style={{ padding: 24, background: GRADIENT.brand, color: '#fff', border: 'none', boxShadow: SHADOW.button, position: 'relative', overflow: 'hidden' }}>
         <div style={{
           position: 'absolute', top: -60, right: -40, width: 220, height: 220, borderRadius: '50%',
           background: 'radial-gradient(circle, rgba(255,255,255,0.20) 0%, rgba(255,255,255,0) 70%)',
