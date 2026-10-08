@@ -16,6 +16,7 @@ import {
   applyUserBatchPatch, describeBatchPatch, deptSubtreeIds, hasUserFilter, matchUserFilter, userFilterSummary,
 } from '@/hooks/useUserFilter';
 import type { UserBatchPatch, UserFilterState } from '@/hooks/useUserFilter';
+import DeptTreeSelect from '@/components/DeptTreeSelect';
 import '../../theme/v2/template.css';
 
 /**
@@ -63,7 +64,7 @@ export default function UserAdminV2() {
   const [filterOpen, setFilterOpen] = useState(false);
   /** V8.3-10.07：结构化筛选条件（部门含下级 / 角色 / 标签 / 状态 / 来源 / 负责人） */
   const [filter, setFilter] = useState<UserFilterState>({
-    keyword: '', deptId: '', includeSub: true, role: '', tag: '', status: '', source: '', leader: '',
+    keyword: '', deptIds: [], deptId: '', includeSub: true, role: '', tag: '', status: '', source: '', leader: '',
   });
   /** V8.3-10.07：批量修改的其余字段（部门/追加角色沿用上面的 moveDept / moveRole） */
   const [batchRemoveRole, setBatchRemoveRole] = useState<Role | ''>('');
@@ -406,7 +407,7 @@ export default function UserAdminV2() {
                       <Button
                         onClick={() => {
                           setKw('');
-                          setFilter({ keyword: '', deptId: '', includeSub: true, role: '', tag: '', status: '', source: '', leader: '' });
+                          setFilter({ keyword: '', deptIds: [], deptId: '', includeSub: true, role: '', tag: '', status: '', source: '', leader: '' });
                         }}
                       >
                         清空筛选
@@ -434,14 +435,15 @@ export default function UserAdminV2() {
                       <div style={{ display: 'grid', gap: 'var(--wb-space-3)', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
                         <div>
                           <div className="wb2-note" style={{ marginBottom: 4 }}>部门</div>
-                          <Select
-                            allowClear showSearch style={{ width: '100%' }} placeholder="全部部门"
-                            value={filter.deptId || undefined}
-                            options={db.depts.map((d) => ({ value: d.dept_id, label: `${'　'.repeat(Math.max(0, (d.level ?? 1) - 1))}${d.name}` }))}
-                            onChange={(v) => setFilter({ ...filter, deptId: v ?? '' })}
+                          {/* V8.3-10.08 需求②：组织架构树多选（勾父带子），与 v1 同源 */}
+                          <DeptTreeSelect
+                            value={filter.deptIds ?? []}
+                            onChange={(ids) => setFilter({ ...filter, deptIds: ids, deptId: ids[0] ?? '' })}
+                            placeholder="全部部门（可多选）"
+                            showHitCount={false}
                           />
                           <Checkbox
-                            style={{ marginTop: 6 }} checked={filter.includeSub} disabled={!filter.deptId}
+                            style={{ marginTop: 6 }} checked={filter.includeSub} disabled={!(filter.deptIds?.length)}
                             onChange={(e) => setFilter({ ...filter, includeSub: e.target.checked })}
                           >
                             含下级部门

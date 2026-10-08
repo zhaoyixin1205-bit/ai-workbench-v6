@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { fetchState, fetchStateVersion, pushState, resetRemoteState } from '@/service/stateService';
 import type { ReactNode } from 'react';
 import * as org from '@/mock/seedOrg';
+import { deptSubtreeUnion } from '@/service/deptTree';
 import * as biz from '@/mock/seedBiz';
 import type {
   User, Role, CaseItem, Topic, Bounty, AssignmentType, AssignmentPeriod, AssignmentSubmit,
@@ -567,13 +568,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setDb(initialDB());
   }, [me?.name, setMode]);
 
+  /**
+   * V8.3-10.08 需求②：部门可见范围统一走 deptTree 的显式子树（选父含子）。
+   * 旧实现 `ud.startsWith(d)` 在钉钉真实数字 id 下会误命中别的部门，
+   * 权限范围「看得比应该看的多」比「看少了」严重，故一并收口。
+   */
   const visibleUsers = useCallback(() => {
     if (me.scope_type === 'ALL') return db.users;
     if (me.scope_type === 'SELF') return db.users.filter((x) => x.union_id === me.union_id);
-    return db.users.filter((x) =>
-      me.scope_dept_ids.some((d) => x.dept_id_list.some((ud) => ud === d || ud.startsWith(d)))
-    );
-  }, [db.users, me]);
+    const union = deptSubtreeUnion(db.depts ?? [], me.scope_dept_ids ?? []);
+    return db.users.filter((x) => (x.dept_id_list ?? []).some((ud) => union.has(ud)));
+  }, [db.users, db.depts, me]);
 
   /** V4.0 CR-01：管辖部门 = managed_dept_ids（缺省时由 is_dept_leader 推导为主部门） */
   const managedDeptIds = useMemo(
@@ -581,10 +586,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [me]
   );
   const hasTeam = useMemo(
-    () => managedDeptIds.some((d) =>
-      db.users.some((u) => u.union_id !== me.union_id && u.status !== 99 &&
-        u.dept_id_list.some((ud) => ud === d || ud.startsWith(d)))),
-    [managedDeptIds, db.users, me.union_id]
+    () => {
+      const union = deptSubtreeUnion(db.depts ?? [], managedDeptIds);
+      return db.users.some((u) => u.union_id !== me.union_id && u.status !== 99
+        && (u.dept_id_list ?? []).some((ud) => union.has(ud)));
+    },
+    [managedDeptIds, db.users, db.depts, me.union_id]
   );
 
   /** V4.0 A-3：业务行按「可见用户集合」收敛——SELF 角色只看到本人数据 */

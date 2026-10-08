@@ -1,10 +1,12 @@
-import { Alert, Button, Card, Col, Progress, Row, Select, Space, Table, Tag, Typography, App as AntApp } from 'antd';
+import { Alert, Button, Card, Col, Progress, Row, Space, Table, Tag, Typography, App as AntApp } from 'antd';
 import { TeamOutlined, BellOutlined, DownloadOutlined, ArrowRightOutlined } from '@ant-design/icons';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useStore } from '@/store/store';
 import { COLOR } from '@/theme';
 import { StatCard } from '@/components/ui';
+import DeptTreeSelect from '@/components/DeptTreeSelect';
+import { deptSubtreeUnion } from '@/service/deptTree';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import { useNoteVisible } from '@/auth/annotation';
 
@@ -26,22 +28,30 @@ export default function TeamBoard({ compact = false }: { compact?: boolean }) {
   /** V8.6-10.08：口径 / 规则注解仅运营方与管理员可见 */
   const note = useNoteVisible();
   const { message } = AntApp.useApp();
-  const [deptId, setDeptId] = useState<string>('');
+  /**
+   * V8.3-10.08 需求②：部门筛选由单选 Select 改为**树状多选**（选父含下级）。
+   * 默认全选本人管辖部门（原先只默认选第一个，其余部门的人根本看不到 —— 这是漏人 bug）。
+   */
+  const [deptIds, setDeptIds] = useState<string[]>([]);
 
   useEffect(() => {
-    if (!deptId && managedDeptIds.length > 0) setDeptId(managedDeptIds[0]);
-  }, [managedDeptIds, deptId]);
+    setDeptIds((prev) => {
+      const valid = prev.filter((id) => managedDeptIds.includes(id));
+      return valid.length ? valid : managedDeptIds.slice();
+    });
+  }, [managedDeptIds]);
 
-  const dept = db.depts.find((d) => d.dept_id === deptId);
+  /** 命中的部门（多选时用「首个」做标题文案，统计一律走命中人数） */
+  const dept = db.depts.find((d) => d.dept_id === deptIds[0]);
 
-  /** 管辖范围内全部在册成员（不含本人） */
+  /** 管辖范围内全部在册成员（不含本人）；部门命中口径统一走 deptTree 的显式子树 */
   const members = useMemo(() => {
-    if (!deptId) return [];
+    if (!deptIds.length) return [];
+    const union = deptSubtreeUnion(db.depts, deptIds);
     return db.users.filter((u) =>
-      u.union_id !== me.union_id && u.status !== 99 &&
-      u.dept_id_list.some((d) => d === deptId || d.startsWith(deptId))
+      u.union_id !== me.union_id && u.status !== 99 && (u.dept_id_list ?? []).some((d) => union.has(d))
     );
-  }, [db.users, deptId, me.union_id]);
+  }, [db.users, db.depts, deptIds, me.union_id]);
 
   const doneIds = useMemo(() => new Set(
     db.submits.filter((s) => s.status !== 'DRAFT' && s.status !== 'WITHDRAWN').map((s) => s.union_id)
@@ -65,16 +75,16 @@ export default function TeamBoard({ compact = false }: { compact?: boolean }) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `团队进度_${dept?.name ?? deptId}_${DEMO_TODAY}.csv`;
+    a.download = `团队进度_${deptIds.length === 1 ? dept?.name ?? deptIds[0] : deptIds.length + '个部门'}_${DEMO_TODAY}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    log('导出团队进度', dept?.name ?? deptId, `${members.length} 人 · CSV`);
+    log('导出团队进度', deptIds.map((id) => db.depts.find((d) => d.dept_id === id)?.name ?? id).join('、'), `${members.length} 人 · CSV`);
     message.success(`已导出 ${members.length} 人明细（含口径说明）`);
   };
 
   const urge = () => {
     if (undone.length === 0) { message.info('本部门已全部提报，无需催办'); return; }
-    log('催办未提报', `${dept?.name ?? deptId} · ${undone.length} 人`, '钉钉待办 + 群通知');
+    log('催办未提报', `${deptIds.length === 1 ? dept?.name ?? deptIds[0] : deptIds.length + ' 个部门'} · ${undone.length} 人`, '钉钉待办 + 群通知');
     message.success(`已向 ${undone.length} 人发送催办（钉钉待办 + 群通知）`);
   };
 
@@ -94,12 +104,16 @@ export default function TeamBoard({ compact = false }: { compact?: boolean }) {
       }
       extra={
         <Space size={8} wrap>
-          {managedDeptIds.length > 1 && (
-            <Select
-              size="small" value={deptId} onChange={setDeptId} style={{ width: 200 }}
-              options={managedDeptIds.map((id) => ({
-                value: id, label: db.depts.find((d) => d.dept_id === id)?.path ?? id,
-              }))}
+          {/* V8.3-10.08 需求②：树状多选；只列本人管辖部门（组织者确认口径） */}
+          {managedDeptIds.length > 0 && (
+            <DeptTreeSelect
+              value={deptIds}
+              onChange={setDeptIds}
+              restrictTo={managedDeptIds}
+              placeholder="选择管辖部门（可多选）"
+              style={{ width: 260 }}
+              showHitCount={false}
+              fullPathLabel
             />
           )}
           <Button size="small" icon={<BellOutlined />} onClick={urge}>催办（{undone.length}）</Button>
@@ -115,7 +129,7 @@ export default function TeamBoard({ compact = false }: { compact?: boolean }) {
     >
       <Row gutter={[12, 12]}>
         <Col xs={12} sm={6}>
-          <StatCard label="部门人数" value={members.length} sub={dept?.name ?? deptId} tone="blue" />
+          <StatCard label="部门人数" value={members.length} sub={deptIds.length === 1 ? dept?.name ?? deptIds[0] : `${deptIds.length} 个部门`} tone="blue" />
         </Col>
         <Col xs={12} sm={6}>
           <StatCard label="已提报" value={members.length - undone.length} sub={`未提报 ${undone.length} 人`} tone="green" />
@@ -160,7 +174,7 @@ export default function TeamBoard({ compact = false }: { compact?: boolean }) {
         <Alert
           style={{ marginTop: 12 }} type="info" showIcon
           message={<span style={{ fontSize: 12 }}>
-            导出口径：姓名 / 部门 / 是否已提报 / 最新状态 / 积分；仅含 {dept?.name ?? deptId} 在册人员，不含本人与停用账号。数据截止 {DEMO_TODAY}（T-1）。
+            导出口径：姓名 / 部门 / 是否已提报 / 最新状态 / 积分；仅含所选部门在册人员，不含本人与停用账号。数据截止 {DEMO_TODAY}（T-1）。
           </span>}
         />
       )}

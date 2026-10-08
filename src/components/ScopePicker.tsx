@@ -6,6 +6,8 @@ import { COLOR } from '@/theme';
 import type { ScopeSubject } from '@/mock/types';
 import type { Role } from '@/mock/types';
 import { ROLE_LABEL } from '@/mock/types';
+import DeptTreeSelect from '@/components/DeptTreeSelect';
+import { deptSubtreeUnion } from '@/service/deptTree';
 
 /**
  * V4.0 CR-08：统一的「权限范围选择器」
@@ -24,14 +26,21 @@ export function parseScope(v: string | ScopeSubject[] | undefined | null): Scope
 }
 
 /** 把 ScopeSubject[] 解析为实际命中的人员（用于生效预览与回读校验） */
-export function resolveSubjects(subjects: ScopeSubject[], db: Pick<DB, 'users'>): string[] {
+export function resolveSubjects(subjects: ScopeSubject[], db: Pick<DB, 'users' | 'depts'>): string[] {
   if (subjects.length === 0) return [];
   const ids = new Set<string>();
+  /**
+   * V8.3-10.08 需求②：部门命中改走 deptTree 的显式子树并集。
+   * 旧实现是 `d.startsWith(s.id)` 前缀匹配 —— 在钉钉真实数字 id 下会误命中别的部门，
+   * 多选几个部门后命中人数会虚高（「配了但不生效」的反面：配了生效过头）。
+   */
+  const deptIds = subjects.filter((s) => s.type === 'DEPT').map((s) => s.id);
+  const deptUnion = deptIds.length ? deptSubtreeUnion(db.depts ?? [], deptIds) : null;
   subjects.forEach((s) => {
     if (s.type === 'ALL') {
       db.users.forEach((u) => u.status !== 99 && ids.add(u.union_id));
     } else if (s.type === 'DEPT') {
-      db.users.forEach((u) => u.status !== 99 && u.dept_id_list.some((d) => d === s.id || d.startsWith(s.id)) && ids.add(u.union_id));
+      db.users.forEach((u) => u.status !== 99 && (u.dept_id_list ?? []).some((d) => deptUnion?.has(d)) && ids.add(u.union_id));
     } else if (s.type === 'ROLE') {
       db.users.forEach((u) => u.status !== 99 && u.roles.includes(s.id as Role) && ids.add(u.union_id));
     } else if (s.type === 'TAG') {
@@ -132,12 +141,20 @@ export default function ScopePicker({
           ]}
           onSelect={(v) => { if (v === 'ALL') add('ALL', 'ALL', '全员'); }}
         />
-        <Select
-          size="small" disabled={disabled || locked} style={{ width: 190 }}
-          placeholder="选择部门（含下级）" value={undefined}
-          options={db.depts.map((d) => ({ value: d.dept_id, label: d.path }))}
-          onSelect={(id) => { if (!id) return; add('DEPT', id, db.depts.find((d) => d.dept_id === id)?.name ?? id); }}
-        />
+        {/* V8.3-10.08 需求②：部门改为组织架构树多选（勾父带子），可一次选多个部门 */}
+        <div style={{ width: 280 }}>
+          <DeptTreeSelect
+            value={subjects.filter((s) => s.type === 'DEPT').map((s) => s.id)}
+            onChange={(ids) => {
+              const others = subjects.filter((s) => s.type !== 'DEPT');
+              const depts = ids.map((id) => ({ type: 'DEPT' as const, id, name: db.depts.find((d) => d.dept_id === id)?.name ?? id }));
+              onChange([...others, ...depts]);
+            }}
+            disabled={disabled || locked}
+            placeholder="选择部门（树状多选）"
+            showHitCount={false}
+          />
+        </div>
         <Select
           size="small" disabled={disabled || locked} style={{ width: 150 }}
           placeholder="选择角色" value={undefined}

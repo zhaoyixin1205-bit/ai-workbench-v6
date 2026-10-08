@@ -8,10 +8,16 @@
 import { useMemo } from 'react';
 import type { Dept, Role, User } from '@/mock/types';
 import { effectiveRoles, isDeptLeader } from '@/mock/types';
+import { deptSubtreeUnion } from '@/service/deptTree';
 
 /** 筛选条件（全空 = 不筛选） */
 export interface UserFilterState {
   keyword: string;
+  /**
+   * V8.3-10.08 需求②：部门筛选由单选改树状多选，`deptIds` 为准。
+   * `deptId` 保留为「首个选中部门」，供批量改部门等旧调用继续取用（不再参与筛选判定）。
+   */
+  deptIds: string[];
   deptId: string;
   /** 部门筛选是否包含子部门（默认勾选：组织者按部门看人时通常要含下级） */
   includeSub: boolean;
@@ -23,11 +29,17 @@ export interface UserFilterState {
 }
 
 export const EMPTY_USER_FILTER: UserFilterState = {
-  keyword: '', deptId: '', includeSub: true, role: '', tag: '', status: '', source: '', leader: '',
+  keyword: '', deptIds: [], deptId: '', includeSub: true, role: '', tag: '', status: '', source: '', leader: '',
 };
 
 export function hasUserFilter(f: UserFilterState): boolean {
-  return !!(f.keyword || f.deptId || f.role || f.tag || f.status !== '' || f.source || f.leader);
+  return !!(f.keyword || f.deptIds?.length || f.role || f.tag || f.status !== '' || f.source || f.leader);
+}
+
+/** 实际参与筛选的部门 id 列表（新字段优先，回退旧单值，保证旧数据/旧调用不失效） */
+function activeDeptIds(f: UserFilterState): string[] {
+  if (f.deptIds?.length) return f.deptIds;
+  return f.deptId ? [f.deptId] : [];
 }
 
 /**
@@ -55,11 +67,12 @@ export function deptSubtreeIds(depts: Dept[], rootId: string): Set<string> {
 
 /** 单条用户是否命中筛选（不含软删与关键字，关键字由页面按原口径处理） */
 export function matchUserFilter(u: User, f: UserFilterState, subTree: Set<string>): boolean {
-  if (f.deptId) {
-    // includeSub 时命中子树中任一部门；否则只认主部门（多部门任职按主部门口径，避免重复计数）
+  const deptIds = activeDeptIds(f);
+  if (deptIds.length) {
+    // includeSub 时命中子树中任一部门（多选则取并集）；否则只认主部门（多部门任职按主部门口径，避免重复计数）
     const hit = f.includeSub
       ? (u.dept_id_list ?? []).some((id) => subTree.has(id))
-      : (u.dept_id_list?.[0] ?? '') === f.deptId;
+      : deptIds.includes(u.dept_id_list?.[0] ?? '');
     if (!hit) return false;
   }
   if (f.role && !effectiveRoles(u).includes(f.role)) return false;
@@ -74,7 +87,7 @@ export function matchUserFilter(u: User, f: UserFilterState, subTree: Set<string
 /** 页面侧：把 hook 结果缓存起来，避免每次渲染重算子部门树 */
 export function useUserFilter(users: User[], depts: Dept[], f: UserFilterState) {
   return useMemo(() => {
-    const subTree = deptSubtreeIds(depts ?? [], f.deptId);
+    const subTree = deptSubtreeUnion(depts ?? [], activeDeptIds(f));
     return { rows: users.filter((u) => matchUserFilter(u, f, subTree)), subTree };
   }, [users, depts, f]);
 }
@@ -88,8 +101,10 @@ export function userFilterSummary(
 ): string {
   const parts: string[] = [];
   if (f.keyword) parts.push(`关键字「${f.keyword}」`);
-  if (f.deptId) {
-    parts.push(`${depts.find((d) => d.dept_id === f.deptId)?.name ?? f.deptId}${f.includeSub ? '及下级' : '（仅本级）'}`);
+  const deptIds = activeDeptIds(f);
+  if (deptIds.length) {
+    const names = deptIds.map((id) => depts.find((d) => d.dept_id === id)?.name ?? id).join('、');
+    parts.push(`${names}${f.includeSub ? '及下级' : '（仅本级）'}`);
   }
   if (f.role) parts.push(`角色 ${roleLabel[f.role] ?? f.role}`);
   if (f.tag) parts.push(`标签 ${tags.find((t) => t.id === f.tag)?.name ?? f.tag}`);
