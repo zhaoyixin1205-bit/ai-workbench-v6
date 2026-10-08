@@ -9,7 +9,7 @@
  * 选择器全部 wb2- 前缀，不会污染 v1 其它区块。
  */
 import { Link } from 'react-router-dom';
-import { CheckCircleOutlined, ClockCircleOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, ClockCircleOutlined, ReadOutlined } from '@ant-design/icons';
 import type { SceneBandVM } from '@/service/sceneBoard';
 import { useNoteVisible } from '@/auth/annotation';
 import '../theme/v2/template.css';
@@ -29,7 +29,7 @@ export interface SceneBoardProps {
   week: string;
   /** 本周已发布卡数 */
   total: number;
-  /** 按赛道分好的组 */
+  /** 一行为一个案例 的分行结果 */
   bands: SceneBandVM[];
 }
 
@@ -50,8 +50,16 @@ export default function SceneBoard({ week, total, bands }: SceneBoardProps) {
   return (
     <>
       {bands.map((band) => (
-        <div key={band.track} className="wb2-scband" style={{ background: band.gradient }}>
-          <span className="wb2-scpill" style={{ color: band.ink }}>{band.track}</span>
+        <div key={band.key} className="wb2-scband" style={{ background: band.gradient }}>
+          {/* 案例名小标志：一行=一个案例，靠它区分不同来源 */}
+          <Link to={band.caseHref} className="wb2-scpill" style={{ color: band.ink }} title={band.caseName}>
+            <ReadOutlined className="wb2-scpill-ico" />
+            <span className="wb2-scpill-tx">{band.caseName}</span>
+          </Link>
+          <span className="wb2-scmeta">
+            {band.authorName ? <span className="wb2-scmeta-au">作者 {band.authorName}</span> : null}
+            <span className="wb2-scmeta-em">{band.authorName ? ' ' : ''}· {band.track} · {band.count} 张</span>
+          </span>
           <div className="wb2-scgrid">
             {band.cards.map((c) => (
               <Link key={c.id} to={c.href} className="wb2-fcard" title={c.summary}>

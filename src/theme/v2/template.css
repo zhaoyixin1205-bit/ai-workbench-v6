@@ -654,16 +654,48 @@
   padding: 44px 16px 16px;
   margin-bottom: var(--wb-space-5);
 }
+/* 案例名小标志（左上胶囊）：一行为一个案例，点进去看该案例原文
+   案例名可能很长 → 右侧给 meta 留出安全带后按行宽截断，不做两行挤压。 */
 .wb2-scpill {
   position: absolute;
-  top: 12px;
+  top: 11px;
   left: 16px;
-  font-size: var(--wb-fs-caption);
+  max-width: calc(100% - 210px);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
   font-weight: 600;
-  padding: 2px 12px;
+  padding: 3px 13px;
   border-radius: var(--wb-radius-pill);
-  background: rgba(255, 255, 255, 0.72);
-  box-shadow: var(--wb-shadow-popover);
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.10);
+  color: inherit;
+  transition: box-shadow var(--wb-motion-fast);
+}
+.wb2-scpill:hover { box-shadow: 0 6px 14px rgba(15, 23, 42, 0.16); }
+.wb2-scpill-ico { flex: none; font-size: 12px; opacity: 0.85; }
+.wb2-scpill-tx {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* 右上补充信息：作者 · 赛道 · N 张（按 10-08 拍板：不显示发布时间） */
+.wb2-scmeta {
+  position: absolute;
+  top: 14px;
+  right: 18px;
+  max-width: 190px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  color: var(--wb-ink-3);
+}
+.wb2-scmeta-em { color: var(--wb-ink-4); }
+@media (max-width: 640px) {
+  .wb2-scpill { max-width: calc(100% - 130px); }
+  .wb2-scmeta { max-width: 116px; font-size: 11px; }
 }
 .wb2-scgrid {
   display: grid;

@@ -106,8 +106,9 @@ export default function HomeV2() {
     })
     .slice(0, 5);
 
-  /** V8.5-10.08：场景卡判定搬到共享层 @/service/sceneBoard.ts，与 v1 同源同口径（本周 + 已发布 + 按赛道分组） */
-  const sceneBoard = buildSceneBoard(db.sceneCards ?? []);
+  /** V8.5-10.08：场景卡判定搬到共享层 @/service/sceneBoard.ts，与 v1 同源同口径。
+   *  V8.8-10.08：分组维度由「赛道」改为「一行为一个案例」，行头用案例名做标志。 */
+  const sceneBoard = buildSceneBoard(db.sceneCards ?? [], db.cases ?? []);
 
   const tickerItems: TickerItem[] = announcements.map((a) => ({
     id: a.id,

@@ -92,8 +92,10 @@ export default function Home() {
    *   ①只展示「本周」发布的已发布卡，不再用案例列表兜底凑数；
    *   ②本周为空时给空态文案 + 案例库入口，不留 chip 的假热闹；
    *   ③「本周」按真实今天的 ISO 周计算（不用 DEMO_TODAY，否则演示基准日会让周次失真）。
+   *   ④ V8.8-10.08：分组由「按赛道」改为「一行为一个案例」，行头是案例名小标志，
+   *      同一案例的多张卡不再被切到不同行（判定见 service/sceneBoard.ts 的 groupSceneByCase）。
    */
-  const sceneBoard = buildSceneBoard(db.sceneCards ?? []);
+  const sceneBoard = buildSceneBoard(db.sceneCards ?? [], db.cases ?? []);
 
   const tickerItems: TickerItem[] = announcements.map((a) => ({
     id: a.id,
