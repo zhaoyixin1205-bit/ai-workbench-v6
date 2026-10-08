@@ -8,6 +8,7 @@ import { BoardCards } from '@/components/BoardCards';
 import { ScopeNotice } from '@/components/ScopeNotice';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import { COLOR } from '@/theme/v2';
+import { useNoteVisible } from '@/auth/annotation';
 import '../../theme/v2/template.css';
 
 /**
@@ -36,6 +37,9 @@ interface DeptRow {
 
 export default function DashboardV2() {
   const s = useDashboardStats();
+  /** V8.6-10.08：口径 / 规则注解仅运营方与管理员可见 */
+  const note = useNoteVisible();
+
   const { message } = AntApp.useApp();
 
   return (
@@ -51,7 +55,7 @@ export default function DashboardV2() {
             当前统计口径：标签 = {s.tag.name}，分母 = {s.scopeUsers.length} 人
           </div>
           <div style={{ fontSize: 'var(--wb-fs-caption)', color: COLOR.ink3, marginTop: 4, lineHeight: 1.6 }}>
-            口径一致性要求：同一份报表分母必须唯一；切换标签时全页口径同步变化，导出文件表头自动带口径标注。
+            {note && '口径一致性要求：同一份报表分母必须唯一；切换标签时全页口径同步变化，导出文件表头自动带口径标注。'}
           </div>
         </div>
         <Segmented
@@ -205,9 +209,11 @@ export default function DashboardV2() {
             />
           </div>
 
-          <div style={{ fontSize: 'var(--wb-fs-caption)', color: COLOR.ink3, marginTop: 'var(--wb-space-4)' }}>
-            数据截止 {DEMO_TODAY}（T-1）· 一期为定时预计算 + 5 分钟缓存；二期切自建库后实时计算，两种实现对外口径一致
-          </div>
+          {note && (
+            <div style={{ fontSize: 'var(--wb-fs-caption)', color: COLOR.ink3, marginTop: 'var(--wb-space-4)' }}>
+              数据截止 {DEMO_TODAY}（T-1）· 一期为定时预计算 + 5 分钟缓存；二期切自建库后实时计算，两种实现对外口径一致
+            </div>
+          )}
         </div>
       )}
     </div>

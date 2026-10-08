@@ -1,4 +1,5 @@
 import { Button, Card, Col, Empty, Progress, Row, Space, Table, Tag, Typography, App as AntApp } from 'antd';
+import { useNoteVisible } from '@/auth/annotation';
 import { BellOutlined, TeamOutlined } from '@ant-design/icons';
 import { useMemo } from 'react';
 import { useStore } from '@/store/store';
@@ -63,6 +64,9 @@ function latestSubmit(list: AssignmentSubmit[], uid: string): AssignmentSubmit |
 
 export default function TeamView() {
   const { db, me, setDb, log } = useStore();
+  /** V8.6-10.08：口径 / 规则注解仅运营方与管理员可见 */
+  const note = useNoteVisible();
+
   const { message } = AntApp.useApp();
 
   /** 管辖部门并集去重（副职 / 多部门负责人取并集） */
@@ -171,9 +175,11 @@ export default function TeamView() {
             );
           })}
         </Space>
-        <Typography.Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 10 }}>
-          口径：进度止于「已完成」；公示、共识与入库属于组织者的运营后动作，不在本页展示。
-        </Typography.Text>
+        {note && (
+          <Typography.Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 10 }}>
+            口径：进度止于「已完成」；公示、共识与入库属于组织者的运营后动作，不在本页展示。
+          </Typography.Text>
+        )}
       </Card>
 
       {/* 人员清单：只显示姓名，不带岗位与职级 */}

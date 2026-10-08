@@ -8,12 +8,15 @@ import { TRACKS } from '@/mock/types';
 import type { Topic, Track } from '@/mock/types';
 import { CoverBlock, PageHeader, TrackTag, HoverCard } from '@/components/ui';
 import { DEMO_TODAY } from '@/mock/seedBiz';
+import { useNoteVisible } from '@/auth/annotation';
 
 /** V4.0 CR-03：标签筛选的交集 / 并集两种口径 */
 type TagMode = 'ANY' | 'ALL';
 
 export default function CaseList() {
   const { db, me, setDb, log, flags, hasRole } = useStore();
+  /** V8.6-10.08：口径 / 规则注解仅运营方与管理员可见 */
+  const note = useNoteVisible();
   const nav = useNavigate();
   const { message } = AntApp.useApp();
   const [customOpen, setCustomOpen] = useState(false);
@@ -209,9 +212,11 @@ export default function CaseList() {
             style={{ width: 220 }} value={kw} onChange={(e) => setKw(e.target.value)}
           />
         </Space>
-        <div style={{ fontSize: 11, color: COLOR.textMuted, marginTop: 8 }}>
+        {note && (
+                <div style={{ fontSize: 11, color: COLOR.textMuted, marginTop: 8 }}>
           V4.0 CR-03：已取消受众分层（原建议层级），分类改由发布者自选标签承载；无标签的内容进入「未分类」聚合，按标签筛选时不可见。
         </div>
+        )}
       </Card>
 
       <Tabs

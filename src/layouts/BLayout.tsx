@@ -1,4 +1,5 @@
 import { Layout, Menu, Space, Typography, Button, Select, Tag, Breadcrumb, Alert } from 'antd';
+import { useNoteVisible } from '@/auth/annotation';
 import {
   DashboardOutlined, FormOutlined, CheckSquareOutlined, InboxOutlined, FileTextOutlined,
   TeamOutlined, GiftOutlined, CrownOutlined, TrophyOutlined, MedicineBoxOutlined,
@@ -50,6 +51,9 @@ const ICON: Record<string, React.ReactNode> = {
 
 export default function BLayout() {
   const { me, flags, db, campaign, hasCampaign, setCurrentCampaignId } = useStore();
+  /** V8.6-10.08：口径 / 规则注解仅运营方与管理员可见 */
+  const note = useNoteVisible();
+
   const nav = useNavigate();
   const loc = useLocation();
   const path = loc.pathname;
@@ -150,7 +154,7 @@ export default function BLayout() {
                 options={(db.campaigns ?? []).map((c) => ({ value: c.id, label: c.name }))}
               />
             </Space>
-            <Tag color="blue" style={{ marginInlineEnd: 0 }}>数据截止 {DEMO_TODAY}（T-1）</Tag>
+            {note && <Tag color="blue" style={{ marginInlineEnd: 0 }}>数据截止 {DEMO_TODAY}（T-1）</Tag>}
             <SyncBadge />
             <Button size="small" icon={<ExportOutlined />}>导出</Button>
             <RoleSwitcher />
@@ -176,7 +180,7 @@ export default function BLayout() {
         <Alert
           type="warning" showIcon style={{ marginBottom: 16 }}
           message="当前身份为该页面的只读浏览者"
-          description="V4.0 CR-09：技能管理员（SKILL_ADMIN）可查看本页数据用于入库与上架判断，但不具备审批、发布、DA 调整等写操作权限；确需编辑请由组织者或系统管理员在「用户与权限」中授予。"
+          description="当前身份可查看本页数据用于入库与上架判断，但不具备审批、发布、DA 调整等写操作权限；确需编辑请联系组织者或系统管理员。"
         />
       )}
       <div className="wb-page" key={path}>

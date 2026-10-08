@@ -8,6 +8,7 @@
  * 3. 关闭 `board.configurable` 开关 → 完全回到 V3.0 §11.1 固定分区，本文件不参与渲染。
  */
 import type { BoardCardConfig } from '@/mock/types';
+import { useNoteVisible } from '@/auth/annotation';
 import { COLOR } from '@/theme';
 import { Card, Col, Progress, Row, Space, Table, Tag, Typography } from 'antd';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ResponsiveContainer } from 'recharts';
@@ -235,6 +236,8 @@ export function BoardCard({ card, data }: { card: BoardCardConfig; data: BoardDa
 /** 卡片网格：只渲染 enabled 且按 order 排序；空配置时给出提示而不是白屏 */
 export function BoardCards() {
   const { db, campaign } = useStore();
+  /** V8.6-10.08：口径 / 规则注解仅运营方与管理员可见 */
+  const note = useNoteVisible();
   const data = useBoardData();
   const cfg = db.boardConfigs.find((c) => c.campaign_id === campaign.id) ?? db.boardConfigs[0];
   const cards = [...(cfg?.cards ?? [])].filter((c) => c.enabled).sort((a, b) => a.order - b.order);
@@ -254,9 +257,11 @@ export function BoardCards() {
       <Row gutter={[16, 16]}>
         {cards.map((c) => <BoardCard key={c.id} card={c} data={data} />)}
       </Row>
-      <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-        看板由「卡片配置」驱动（配置版本 {cfg?.version ?? '1.0'} · 更新人 {cfg?.updated_by ?? '系统默认'} · {cfg?.updated_at ?? '—'}）；关闭 board.configurable 开关即回到 V3.0 固定分区。
-      </Typography.Text>
+      {note && (
+        <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+          看板由「卡片配置」驱动（配置版本 {cfg?.version ?? '1.0'} · 更新人 {cfg?.updated_by ?? '系统默认'} · {cfg?.updated_at ?? '—'}）；关闭 board.configurable 开关即回到 V3.0 固定分区。
+        </Typography.Text>
+      )}
     </>
   );
 }

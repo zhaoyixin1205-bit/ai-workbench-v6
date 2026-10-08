@@ -7,6 +7,7 @@
  *   ③AnnounceTicker / TeamBoard 为 v1 既有组件，直接复用不复制
  */
 import { Button, Empty, Progress } from 'antd';
+import { useNoteVisible } from '@/auth/annotation';
 import {
   ArrowRightOutlined, CheckCircleOutlined, ClockCircleOutlined,
   FireOutlined, RocketOutlined, TeamOutlined, TrophyOutlined,
@@ -52,6 +53,8 @@ function Delta({ v }: { v: number }) {
 
 export default function HomeV2() {
   const { db, me, campaign, flags, hasRole } = useStore();
+  /** V8.6-10.08：口径 / 规则注解仅运营方与管理员可见 */
+  const note = useNoteVisible();
   const stats = useStats();
 
   /* V7.1：距截止读「作业提报周期」（OPEN 期次）→ 当前阶段 → 届次结束日兜底；倒计时按真实今天 */
@@ -205,7 +208,7 @@ export default function HomeV2() {
           <div className="vl accent">{stats.submitRate}%</div>
           <div className="sb"><Delta v={12.4} /><Sparkline data={SPARK.submit} color="var(--wb-track-1)" /></div>
           <div style={{ fontSize: 'var(--wb-fs-caption)', color: 'var(--wb-ink-3)', marginTop: 6 }}>
-            {stats.submitted}/{stats.cadreCount} 人 · 口径：干部+核心骨干
+            {stats.submitted}/{stats.cadreCount} 人{note ? ' · 口径：干部+核心骨干' : ''}
           </div>
         </div>
         <div className="wb2-metric">
@@ -225,7 +228,7 @@ export default function HomeV2() {
           <div className="vl">{stats.activateRate}%</div>
           <div className="sb"><Delta v={6.2} /><Sparkline data={SPARK.activate} color="var(--wb-info)" /></div>
           <div style={{ fontSize: 'var(--wb-fs-caption)', color: 'var(--wb-ink-3)', marginTop: 6 }}>
-            {stats.activated}/{stats.cadreCount} 人已激活 · 口径：干部+核心骨干
+            {stats.activated}/{stats.cadreCount} 人已激活{note ? ' · 口径：干部+核心骨干' : ''}
           </div>
         </div>
       </div>

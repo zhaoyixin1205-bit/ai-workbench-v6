@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { useStore } from '@/store/store';
 import { COLOR } from '@/theme';
 import { SoftTag } from '@/components/ui';
+import { useNoteVisible } from '@/auth/annotation';
 
 /**
  * V4.0 CR-04 · 我的选题
@@ -22,6 +23,8 @@ const STATUS_TONE: Record<string, 'gray' | 'blue' | 'green'> = {
 
 export default function MyTopics() {
   const { db, me, flags } = useStore();
+  /** V8.6-10.08：口径 / 规则注解仅运营方与管理员可见 */
+  const note = useNoteVisible();
 
   const mine = db.topicSelections.filter((s) => s.union_id === me.union_id);
 
@@ -37,9 +40,11 @@ export default function MyTopics() {
 
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
-      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        V4.0 CR-03：选题非排斥，同一选题可被多人选中，各自独立提报，互不影响。
-      </Typography.Text>
+      {note && (
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          V4.0 CR-03：选题非排斥，同一选题可被多人选中，各自独立提报，互不影响。
+        </Typography.Text>
+      )}
 
       {mine.map((sel) => {
         const topic = db.topics.find((t) => t.id === sel.topic_id);

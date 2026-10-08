@@ -14,6 +14,7 @@ import TeamBoard from '@/components/TeamBoard';
 import MyTopics from '@/components/MyTopics';
 import { ROLE_LABEL } from '@/mock/types';
 import { SubmitStatusTag } from '@/pages/c/WorkList';
+import { useNoteVisible } from '@/auth/annotation';
 import '../../theme/v2/template.css';
 
 /** CR-05：兑换订单状态色（'已发货' / '已完成' 为 CR-05 新增） */
@@ -23,6 +24,8 @@ const STATUS_COLOR: Record<string, string> = {
 
 export default function ProfileV2() {
   const { db, me, setDb, flags } = useStore();
+  /** V8.6-10.08：技术标识与不可编辑说明仅运营方与管理员可见 */
+  const note = useNoteVisible();
   const { message } = AntApp.useApp();
   const [qs, setQs] = useSearchParams();
   const tab = qs.get('tab') ?? 'progress';
@@ -64,9 +67,11 @@ export default function ProfileV2() {
               <div className="sub" style={{ marginTop: 6 }}>
                 {me.dept_names[0]} · {me.title} · 工号 {me.job_number}
               </div>
-              <div className="sub" style={{ opacity: 0.78 }}>
-                unionId {me.union_id} · 数据范围 {me.scope_type} · 身份来自钉钉，姓名不可编辑
-              </div>
+              {note && (
+                <div className="sub" style={{ opacity: 0.78 }}>
+                  unionId {me.union_id} · 数据范围 {me.scope_type} · 身份来自钉钉，姓名不可编辑
+                </div>
+              )}
             </div>
           </div>
           <div style={{ display: 'flex', gap: 'var(--wb-space-8)' }}>

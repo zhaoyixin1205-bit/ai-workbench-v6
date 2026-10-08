@@ -1,5 +1,6 @@
 import JudgeReviewV2 from '@/pages/v2/JudgeReviewV2';
 import { useStore } from '@/store/store';
+import { useNoteVisible } from '@/auth/annotation';
 import '../../theme/v2/template.css';
 
 /**
@@ -12,22 +13,28 @@ import '../../theme/v2/template.css';
  */
 export default function JudgeScoreV2() {
   const { me } = useStore();
+  /** V8.6-10.08：评分口径说明仅运营方与管理员可见 */
+  const note = useNoteVisible();
 
   return (
     <div>
       <div className="wb2-ph">
         <div>
           <div className="wb2-ph-t">评委评分</div>
-          <div className="wb2-ph-d">
-            AI 预评分 + 评委复核，最终分按权重合成；默认展示「待我评分」，历史评分可查看并修改
-          </div>
+          {note && (
+            <div className="wb2-ph-d">
+              AI 预评分 + 评委复核，最终分按权重合成；默认展示「待我评分」，历史评分可查看并修改
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="wb2-quote" style={{ marginBottom: 'var(--wb-space-5)' }}>
-        <b>评委评分口径：</b>当前评委身份 {me.name}（姓名与身份取自钉钉，不可编辑）；系统自动过滤本人提交的作业，
-        不能给自己打分。评分卡修改会生成新版本，历史评分仍按当时的版本计算。
-      </div>
+      {note && (
+        <div className="wb2-quote" style={{ marginBottom: 'var(--wb-space-5)' }}>
+          <b>评委评分口径：</b>当前评委身份 {me.name}（姓名与身份取自钉钉，不可编辑）；系统自动过滤本人提交的作业，
+          不能给自己打分。评分卡修改会生成新版本，历史评分仍按当时的版本计算。
+        </div>
+      )}
 
       <JudgeReviewV2 variant="c" />
     </div>

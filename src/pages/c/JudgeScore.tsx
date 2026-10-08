@@ -3,6 +3,7 @@ import { SafetyCertificateOutlined } from '@ant-design/icons';
 import JudgeReview from '@/pages/b/JudgeReview';
 import { PageHeader } from '@/components/ui';
 import { useStore } from '@/store/store';
+import { useNoteVisible } from '@/auth/annotation';
 
 /**
  * V7.0 CR-32：C 端「评委评分」（/judge）
@@ -18,20 +19,24 @@ import { useStore } from '@/store/store';
  */
 export default function JudgeScore() {
   const { me } = useStore();
+  /** V8.6-10.08：评分口径说明仅运营方与管理员可见 */
+  const note = useNoteVisible();
 
   return (
     <div>
       <PageHeader
         title="评委评分"
-        desc="AI 预评分 + 评委复核，最终分按权重合成；默认展示「待我评分」，历史评分可查看并修改"
+        desc={note ? 'AI 预评分 + 评委复核，最终分按权重合成；默认展示「待我评分」，历史评分可查看并修改' : undefined}
       />
-      <Alert
-        type="info" showIcon
-        icon={<SafetyCertificateOutlined />}
-        style={{ marginBottom: 16 }}
-        message="评委评分口径"
-        description={`当前评委身份：${me.name}（姓名与身份取自钉钉，不可编辑）；系统自动过滤本人提交的作业，不能给自己打分。评分卡修改会生成新版本，历史评分仍按当时的版本计算。`}
-      />
+      {note && (
+        <Alert
+          type="info" showIcon
+          icon={<SafetyCertificateOutlined />}
+          style={{ marginBottom: 16 }}
+          message="评委评分口径"
+          description={`当前评委身份：${me.name}（姓名与身份取自钉钉，不可编辑）；系统自动过滤本人提交的作业，不能给自己打分。评分卡修改会生成新版本，历史评分仍按当时的版本计算。`}
+        />
+      )}
       <JudgeReview variant="c" />
     </div>
   );

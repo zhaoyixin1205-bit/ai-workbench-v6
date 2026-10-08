@@ -6,6 +6,7 @@ import { useStore } from '@/store/store';
 import { COLOR } from '@/theme';
 import { StatCard } from '@/components/ui';
 import { DEMO_TODAY } from '@/mock/seedBiz';
+import { useNoteVisible } from '@/auth/annotation';
 
 /**
  * V4.0 CR-01：「我的团队」板块（属性驱动，不是可切换身份）
@@ -22,6 +23,8 @@ function toCsv(rows: (string | number)[][]): string {
 
 export default function TeamBoard({ compact = false }: { compact?: boolean }) {
   const { db, me, hasTeam, managedDeptIds, flags, log } = useStore();
+  /** V8.6-10.08：口径 / 规则注解仅运营方与管理员可见 */
+  const note = useNoteVisible();
   const { message } = AntApp.useApp();
   const [deptId, setDeptId] = useState<string>('');
 
@@ -82,9 +85,11 @@ export default function TeamBoard({ compact = false }: { compact?: boolean }) {
         <Space size={8}>
           <TeamOutlined style={{ color: COLOR.primary }} />
           <span style={{ fontWeight: 700 }}>我的团队</span>
-          <span style={{ fontSize: 12, fontWeight: 400, color: COLOR.textMuted }}>
-            CR-01：带团队是属性，不是身份，无需切换
-          </span>
+          {note && (
+            <span style={{ fontSize: 12, fontWeight: 400, color: COLOR.textMuted }}>
+              CR-01：带团队是属性，不是身份，无需切换
+            </span>
+          )}
         </Space>
       }
       extra={
@@ -121,9 +126,11 @@ export default function TeamBoard({ compact = false }: { compact?: boolean }) {
               本部门进度
             </div>
             <Progress percent={rate} strokeColor={COLOR.primary} />
-            <div style={{ fontSize: 11, color: COLOR.textMuted, marginTop: 6 }}>
-              口径：已提报人数 ÷ 部门在册人数（不含本人，不含停用账号）
-            </div>
+            {note && (
+              <div style={{ fontSize: 11, color: COLOR.textMuted, marginTop: 6 }}>
+                口径：已提报人数 ÷ 部门在册人数（不含本人，不含停用账号）
+              </div>
+            )}
           </div>
         </Col>
       </Row>
@@ -149,12 +156,14 @@ export default function TeamBoard({ compact = false }: { compact?: boolean }) {
         )}
       </div>
 
-      <Alert
-        style={{ marginTop: 12 }} type="info" showIcon
-        message={<span style={{ fontSize: 12 }}>
-          导出口径：姓名 / 部门 / 是否已提报 / 最新状态 / 积分；仅含 {dept?.name ?? deptId} 在册人员，不含本人与停用账号。数据截止 {DEMO_TODAY}（T-1）。
-        </span>}
-      />
+      {note && (
+        <Alert
+          style={{ marginTop: 12 }} type="info" showIcon
+          message={<span style={{ fontSize: 12 }}>
+            导出口径：姓名 / 部门 / 是否已提报 / 最新状态 / 积分；仅含 {dept?.name ?? deptId} 在册人员，不含本人与停用账号。数据截止 {DEMO_TODAY}（T-1）。
+          </span>}
+        />
+      )}
     </Card>
   );
 }

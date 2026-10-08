@@ -7,6 +7,7 @@ import { PageHeader } from '@/components/ui';
 import type { AssignmentSubmit, ScoreCard, ScoreResult } from '@/mock/types';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import { statusText, statusColor } from '@/constants/statusMeta';
+import { useNoteVisible } from '@/auth/annotation';
 
 /**
  * V7.0 CR-32：兜底空卡。原实现对 SC1 用了非空断言（`!`），一旦没有启用的卡就白屏；
@@ -38,6 +39,8 @@ interface ConfirmDraft {
 export default function JudgeReview({ variant = 'admin' }: { variant?: 'admin' | 'c' }) {
   const isC = variant === 'c';
   const { db, me, setDb, log, hasRole, flags } = useStore();
+  /** V8.6-10.08：口径 / 规则注解仅运营方与管理员可见 */
+  const note = useNoteVisible();
   const { message } = AntApp.useApp();
   /** V8.4-10.07：提示文案必须跟总闸一致，不能开关关着还说「已推送」 */
   const autoPush = db.pushSettings?.autoPush === true;
@@ -424,8 +427,8 @@ export default function JudgeReview({ variant = 'admin' }: { variant?: 'admin' |
       )}
       <Alert type="info" showIcon
         message={`最终分 = AI 分 × ${card.ai_weight}% + 评委均分 × ${card.judge_weight}%（多评委取均值，公式后台可配置）`}
-        description="评委姓名从钉钉读取、不可编辑；评委不能复核自己的作业，系统自动过滤。" />
-      {confirmMode && (
+        description={note ? '评委姓名从钉钉读取、不可编辑；评委不能复核自己的作业，系统自动过滤。' : undefined} />
+      {note && confirmMode && (
         <Alert type="success" showIcon
           message="V4.0 CR-07：抽查已简化为一次「真实性确认」"
           description="确认人取钉钉身份不可编辑，确认即代表复核结束；评分截止前可撤回重评（全程留痕）。原三问字段保留为可选高级项，由开关 judge.deepSpotCheck 控制。" />
@@ -579,9 +582,11 @@ export default function JudgeReview({ variant = 'admin' }: { variant?: 'admin' |
             </>
           )}
 
-          <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-            确认人取钉钉身份（{me.name}）不可编辑；确认后可在评分截止前撤回重评，全程留痕。
-          </Typography.Text>
+          {note && (
+            <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+              确认人取钉钉身份（{me.name}）不可编辑；确认后可在评分截止前撤回重评，全程留痕。
+            </Typography.Text>
+          )}
         </Space>
       </Modal>
 

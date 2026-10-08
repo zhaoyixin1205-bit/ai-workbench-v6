@@ -10,6 +10,7 @@ import { useTopicPick } from '@/hooks/useTopicPick';
 import { Dialog } from '@/components/v2/Dialog';
 import { HoverCard } from '@/components/ui';
 import { trackVar } from '@/theme/v2/track';
+import { useNoteVisible } from '@/auth/annotation';
 import '../../theme/v2/template.css';
 
 /**
@@ -29,6 +30,8 @@ import '../../theme/v2/template.css';
 
 export default function CaseListV2() {
   const { db } = useStore();
+  /** V8.6-10.08：口径 / 规则注解仅运营方与管理员可见 */
+  const note = useNoteVisible();
   const nav = useNavigate();
   const f = useCaseFilters();
   const { pickedCount, mineSelected, pickTopic, createCustomTopic } = useTopicPick(f.multiSelect);
@@ -314,9 +317,11 @@ export default function CaseListV2() {
         </Form>
       </Dialog>
 
-      <div style={{ fontSize: 'var(--wb-fs-caption)', color: 'var(--wb-ink-3)', marginTop: 'var(--wb-space-4)', lineHeight: 1.6 }}>
+      {note && (
+            <div style={{ fontSize: 'var(--wb-fs-caption)', color: 'var(--wb-ink-3)', marginTop: 'var(--wb-space-4)', lineHeight: 1.6 }}>
         V4.0 CR-03：已取消受众分层（原建议层级），分类改由发布者自选标签承载；无标签的内容进入「未分类」聚合，按标签筛选时不可见。
       </div>
+      )}
     </div>
   );
 }

@@ -7,6 +7,7 @@ import type { AssignmentSubmit, ScoreCard, ScoreResult, SubmitStatus } from '@/m
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import { statusText, statusColor } from '@/constants/statusMeta';
 import { Dialog, DialogField, DialogKV, useConfirm } from '@/components/v2/Dialog';
+import { useNoteVisible } from '@/auth/annotation';
 import '../../theme/v2/template.css';
 
 /**
@@ -64,6 +65,8 @@ interface ConfirmDraft {
 export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin' | 'c' }) {
   const isC = variant === 'c';
   const { db, me, setDb, log, hasRole, flags } = useStore();
+  /** V8.6-10.08：口径 / 规则注解仅运营方与管理员可见 */
+  const note = useNoteVisible();
   /** V8.4-10.07：提示文案必须跟总闸一致，不能开关关着还说「已推送」 */
   const autoPush = db.pushSettings?.autoPush === true;
   const { message } = AntApp.useApp();
@@ -492,7 +495,7 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
         <div className="wb2-ph">
           <div>
             <h2 className="wb2-ph-t">评委复核</h2>
-            <div className="wb2-ph-d">AI 预评分 + 评委复核，最终分按权重合成</div>
+            {note && <div className="wb2-ph-d">AI 预评分 + 评委复核，最终分按权重合成</div>}
           </div>
         </div>
       )}
@@ -511,11 +514,11 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
       <div className="wb2-alert">
         <div className="bd">
           <div className="t">{`最终分 = AI 分 × ${card.ai_weight}% + 评委均分 × ${card.judge_weight}%（多评委取均值，公式后台可配置）`}</div>
-          <div className="d">评委姓名从钉钉读取、不可编辑；评委不能复核自己的作业，系统自动过滤。</div>
+          {note && <div className="d">评委姓名从钉钉读取、不可编辑；评委不能复核自己的作业，系统自动过滤。</div>}
         </div>
       </div>
 
-      {confirmMode && (
+      {note && confirmMode && (
         <div className="wb2-alert ok">
           <div className="bd">
             <div className="t">V4.0 CR-07：抽查已简化为一次「真实性确认」</div>
@@ -655,7 +658,7 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
       {/* ---------- V4.0 CR-07：真实性确认弹窗（统一操作层） ---------- */}
       <Dialog
         open={!!confirm} title={`真实性确认 · ${current?.code}`}
-        sub="确认人取钉钉身份不可编辑；确认后可在评分截止前撤回重评，全程留痕。"
+        sub={note ? '确认人取钉钉身份不可编辑；确认后可在评分截止前撤回重评，全程留痕。' : undefined}
         okText="提交确认" okDisabled={confirmOkDisabled}
         onCancel={() => setConfirm(null)}
         onOk={submitConfirm}
@@ -710,8 +713,7 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
         )}
 
         <div className="hint">
-          当前确认人：{me.name}（钉钉身份，不可编辑）。
-          {confirm?.result === '存疑' && ' 标记存疑将退回重新复核并通知组织者。'}
+          {note ? `当前确认人：${me.name}（钉钉身份，不可编辑）。` : confirm?.result === '存疑' ? ' 标记存疑将退回重新复核并通知组织者。' : ''}
         </div>
       </Dialog>
 

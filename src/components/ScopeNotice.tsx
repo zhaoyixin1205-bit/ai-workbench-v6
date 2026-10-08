@@ -12,9 +12,13 @@
  */
 import { Alert } from 'antd';
 import { useStore } from '@/store/store';
+import { useNoteVisible } from '@/auth/annotation';
 
 export function ScopeNotice({ count, unit = '条' }: { count: number; unit?: string }) {
   const { me, flags } = useStore();
+  /** V8.6-10.08：口径 / 规则注解仅运营方与管理员可见 */
+  const note = useNoteVisible();
+
   if (flags.scopeNotice === false) return null;
   if (me.scope_type === 'ALL') return null;
 
@@ -31,7 +35,7 @@ export function ScopeNotice({ count, unit = '条' }: { count: number; unit?: str
       type={isSelf ? 'info' : 'warning'}
       showIcon
       message={`数据范围：${label} · 当前可见 ${count} ${unit}`}
-      description={`V4.0 CR-02：角色并集只放大功能入口，不放大数据范围；导出与批量操作同样只作用于范围内的记录。${isSelf ? ` ${expertLine}` : ''}`}
+      description={[note ? '角色并集只放大功能入口，不放大数据范围；导出与批量操作同样只作用于范围内的记录。' : '', isSelf ? expertLine : ''].filter(Boolean).join(' ') || undefined}
     />
   );
 }

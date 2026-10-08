@@ -11,6 +11,7 @@
 import { Link } from 'react-router-dom';
 import { CheckCircleOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import type { SceneBandVM } from '@/service/sceneBoard';
+import { useNoteVisible } from '@/auth/annotation';
 import '../theme/v2/template.css';
 
 /** 参考同款加压黑色弯箭头（纯 SVG，无依赖） */
@@ -33,6 +34,9 @@ export interface SceneBoardProps {
 }
 
 export default function SceneBoard({ week, total, bands }: SceneBoardProps) {
+  /** V8.6-10.08：埋点口径说明仅运营方与管理员可见 */
+  const note = useNoteVisible();
+
   /* 本周一张都没发：给真话，不用旧 chip 的假热闹兜场 */
   if (total === 0) {
     return (
@@ -62,9 +66,11 @@ export default function SceneBoard({ week, total, bands }: SceneBoardProps) {
           </div>
         </div>
       ))}
-      <div className="wb2-note" style={{ marginTop: 14 }}>
-        <CheckCircleOutlined /> 本周已发布 {total} 张场景卡 · 阅读埋点计入个人活跃
-      </div>
+      {note && (
+        <div className="wb2-note" style={{ marginTop: 14 }}>
+          <CheckCircleOutlined /> 本周已发布 {total} 张场景卡 · 阅读埋点计入个人活跃
+        </div>
+      )}
     </>
   );
 }

@@ -1,4 +1,5 @@
 import { Card, Col, Empty, Input, Progress, Row, Segmented, Space, Statistic, Tag, Typography, Button, App as AntApp, Alert } from 'antd';
+import { useNoteVisible } from '@/auth/annotation';
 import { AppstoreOutlined, SearchOutlined, TeamOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { Link } from 'react-router-dom';
 import { useMemo, useState } from 'react';
@@ -10,6 +11,9 @@ import { useAssetWritable } from '@/auth/converge';
 
 export default function AssetLibrary() {
   const { db, me, log, flags } = useStore();
+  /** V8.6-10.08：口径 / 规则注解仅运营方与管理员可见 */
+  const note = useNoteVisible();
+
   const { message } = AntApp.useApp();
   /** V4.0 CR-10：复用次数取外部数据源（开关关闭即回到 V3.0 自算口径） */
   const external = flags.assetReuseExternal !== false;
@@ -38,7 +42,7 @@ export default function AssetLibrary() {
         extra={<Link to="/work"><Button size="large">去申请入库</Button></Link>}
       />
 
-      {external && (
+      {note && external && (
         <Alert type="info" showIcon
           message="V4.0 CR-10：复用次数取自 WorkBuddy 管理员后台，不再由本系统自算"
           description="每项资产标注「数据来源 + 同步时间」；历史自算值标注为「估算」，尚未同步的显示为「待测」而非 0。口径沿用 Q2 决策的台账路径：由 ADMIN / ORGANIZER / SKILL_ADMIN 在后台导出后导入，或后续开放接口自动同步。" />
@@ -129,7 +133,7 @@ export default function AssetLibrary() {
         </Space>
         <Typography.Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 8 }}>
           Q2 决策：入库与调用情况仅做台账回写，实际上架由技能管理员在企业版后台完成。
-          {external && ' V4.0 CR-10：复用次数取 WorkBuddy 管理员后台数据（管理员导入或后续 API 自动同步），本系统不自算、不累加；未同步的资产显示「待测」，不显示 0。'}
+          {note && external && ' V4.0 CR-10：复用次数取 WorkBuddy 管理员后台数据（管理员导入或后续 API 自动同步），本系统不自算、不累加；未同步的资产显示「待测」，不显示 0。'}
         </Typography.Text>
       </Card>
     </Space>

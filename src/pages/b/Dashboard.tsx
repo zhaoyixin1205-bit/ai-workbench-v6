@@ -1,4 +1,5 @@
 import { Card, Col, Progress, Row, Segmented, Space, Statistic, Table, Tag, Typography, Alert, Button, App as AntApp } from 'antd';
+import { useNoteVisible } from '@/auth/annotation';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { useState } from 'react';
 import { useStore, useStats } from '@/store/store';
@@ -12,6 +13,9 @@ import { ScopeNotice } from '@/components/ScopeNotice';
 
 export default function Dashboard() {
   const { db, log, me, scopeRows, visibleUsers, flags, campaign } = useStore();
+  /** V8.6-10.08：口径 / 规则注解仅运营方与管理员可见 */
+  const note = useNoteVisible();
+
   const stats = useStats();
   /** V4.0 CR-09：技能管理员在本页为只读浏览者（§6.2 矩阵 ◐） */
   const skillAdminReadOnly = useSkillAdminConverge().isReadOnly('/admin');
@@ -70,7 +74,7 @@ export default function Dashboard() {
       <Alert
         type="info" showIcon
         message={`当前统计口径：标签 = ${tag.name}，分母 = ${scopeUsers.length} 人`}
-        description="口径一致性要求：同一份报表分母必须唯一；切换标签时全页口径同步变化，导出文件表头自动带口径标注。"
+        description={note ? '口径一致性要求：同一份报表分母必须唯一；切换标签时全页口径同步变化，导出文件表头自动带口径标注。' : undefined}
         action={
           <Segmented
             value={tagCode}
@@ -205,9 +209,11 @@ export default function Dashboard() {
         />
       </Card>
 
-      <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-        数据截止 {DEMO_TODAY}（T-1）· 一期为定时预计算 + 5 分钟缓存；二期切自建库后实时计算，两种实现对外口径一致
-      </Typography.Text>
+      {note && (
+        <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+          数据截止 {DEMO_TODAY}（T-1）· 一期为定时预计算 + 5 分钟缓存；二期切自建库后实时计算，两种实现对外口径一致
+        </Typography.Text>
+      )}
         </>
       )}
     </Space>

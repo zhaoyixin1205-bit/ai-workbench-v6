@@ -1,4 +1,5 @@
 import { Badge, Button, Card, Col, Progress, Row, Space, Tag, Typography, Empty, List } from 'antd';
+import { useNoteVisible } from '@/auth/annotation';
 import {
   ArrowRightOutlined, FireOutlined, TrophyOutlined, ClockCircleOutlined,
   CheckCircleOutlined, TeamOutlined, RocketOutlined, WalletOutlined,
@@ -20,6 +21,9 @@ import dayjs from 'dayjs';
 
 export default function Home() {
   const { db, me, campaign, flags, hasRole } = useStore();
+  /** V8.6-10.08：口径 / 规则注解仅运营方与管理员可见 */
+  const note = useNoteVisible();
+
   const stats = useStats();
 
   /* V7.1：距截止读「作业提报周期」（OPEN 期次）→ 当前阶段 → 届次结束日兜底；倒计时按真实今天 */
@@ -219,7 +223,7 @@ export default function Home() {
             icon={<RiseOutlined />} label="本届提交率" value={`${stats.submitRate}%`}
             delta={12.4} spark={SPARK.submit}
             hint="分母＝带「干部」或「核心骨干」标签且在职的人数（默认 47 人，来自钉钉《用户标签》名单）；提交过任意一期作业即计入分子，草稿不算。"
-            extra={`${stats.submitted}/${stats.cadreCount} 人 · 口径：干部+核心骨干`}
+            extra={note ? `${stats.submitted}/${stats.cadreCount} 人 · 口径：干部+核心骨干` : `${stats.submitted}/${stats.cadreCount} 人`}
             tone="primary"
           />
         </Col>
@@ -246,7 +250,7 @@ export default function Home() {
             icon={<ThunderboltOutlined />} label="激活率" value={`${stats.activateRate}%`}
             delta={6.2} spark={SPARK.activate}
             hint="激活＝WorkBuddy 管理后台同步到「活跃天数 > 0」。本系统不自算，取后台同步值。"
-            extra={`${stats.activated}/${stats.cadreCount} 人已激活 · 口径：干部+核心骨干`}
+            extra={note ? `${stats.activated}/${stats.cadreCount} 人已激活 · 口径：干部+核心骨干` : `${stats.activated}/${stats.cadreCount} 人已激活`}
             tone="blue"
           />
         </Col>
