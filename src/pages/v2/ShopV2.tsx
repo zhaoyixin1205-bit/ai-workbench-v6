@@ -152,7 +152,8 @@ export default function ShopV2() {
               fontSize: 40, textAlign: 'center', padding: 12,
               background: 'var(--wb-surface-brand)', borderRadius: 'var(--wb-radius-md)',
             }}>{detail.cover}</div>
-            <Typography.Paragraph>{detail.desc}</Typography.Paragraph>
+            {/* V8.3-10.09：商品描述可能含长链接，需断词防撑破弹窗 */}
+            <Typography.Paragraph style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{detail.desc}</Typography.Paragraph>
             <Space wrap>
               <Tag color="orange">{detail.points} 积分</Tag>
               <Tag>库存 {detail.stock}</Tag>

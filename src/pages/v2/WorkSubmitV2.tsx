@@ -220,7 +220,7 @@ export default function WorkSubmitV2() {
               <div className="wb2-list" style={{ marginTop: 'var(--wb-space-3)' }}>
                 {atts.map((a) => (
                   <div className="wb2-li" key={a.id}>
-                    <div className="wb2-li-t">{a.name}</div>
+                    <div className="wb2-li-t" style={{ overflowWrap: 'anywhere', wordBreak: 'break-all' }}>{a.name}</div>
                     <div className="wb2-li-m">
                       <span style={{ fontSize: 'var(--wb-fs-label)', color: 'var(--wb-ink-3)' }}>{a.size}</span>
                       {a.url ? (

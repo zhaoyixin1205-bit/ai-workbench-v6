@@ -353,8 +353,9 @@ export default function WorkSubmit() {
               {atts.length > 0 && (
                 <Space direction="vertical" size={4} style={{ width: '100%', marginTop: 8 }}>
                   {atts.map((a) => (
-                    <Space key={a.id} size={6}>
-                      <span style={{ fontSize: 13 }}>{a.name}</span>
+                    <Space key={a.id} size={6} style={{ maxWidth: '100%' }}>
+                      {/* V8.3-10.09：文件名可能是长 URL / 长中文标题，需断词防撑破 */}
+                      <span style={{ fontSize: 13, overflowWrap: 'anywhere', wordBreak: 'break-all', minWidth: 0 }}>{a.name}</span>
                       <Typography.Text type="secondary" style={{ fontSize: 12 }}>{a.size}</Typography.Text>
                       {a.url ? (
                         <a href={a.url} target="_blank" rel="noreferrer">

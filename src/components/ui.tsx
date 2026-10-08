@@ -36,8 +36,21 @@ export function SoftTag({ text, tone = 'primary' }: { text: string; tone?: 'prim
   return (
     <span style={{
       background: map.bg, color: map.color, fontSize: 11, fontWeight: 600,
-      padding: '2px 8px', borderRadius: 6, lineHeight: '18px', whiteSpace: 'nowrap',
-    }}>{text}</span>
+      padding: '2px 8px', borderRadius: 6, lineHeight: '18px',
+      /**
+       * V8.3-10.09 溢出修复：原来是 `whiteSpace:'nowrap'` 且没有任何宽度上限。
+       * 标签内容里混进了文件名/URL（作业详情的「📎 xxx.webp（1.2MB）」）
+       * 时，这一行会把整栏横向撑破。
+       *
+       * 改成：短文本保持单行不折（绝大多数标签是「已发布」「+3」这种，
+       * 折行反而难看）；一旦内容超长则允许折行 + 限宽省略，撑不破容器。
+       */
+      maxWidth: '100%',
+      whiteSpace: 'nowrap',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      overflowWrap: 'anywhere',
+    }} title={text}>{text}</span>
   );
 }
 

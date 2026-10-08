@@ -549,7 +549,14 @@
   font-size: var(--wb-fs-label);
   color: var(--wb-ink-2);
   line-height: 1.7;
+  /* V8.3-10.09：这是 flex 容器，内层文字（方案说明/场景描述/用户输入）可能很长。
+     不给 min-width:0 又不断词，子元素会把这一行横向顶开 —— flex 子项默认
+     min-width:auto，不换行的长 URL 尤其明显。 */
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
+.wb2-kv > * { min-width: 0; }
 .wb2-kv b { color: var(--wb-ink-1); font-weight: 600; }
 
 /* 首页/身份卡 Hero（V9.0：换手册同款品牌三段渐变 橙→粉紫→紫）

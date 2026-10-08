@@ -91,15 +91,15 @@ export default function WorkDetail() {
 
         <div style={{ padding: 24 }}>
           <Divider orientation="left" style={{ fontSize: 14, marginTop: 0 }}>业务场景说明</Divider>
-          <Typography.Paragraph style={{ color: COLOR.textSub }}>{s.scene_desc}</Typography.Paragraph>
+          <Typography.Paragraph style={{ color: COLOR.textSub, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{s.scene_desc}</Typography.Paragraph>
           {s.before_after && (
             <>
               <Divider orientation="left" style={{ fontSize: 14 }}>{s.channel.startsWith('通道一') ? '前后对比' : '实测记录'}</Divider>
-              <Typography.Paragraph style={{ color: COLOR.textSub }}>{s.before_after}</Typography.Paragraph>
+              <Typography.Paragraph style={{ color: COLOR.textSub, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{s.before_after}</Typography.Paragraph>
             </>
           )}
           <Divider orientation="left" style={{ fontSize: 14 }}>产出样本</Divider>
-          <Typography.Paragraph style={{ color: COLOR.textSub }}>{s.output_sample}</Typography.Paragraph>
+          <Typography.Paragraph style={{ color: COLOR.textSub, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{s.output_sample}</Typography.Paragraph>
           <Space wrap>{s.attachments.map((a) => <SoftTag key={a.name} text={`📎 ${a.name}（${a.size}）`} tone="gray" />)}</Space>
         </div>
       </Card>

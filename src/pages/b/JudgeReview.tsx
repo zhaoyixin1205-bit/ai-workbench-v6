@@ -410,7 +410,7 @@ export default function JudgeReview({ variant = 'admin' }: { variant?: 'admin' |
                 <span key={k}>{k}：{v}</span>
               ))}
             </Space>
-            {r.reason && <div style={{ marginTop: 4 }}>意见：{r.reason}</div>}
+            {r.reason && <div style={{ marginTop: 4, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>意见：{r.reason}</div>}
           </div>
         ),
       }}

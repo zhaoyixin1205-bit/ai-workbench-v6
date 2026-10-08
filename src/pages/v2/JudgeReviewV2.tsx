@@ -478,7 +478,8 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
                 <span key={k}>{k}：{v}</span>
               ))}
             </div>
-            {r.reason && <div style={{ marginTop: 4 }}>意见：{r.reason}</div>}
+            {/* V8.3-10.09：评委意见为用户长文本，需断词防撑破卡片 */}
+            {r.reason && <div style={{ marginTop: 4, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>意见：{r.reason}</div>}
           </div>
         ),
       }}

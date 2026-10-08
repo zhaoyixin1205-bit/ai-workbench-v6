@@ -168,7 +168,8 @@ export default function BountyReview() {
           columns={[
             { title: '标题', dataIndex: 'title' },
             { title: '状态', dataIndex: 'status', render: (v: string) => <Tag color={v === 'APPROVED' ? 'green' : 'red'}>{v}</Tag> },
-            { title: '说明', render: (_, r) => r.reject_reason ? <span style={{ color: '#B91C1C' }}>驳回：{r.reject_reason}</span> : `积分 ${r.points} 已入账` },
+            /* V8.3-10.09：驳回理由是用户输入的长文本，列宽固定，需 ellipsis（与本表其它列一致） */
+            { title: '说明', ellipsis: true, render: (_, r) => r.reject_reason ? <span style={{ color: '#B91C1C' }}>驳回：{r.reject_reason}</span> : `积分 ${r.points} 已入账` },
           ]}
         />
       </Card>
