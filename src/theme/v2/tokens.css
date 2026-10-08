@@ -51,8 +51,11 @@
   --wb-accent-sky: #38bdf8; /* 浅蓝 · 最少用，仅数据/信息辅助 */
   --wb-accent-sky-soft: #eff8ff;
 
-  /* 品牌渐变：橙 → 粉紫 → 紫（手册的同款三段渐变，用于 Hero / 主 CTA） */
-  --wb-gradient-brand: linear-gradient(135deg, #ff6b35 0%, #ec4899 55%, #8b5cf6 100%);
+  /* 品牌渐变（V9.1-10.08 简化）：原「橙→粉紫→紫」三段渐变线上反馈过于花哨，
+     收敛为同色系橙的深浅渐变（浅橙→品牌橙→深橙）；紫/粉紫降级为 Hero 角落
+     小面积光斑（见 template.css .wb2-hero::before），延续手册「彩色只小面积点缀」原则。
+     ⚠️ 与 src/theme.ts 的 GRADIENT.brand / GRADIENT.hero 同源同步改，勿单改一处。 */
+  --wb-gradient-brand: linear-gradient(135deg, #ff8a3d 0%, #ff6b35 55%, #f05a28 100%);
 
   /* ========== 2. 中性（暖墨，与暖白底同源） ========== */
   --wb-ink-1: #2b2a33; /* 标题、数值（手册 text-main） */

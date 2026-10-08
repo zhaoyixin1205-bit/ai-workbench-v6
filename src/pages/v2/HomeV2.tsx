@@ -10,7 +10,7 @@ import { Button, Empty, Progress } from 'antd';
 import { useNoteVisible } from '@/auth/annotation';
 import {
   ArrowRightOutlined, CheckCircleOutlined, ClockCircleOutlined,
-  FireOutlined, RocketOutlined, TeamOutlined, TrophyOutlined,
+  FireOutlined, ReadOutlined, RocketOutlined, TeamOutlined, TrophyOutlined,
 } from '@ant-design/icons';
 import { Link } from 'react-router-dom';
 import { useStore, useStats } from '@/store/store';
@@ -181,7 +181,10 @@ export default function HomeV2() {
       {/* 我的待办 */}
       <section className="wb2-card">
         <div className="wb2-sechd">
-          <div className="t"><ClockCircleOutlined style={{ color: 'var(--wb-primary)' }} /> 我的待办</div>
+          <div className="t">
+            <ClockCircleOutlined style={{ color: 'var(--wb-primary)' }} /> 我的待办
+            {myTodos.length > 0 && <span className="s">待处理 {myTodos.length} 项</span>}
+          </div>
           <Link className="more" to="/me">全部 <ArrowRightOutlined /></Link>
         </div>
         {myTodos.length === 0 ? (
@@ -190,6 +193,7 @@ export default function HomeV2() {
           <div className="wb2-list">
             {myTodos.map((t) => (
               <div key={t.key} className="wb2-li">
+                <span className="wb2-todo-ico"><ClockCircleOutlined /></span>
                 <div className="wb2-li-m">
                   <div className="wb2-li-t">{t.text}</div>
                 </div>
@@ -240,7 +244,7 @@ export default function HomeV2() {
       {/* 案例精选 */}
       <section>
         <div className="wb2-sechd">
-          <div className="t">案例精选 <span className="s">30 秒看懂别人做成了什么</span></div>
+          <div className="t"><FireOutlined style={{ color: 'var(--wb-primary)' }} /> 案例精选 <span className="s">30 秒看懂别人做成了什么</span></div>
           <Link className="more" to="/cases">查看全部 <ArrowRightOutlined /></Link>
         </div>
         <div className="wb2-hscroll">
@@ -316,7 +320,7 @@ export default function HomeV2() {
                     <div className="wb2-li-s">{b.track} · 截止 {b.due_date} · {b.source}</div>
                   </div>
                   <div className="wb2-li-r">
-                    <span style={{ color: 'var(--wb-primary-ink)', fontWeight: 700 }}>{b.points} 分</span>
+                    <span className="wb2-pts">{b.points} 分</span>
                   </div>
                 </div>
               </Link>
@@ -344,20 +348,26 @@ export default function HomeV2() {
                   <div className="t"><TeamOutlined style={{ color: 'var(--wb-primary)' }} /> 社区热帖</div>
                   <Link className="more" to="/community">进入社区 <ArrowRightOutlined /></Link>
                 </div>
-                <div className="wb2-list">
-                  {hotPosts.map((p) => (
-                    <Link key={p.id} to={`/community/${p.id}`} style={{ display: 'block', color: 'inherit' }}>
-                      <div className="wb2-li">
-                        <div className="wb2-li-m">
-                          <div className="wb2-li-t">{p.title}</div>
-                          <div className="wb2-li-s">
-                            {p.anonymous ? p.anon_no : p.author_name} · 👍 {p.like_count} · 💬 {p.comment_count}
+                {hotPosts.length === 0 ? (
+                  <div className="wb2-note">
+                    <TeamOutlined /> 社区还没有热帖，去 <Link to="/community">发第一条讨论 ›</Link>
+                  </div>
+                ) : (
+                  <div className="wb2-list">
+                    {hotPosts.map((p) => (
+                      <Link key={p.id} to={`/community/${p.id}`} style={{ display: 'block', color: 'inherit' }}>
+                        <div className="wb2-li">
+                          <div className="wb2-li-m">
+                            <div className="wb2-li-t">{p.title}</div>
+                            <div className="wb2-li-s">
+                              {p.anonymous ? p.anon_no : p.author_name} · 👍 {p.like_count} · 💬 {p.comment_count}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
+                      </Link>
+                    ))}
+                  </div>
+                )}
               </section>
             )}
           </div>
