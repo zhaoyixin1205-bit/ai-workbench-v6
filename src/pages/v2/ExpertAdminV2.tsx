@@ -1,4 +1,4 @@
-import { noticeRescheduleToStudents, noticeStopToStudents } from '@/service/bookingNotice';
+import { noticeStopToStudents } from '@/service/bookingNotice';
 import { AutoComplete, Button, DatePicker, Form, Input, InputNumber, Select, Table, Tabs, App as AntApp } from 'antd';
 import { StarFilled } from '@ant-design/icons';
 import { useState } from 'react';
@@ -39,7 +39,7 @@ interface ScheduleRow {
  *   ⑤ Tag（purple/green/gold/orange/gray/red 六套）→ `.wb2-tag` 四档语义；星标裸 hex → 令牌
  *   ⑥ 修改排班 Modal → `Dialog`；2 处 modal.confirm → `useConfirm()`
  *
- * 业务：CR-26 批量导入与已发布排班直改（含改约通知）、CR-36 自助排班申请审核
+ * 业务：CR-26 批量导入与已发布排班直改（V8.3 起改期不通知学员、仅留痕）、CR-36 自助排班申请审核
  * （撞车不静默覆盖）、号源策略、评价隐藏留痕——逐行沿用 v1，未改任何判定与写入字段。
  */
 
@@ -61,11 +61,14 @@ export default function ExpertAdminV2() {
   const avgRating = db.reviews.length
     ? Math.round((db.reviews.reduce((a, b) => a + b.rating, 0) / db.reviews.length) * 10) / 10 : 0;
 
-  /** V6.0 CR-26：已发布排班直接修改（有预约时必须二次确认并触发改约通知） */
+  /** V6.0 CR-26：已发布排班直接修改（有预约时必须二次确认；按组织者拍板不通知学员、仅后台留痕） */
   const [editTarget, setEditTarget] = useState<ExpertSchedule | null>(null);
   /** V8.3-10.08 需求③.1：新增专家 / 删除专家（软删） */
   const [addOpen, setAddOpen] = useState(false);
   const [addForm] = Form.useForm();
+  /** V8.3-10.08 需求③.3：管理员代排期（专家自助走申请-审核，管理员可直接开号） */
+  const [slotOpen, setSlotOpen] = useState(false);
+  const [slotForm] = Form.useForm();
   const [editForm] = Form.useForm();
 
   /**
@@ -129,6 +132,67 @@ export default function ExpertAdminV2() {
     addForm.resetFields();
   };
 
+  /**
+   * V8.3-10.08 需求③.3：管理员代专家排期（单个时段）。
+   * 与「批量导入」「专家自助申请」是三条互补的入口：
+   *   临时加一个号 → 代排期；一次性导入多天 → 批量导入；专家自己的时间 → 专家自助。
+   * source 记为 MANUAL，与后台手工改期一致，便于事后区分来源。
+   */
+  const submitSlot = async () => {
+    const v = await slotForm.validateFields();
+    const expert = db.experts.find((e) => e.id === v.expert_id && !e.is_deleted);
+    if (!expert) { message.error('请选择在册专家'); return; }
+    /** 同专家同日同时段撞车 → 直接拦，避免产生两个号源打架 */
+    const dup = db.schedules.find((x) =>
+      x.expert_id === expert.id && x.date === v.date && x.slot === v.slot && x.status !== 'CLOSED'
+    );
+    if (dup) {
+      message.error(`${expert.name} 在 ${v.date} ${v.slot} 已有号源，请改时段或先删除原有排班`);
+      return;
+    }
+    setDb((p) => ({
+      ...p,
+      schedules: [{
+        id: `SC${Date.now()}`,
+        expert_id: expert.id,
+        date: v.date,
+        slot: v.slot,
+        capacity: v.capacity ?? 1,
+        booked: 0,
+        type: (v.type ?? '1v1') as ExpertSchedule['type'],
+        place_or_link: v.place_or_link?.trim() ?? '',
+        status: 'OPEN' as const,
+        source: 'MANUAL' as const,
+        updated_by: me.name,
+        updated_at: `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`,
+      }, ...p.schedules],
+    }));
+    log('管理员代排期', `${expert.name} ${v.date} ${v.slot}`, `容量 ${v.capacity ?? 1} · ${v.type ?? '1v1'} · 来源 MANUAL`);
+    message.success(`已为 ${expert.name} 添加 ${v.date} ${v.slot} 的号源`);
+    setSlotOpen(false);
+    slotForm.resetFields();
+  };
+
+  /** 删除排期：有已预约的时段先拦，避免删了号源却留着预约 */
+  const removeSchedule = (x: ExpertSchedule) => {
+    const expertName = db.experts.find((e) => e.id === x.expert_id)?.name ?? x.expert_id;
+    if ((x.booked ?? 0) > 0) {
+      message.error(`该时段已有 ${x.booked} 人预约，不能删除。可先把容量改大，或让学员自行取消。`);
+      return;
+    }
+    confirm({
+      title: '删除该排期？',
+      content: `将移除 ${expertName} 在 ${x.date} ${x.slot} 的号源，学员端立即不可约。`,
+      okText: '确认删除',
+      danger: true,
+      onOk: () => {
+        setDb((p) => ({ ...p, schedules: p.schedules.filter((s) => s.id !== x.id) }));
+        log('删除排期', `${expertName} ${x.date} ${x.slot}`, '无预约，号源移除');
+        message.success('已删除该排期');
+      },
+    });
+  };
+
   const editSchedule = (s: ExpertSchedule) => {
     setEditTarget(s);
     editForm.resetFields();
@@ -167,28 +231,25 @@ export default function ExpertAdminV2() {
         schedules: p.schedules.map((x) => (x.id === s.id
           ? { ...x, ...next, source: 'MANUAL' as const, updated_by: me.name, updated_at: at }
           : x)),
-        /** V8.3-10.08 需求③.4：改期要真的通知已预约学员。
-         *  原实现只在 log 里写了「已触发改约通知」，没有任何消息落库 —— 学员那头毫无感知。 */
-        messages: noticeRescheduleToStudents(
-          p.messages,
-          p.bookings
-            .filter((b) => b.schedule_id === s.id && b.status === '待就诊')
-            .map((b) => ({ union_id: b.union_id, name: b.name })),
-          { date: s.date, slot: s.slot, nextDate: next.date, nextSlot: next.slot }
-        ),
+        /**
+         * V8.3-10.08 需求③.4 修正（组织者拍板）：**改期不通知学员，也不通知任何人**。
+         * 通知只在两个环节发生，且只发给「对应预约的专家」：
+         *   ① 员工预约 → 通知该专家；② 员工取消 → 通知该专家。
+         * 排期调整属于内部运营动作，只需组织者自己在后台留痕（下方 log 即为留痕）。
+         */
       }));
       log('修改已发布排班', `${db.experts.find((e) => e.id === s.expert_id)?.name ?? s.expert_id} ${s.date} ${s.slot}`,
-        `改为 ${next.date} ${next.slot} / 容量 ${next.capacity}；原已约 ${s.booked} 人${s.booked > 0 ? '，已触发改约通知' : ''}`);
-      message.success(s.booked > 0 ? '已保存并向已预约成员发送改约通知' : '已保存（该时段暂无预约）');
+        `改为 ${next.date} ${next.slot} / 容量 ${next.capacity}；原已约 ${s.booked} 人（改期不通知学员，仅后台留痕）`);
+      message.success(s.booked > 0 ? `已保存（有 ${s.booked} 人已预约，按约定不打扰学员，仅后台留痕）` : '已保存（该时段暂无预约）');
       setEditTarget(null);
       editForm.resetFields();
     };
 
-    /** 已产生预约 → 二次确认 + 复用停诊通知通道 */
+    /** 已产生预约 → 二次确认（按组织者拍板：不通知学员，仅后台留痕） */
     if ((s.booked ?? 0) > 0) {
       confirm({
         title: '该时段已有预约，确认修改？',
-        content: `当前已约 ${s.booked} 人，修改后将为他们发送改约通知（复用停诊通知通道）。`,
+        content: `当前已约 ${s.booked} 人。修改后**不会通知学员**（避免不必要的打扰），操作会在后台留痕。确认继续？`,
         okText: '确认修改并通知',
         onOk: write,
       });
@@ -367,7 +428,11 @@ export default function ExpertAdminV2() {
               key: 'schedule', label: '排班审批与号源策略',
               children: (
                 <>
-                  {/* V6.0 CR-26：排班批量上传（模板下载 + 三态回执，沿用 CR-11 交互） */}
+                  {/* V8.3-10.08 需求③.3：管理员代排期入口（单个时段） */}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 'var(--wb-space-4)' }}>
+                    <Button type="primary" onClick={() => setSlotOpen(true)}>新增排期（代专家）</Button>
+                  </div>
+                  {/* V6.0 CR-26：排班批量上传（模板下载 + 三态回执，沿线 CR-11 交互） */}
                   {batchOn && (
                     <div className="wb2-card wb2-card-pad" style={{ marginBottom: 'var(--wb-space-5)' }}>
                       <div className="wb2-card-t">排班批量维护</div>
@@ -540,8 +605,10 @@ export default function ExpertAdminV2() {
                             render: (_: unknown, r: ExpertSchedule) => (
                               <div style={{ display: 'flex', gap: 'var(--wb-space-2)' }}>
                                 <Button size="small" type="link" onClick={() => { log('排班审批', `${r.date} ${r.slot}`, '审批通过'); message.success('排班已审批'); }}>审批</Button>
-                                {/* V6.0 CR-26：已发布排班直接修改（有预约时二次确认 + 改约通知） */}
+                                {/* V6.0 CR-26：已发布排班直接修改（有预约时二次确认 + 后台留痕） */}
                                 {batchOn && <Button size="small" type="link" onClick={() => editSchedule(r)}>修改</Button>}
+                                {/* V8.3-10.08 需求③.3：删除排期（已有预约时按钮直接拦） */}
+                                <Button size="small" type="link" danger onClick={() => removeSchedule(r)}>删除</Button>
                               </div>
                             ),
                           },
@@ -618,7 +685,7 @@ export default function ExpertAdminV2() {
       <Dialog
         open={!!editTarget}
         title={`修改排班 · ${db.experts.find((e) => e.id === editTarget?.expert_id)?.name ?? ''}`}
-        sub="已产生预约的排班修改时会二次确认，并向已预约成员发送改约通知（复用停诊通知通道）。"
+        sub="已产生预约的排班修改时会二次确认；按组织者 2026-10-08 口径，改期不通知学员，仅后台留痕。"
         okText="保存"
         onCancel={() => setEditTarget(null)}
         onOk={() => { void commitEdit(); }}
@@ -646,6 +713,42 @@ export default function ExpertAdminV2() {
           </Form.Item>
           <Form.Item name="status" label="状态" rules={[{ required: true }]} style={{ marginBottom: 0 }}>
             <Select options={['OPEN', 'FULL', 'CLOSED', 'HOLIDAY'].map((v) => ({ value: v, label: scheduleStatusText(v) }))} />
+          </Form.Item>
+        </Form>
+      </Dialog>
+
+      {/* V8.3-10.08 需求③.3：管理员代排期弹窗（单个时段，替代「只能让专家自己申请」） */}
+      <Dialog
+        open={slotOpen}
+        title="新增排期（代专家）"
+        onCancel={() => { setSlotOpen(false); slotForm.resetFields(); }}
+        onOk={submitSlot}
+        okText="确认新增号源"
+      >
+        <Form form={slotForm} layout="vertical">
+          <Form.Item name="expert_id" label="专家" rules={[{ required: true, message: '请选择专家' }]}
+            extra="只能选择在册专家（已删除的不出现在这里）">
+            <Select
+              showSearch placeholder="搜索专家姓名" optionFilterProp="label"
+              options={db.experts.filter((e) => !e.is_deleted).map((e) => ({
+                value: e.id, label: `${e.name} · ${e.dept_name || '—'}`,
+              }))}
+            />
+          </Form.Item>
+          <Form.Item name="date" label="日期" rules={[{ required: true, message: '请选择日期' }]}>
+            <DatePicker style={{ width: '100%' }} disabledDate={(d) => d && d.isBefore(dayjs().startOf('day'))} />
+          </Form.Item>
+          <Form.Item name="slot" label="时段" rules={[{ required: true, message: '请选择时段' }]}>
+            <Select placeholder="选择时段" options={SCHEDULE_SLOTS.map((s) => ({ value: s, label: s }))} />
+          </Form.Item>
+          <Form.Item name="type" label="形式" initialValue="1v1">
+            <Select options={SCHEDULE_TYPES.map((t) => ({ value: t, label: t }))} />
+          </Form.Item>
+          <Form.Item name="capacity" label="容量（可约人数）" initialValue={1} rules={[{ required: true }]}>
+            <InputNumber min={1} max={50} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="place_or_link" label="地点或链接" extra="线上填会议链接，线下填地点；不填表示待定">
+            <Input placeholder="如：腾讯会议 / 公司 3 楼 301" />
           </Form.Item>
         </Form>
       </Dialog>

@@ -37,6 +37,18 @@ export interface BookingNoticeInput {
   slot: string;
 }
 
+/**
+ * ⚠️ 通知口径（组织者 2026-10-08 拍板，勿擅自扩大范围）：
+ *
+ *   ① 员工预约 → 通知**该被预约的专家**
+ *   ② 员工取消 → 通知**该被预约的专家**（并回补号源）
+ *   ③ 专家被删除 → 通知**已预约该专家的学员**（人没了，必须让人改约）
+ *   ④ 专家修改排期（改期 / 容量 / 时段）→ **不通知任何人**，组织者在后台留痕即可
+ *
+ * ④ 曾经实现过「改期通知学员」，被明确否掉了：排期调整是内部运营动作，
+ * 学员不需要为此被打扰（本文件已删除 noticeRescheduleToStudents，避免后来人误用）。
+ */
+
 /** 学员预约成功 → 通知专家 */
 export function noticeBookedToExpert(list: AppMessage[] | undefined, n: BookingNoticeInput): AppMessage[] {
   return push(list, {
@@ -59,26 +71,6 @@ export function noticeCancelToExpert(
     title: `预约已取消：${n.actorName} 取消了 ${n.date} ${n.slot}`,
     content: `${n.actorName} 取消了 ${n.date} ${n.slot} 的预约（${reason}），该号源已释放回可约池。`,
   });
-}
-
-/** 管理员改期 → 通知**已预约的学员**（不是通知专家：专家是改期操作人） */
-export function noticeRescheduleToStudents(
-  list: AppMessage[] | undefined,
-  students: { union_id: string; name: string }[],
-  info: { date: string; slot: string; nextDate: string; nextSlot: string },
-): AppMessage[] {
-  if (!students.length) return list ?? [];
-  return (list ?? []).length
-    ? students.reduce<AppMessage[]>(
-        (acc, s) => push(acc, {
-          union_id: s.union_id,
-          type: '改约通知',
-          title: `你的预约时间已调整：${info.date} ${info.slot} → ${info.nextDate} ${info.nextSlot}`,
-          content: `因专家排班调整，你预约的 ${info.date} ${info.slot} 已改为 ${info.nextDate} ${info.nextSlot}，请重新确认时间。`,
-        }),
-        list ?? []
-      )
-    : list ?? [];
 }
 
 /** 专家被停诊 → 通知已预约学员 */
