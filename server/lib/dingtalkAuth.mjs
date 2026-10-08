@@ -57,8 +57,14 @@ export function authorizeUrl(cfg, state, redirectUri) {
 
 /**
  * 用 code 换用户身份。
- * 走钉钉新版 OpenAPI：POST https://api.dingtalk.com/v1.0/oauth2/userToken
- * 响应体含 access_token / open_id / union_id。
+ *
+ * 端点是 `POST https://api.dingtalk.com/v1.0/oauth2/userAccessToken`
+ *（**注意不是** /oauth2/userToken —— 那个路径不存在，会返回 404
+ *  "Specified api is not found"，参数也不是 tmp_auth_code 而是 code + grantType）
+ *
+ * 请求体按《获取用户token》官方文档：
+ *   { clientId, clientSecret, code, grantType: 'authorization_code' }
+ * 响应体（camelCase）：{ accessToken, refreshToken, openId, unionId, expiresIn }
  */
 export async function exchangeCodeForUnionId(code, cfg = dingtalkConfig()) {
   if (!cfg.enabled) {
@@ -71,24 +77,28 @@ export async function exchangeCodeForUnionId(code, cfg = dingtalkConfig()) {
     err.code = 'DINGTALK_NO_CODE';
     throw err;
   }
-  const resp = await fetch('https://api.dingtalk.com/v1.0/oauth2/userToken', {
+  const resp = await fetch('https://api.dingtalk.com/v1.0/oauth2/userAccessToken', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      tmp_auth_code: code,
-      client_id: cfg.clientId,
-      client_secret: cfg.clientSecret,
+      clientId: cfg.clientId,
+      clientSecret: cfg.clientSecret,
+      code,
+      grantType: 'authorization_code',
     }),
   });
   const body = await resp.json().catch(() => ({}));
-  if (!resp.ok || !body.union_id) {
-    const err = new Error(`钉钉换取身份失败（HTTP ${resp.status}）：${body?.message ?? body?.errmsg ?? '未知错误'}`);
+  // 钉钉的错误码在 errcode / message 两个字段都可能给
+  const unionId = body?.unionId || body?.union_id || '';
+  if (!resp.ok || !unionId) {
+    const detail = body?.message || body?.errmsg || body?.code || '未知错误';
+    const err = new Error(`钉钉换取身份失败（HTTP ${resp.status}）：${detail}`);
     err.code = 'DINGTALK_EXCHANGE_FAILED';
     throw err;
   }
   return {
-    unionId: body.union_id,
-    openId: body.open_id ?? '',
-    nick: body.nick ?? '',
+    unionId,
+    openId: body.openId || body.open_id || '',
+    nick: body.nick || '',
   };
 }
