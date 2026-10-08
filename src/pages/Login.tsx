@@ -14,7 +14,7 @@ import { Button, Space, Spin, Typography } from 'antd';
 import { SafetyCertificateOutlined, QrcodeOutlined, TeamOutlined } from '@ant-design/icons';
 import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '@/store/store';
-import { isDingtalkEnabled, startDingtalkLogin, loginWithCode } from '@/auth/dingtalk';
+import { isDingtalkEnabled, startDingtalkLogin, loginWithCode, timeoutSignal } from '@/auth/dingtalk';
 import { ROLE_LABEL } from '@/mock/types';
 import type { Role } from '@/mock/types';
 
@@ -33,10 +33,34 @@ export default function Login({ callbackPath = '' }: { callbackPath?: string }) 
   const [dingtalkOn, setDingtalkOn] = useState<boolean | null>(null);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  /** 探测失败/超时的提示（钉钉 WebView 里 fetch 可能长期挂起，必须给用户兜底出口） */
+  const [probeFailed, setProbeFailed] = useState(false);
+  const [probeTick, setProbeTick] = useState(0);
 
   useEffect(() => {
-    void isDingtalkEnabled().then(setDingtalkOn);
-  }, []);
+    let alive = true;
+    setProbeFailed(false);
+    void isDingtalkEnabled().then((on) => {
+      if (!alive) return;
+      setDingtalkOn(on);
+      // 探测超时被降级成 false 时，无法区分「真没开」与「这次没通」——
+      // 用一次轻量探测复核，避免把偶发网络抖动误判成「免登未启用」。
+      void fetch('/api/auth/dingtalk/config', timeoutSignal(2500))
+        .then((r) => r.json())
+        .then(() => {
+          if (!alive) return;
+          setProbeFailed(false);
+          /**
+           * 复核通过 → 把 dingtalkOn **纠正回 true**。
+           * 否则第一次探测超时会被降级成「未启用」，扫码按钮随之消失，
+           * 用户明明配了免登却只能去选人登录（我第一版就踩了这个坑）。
+           */
+          setDingtalkOn(true);
+        })
+        .catch(() => { if (alive) setProbeFailed(true); });
+    });
+    return () => { alive = false; };
+  }, [probeTick]);
 
   /**
    * 回调落地：URL 上带 code + state 时用它换身份。
@@ -115,7 +139,7 @@ export default function Login({ callbackPath = '' }: { callbackPath?: string }) 
           </div>
         )}
 
-        {!busy && dingtalkOn && (
+        {!busy && dingtalkOn !== false && (
           <div style={{
             background: 'var(--wb-surface-card,#fff)', border: '1px solid var(--wb-border,#F2EBDD)',
             borderRadius: 'var(--wb-radius-lg,16px)', padding: 28, textAlign: 'center',
@@ -129,11 +153,25 @@ export default function Login({ callbackPath = '' }: { callbackPath?: string }) 
             <Button
               type="primary" size="large" icon={<QrcodeOutlined />}
               style={{ marginTop: 20 }}
-              onClick={() => void startDingtalkLogin()}
+              loading={dingtalkOn === null}
+              onClick={async () => {
+                setErr('');
+                const url = await startDingtalkLogin();
+                if (!url) setErr('未能连接服务端，请检查网络后点「重新检测」');
+              }}
             >
               扫码登录
             </Button>
             {err && <div style={{ color: '#DC2626', fontSize: 12, marginTop: 12 }}>{err}</div>}
+            {/* 探测失败兜底：给出明确出口，而不是让用户对着转圈干等 */}
+            {(probeFailed || dingtalkOn === null) && (
+              <div style={{ marginTop: 12, fontSize: 11.5, color: '#D97706', lineHeight: 1.8 }}>
+                {probeFailed ? '未能检测到服务端（网络受限时会这样）。' : '正在检测免登服务…'}
+                <Button type="link" size="small" style={{ padding: '0 4px' }} onClick={() => setProbeTick((n) => n + 1)}>
+                  重新检测
+                </Button>
+              </div>
+            )}
           </div>
         )}
 
@@ -167,9 +205,7 @@ export default function Login({ callbackPath = '' }: { callbackPath?: string }) 
           </div>
         )}
 
-        {!busy && dingtalkOn === null && (
-          <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
-        )}
+        {/* 探测中不再整页转圈：扫码卡片在上方始终可点，这里只做一行状态提示 */}
 
         <div style={{ textAlign: 'center', marginTop: 18, fontSize: 11.5, color: 'var(--wb-ink-4,#BAB3C1)' }}>
           <TeamOutlined style={{ marginRight: 4 }} />

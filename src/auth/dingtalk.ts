@@ -13,6 +13,23 @@
  */
 
 const CFG_KEY = 'wb-dingtalk-cfg-v1';
+/** 探测超时：3.5 秒。再慢就不值得等了，直接降级。 */
+const PROBE_TIMEOUT_MS = 3500;
+
+/**
+ * 带超时的 fetch 初始化参数。
+ * 不用 `AbortSignal.timeout()`：它在旧版 WebView（部分老钉钉客户端的 Android 内核）上不存在，
+ * 会直接抛 TypeError —— 虽然会被 catch 兜住，但那样就**永远拿不到探测结果**。
+ * 这里做能力探测，拿不到就退回 AbortController 手动 abort。
+ */
+export function timeoutSignal(ms: number): { signal: AbortSignal } {
+  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+    return { signal: AbortSignal.timeout(ms) };
+  }
+  const ctl = new AbortController();
+  setTimeout(() => ctl.abort(), ms);
+  return { signal: ctl.signal };
+}
 const LS_ME = 'wb-workbench-me-v3.0.0';
 /**
  * V8.3-10.08 需求①收尾：数据面会话 token。
@@ -52,8 +69,13 @@ export async function isDingtalkEnabled(): Promise<boolean> {
       if (Date.now() - c.at < 5 * 60 * 1000) return c.enabled;
     }
   } catch { /* ignore */ }
+  /**
+   * ⚠️ 必须带超时：裸 fetch 在钉钉内嵌浏览器（WebView）里会**长期 pending 不返回**，
+   * 导致登录页一直停在「正在检测」的转圈状态（2026-10-08 线上实测）。
+   * 端点本身只要 170ms，所以卡的一定是客户端，不是服务端。
+   */
   try {
-    const res = await fetch('/api/auth/dingtalk/config');
+    const res = await fetch('/api/auth/dingtalk/config', timeoutSignal(PROBE_TIMEOUT_MS));
     const body = await res.json();
     const enabled = !!(res.ok && body?.enabled);
     try {
@@ -61,6 +83,8 @@ export async function isDingtalkEnabled(): Promise<boolean> {
     } catch { /* ignore */ }
     return enabled;
   } catch {
+    // 超时/失败一律当作「未启用」，并清掉可能过期的缓存，避免下次继续卡
+    try { sessionStorage.removeItem(CFG_KEY); } catch { /* ignore */ }
     return false;
   }
 }
@@ -68,7 +92,7 @@ export async function isDingtalkEnabled(): Promise<boolean> {
 /** 跳转到钉钉授权页（state 由服务端签发并缓存，回调时校验） */
 export async function startDingtalkLogin(): Promise<string | null> {
   try {
-    const res = await fetch('/api/auth/dingtalk/start');
+    const res = await fetch('/api/auth/dingtalk/start', timeoutSignal(8000));
     const body = await res.json();
     if (!res.ok || !body?.ok || !body?.url) return null;
     location.href = body.url;
