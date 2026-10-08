@@ -642,6 +642,17 @@ export interface Expert {
   serve_count: number;
   status: '接诊中' | '停诊' | '待审核' | '已离职';
   points: number;
+  /**
+   * V8.3-10.08 需求③.1：**软删**标记（缺省视为未删除）。
+   *
+   * 为什么不用物理删：Expert 被 Booking / ExpertReview / ExpertMinute 三处外键硬引用，
+   * 删掉会让历史预约找不到专家、评价与纪要变成孤儿数据。
+   * 「删除」的真实语义 = 从台账与前台列表里消失，历史记录仍可追溯。
+   */
+  is_deleted?: boolean;
+  /** 删除留痕：谁在什么时候删的（后台可审计） */
+  deleted_at?: string;
+  deleted_by?: string;
 }
 
 export interface ExpertSchedule {

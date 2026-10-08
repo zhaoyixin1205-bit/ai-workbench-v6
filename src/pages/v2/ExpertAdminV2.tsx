@@ -1,11 +1,11 @@
-import { noticeRescheduleToStudents } from '@/service/bookingNotice';
+import { noticeRescheduleToStudents, noticeStopToStudents } from '@/service/bookingNotice';
 import { AutoComplete, Button, DatePicker, Form, Input, InputNumber, Select, Table, Tabs, App as AntApp } from 'antd';
 import { StarFilled } from '@ant-design/icons';
 import { useState } from 'react';
 import { useStore } from '@/store/store';
 import { COLOR } from '@/theme/v2';
 import { DEMO_TODAY } from '@/mock/seedBiz';
-import type { ExpertSchedule, ScheduleRequest } from '@/mock/types';
+import type { Expert, ExpertSchedule, ScheduleRequest } from '@/mock/types';
 import BatchImport from '@/components/BatchImport';
 import { Dialog, useConfirm } from '@/components/v2/Dialog';
 import dayjs from 'dayjs';
@@ -63,7 +63,71 @@ export default function ExpertAdminV2() {
 
   /** V6.0 CR-26：已发布排班直接修改（有预约时必须二次确认并触发改约通知） */
   const [editTarget, setEditTarget] = useState<ExpertSchedule | null>(null);
+  /** V8.3-10.08 需求③.1：新增专家 / 删除专家（软删） */
+  const [addOpen, setAddOpen] = useState(false);
+  const [addForm] = Form.useForm();
   const [editForm] = Form.useForm();
+
+  /**
+   * V8.3-10.08 需求③.1：删除专家 = **软删**（is_deleted）。
+   * 不物理删：Booking / ExpertReview / ExpertMinute 三处都硬引用 expert_id，
+   * 物理删会让历史预约找不到专家、评价与纪要变孤儿数据。
+   * 删除时若该专家还有「待就诊」预约，一并通知学员改约。
+   */
+  const removeExpert = (r: Expert) => {
+    const pending = db.bookings.filter((b) => b.expert_id === r.id && b.status === '待就诊');
+    confirm({
+      title: `删除专家「${r.name}」？`,
+      content: pending.length
+        ? `该专家还有 ${pending.length} 条待就诊预约，将从门诊列表移除，并通知这些学员改约。历史预约、评价与纪要都会保留。`
+        : '将从门诊列表与专家台账中移除。历史预约、评价与纪要都会保留，可追溯。',
+      okText: '确认删除',
+      onOk: () => {
+        const at = `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`;
+        setDb((p) => ({
+          ...p,
+          experts: p.experts.map((x) => (x.id === r.id ? { ...x, is_deleted: true, deleted_at: at, deleted_by: me.name } : x)),
+          /** 已约学员必须知道换人了，否则他们白等一场 */
+          messages: noticeStopToStudents(p.messages, pending.map((b) => ({ union_id: b.union_id, name: b.name })), r.name),
+        }));
+        log('删除专家', r.name, `软删；${pending.length} 条待就诊预约已通知学员改约`);
+        message.success(`已删除专家 ${r.name}${pending.length ? `，已通知 ${pending.length} 位学员改约` : ''}`);
+      },
+    });
+  };
+
+  /** 新增专家：union_id 从通讯录里选（专家必须有钉钉身份，否则约了也接不到通知） */
+  const submitAdd = async () => {
+    const v = await addForm.validateFields();
+    const dup = db.experts.find((x) => x.union_id === v.union_id && !x.is_deleted);
+    if (dup) {
+      message.error(`${db.users.find((u) => u.union_id === v.union_id)?.name ?? '该成员'} 已在专家名录中（${dup.name}）`);
+      return;
+    }
+    const u = db.users.find((x) => x.union_id === v.union_id);
+    const name = u?.name ?? v.name?.trim() ?? '';
+    setDb((p) => ({
+      ...p,
+      experts: [{
+        id: `EX${Date.now()}`,
+        union_id: v.union_id,
+        name,
+        dept_name: v.dept_name?.trim() || u?.dept_names[0] || '',
+        title: v.title?.trim() ?? '',
+        cert: (v.cert ?? []) as Expert['cert'],
+        expertise_tags: ((v.expertise_tags as string[] | undefined) ?? []).map((t: string) => t.trim()).filter(Boolean),
+        intro: v.intro?.trim() ?? '',
+        rating_avg: 5,
+        serve_count: 0,
+        status: '接诊中',
+        points: 0,
+      }, ...p.experts],
+    }));
+    log('新增专家', name, `${v.dept_name ?? ''} / ${(v.expertise_tags ?? []).join('、')}`);
+    message.success(`已新增专家 ${name}，可在「排班审批与号源策略」里为其添加号源`);
+    setAddOpen(false);
+    addForm.resetFields();
+  };
 
   const editSchedule = (s: ExpertSchedule) => {
     setEditTarget(s);
@@ -215,11 +279,15 @@ export default function ExpertAdminV2() {
           <h2 className="wb2-ph-t">专家与排班管理</h2>
           <div className="wb2-ph-d">专家名录、号源排班与履约监控</div>
         </div>
+        {/* V8.3-10.08 需求③.1：新增专家入口 */}
+        <div className="wb2-ph-a">
+          <Button type="primary" onClick={() => setAddOpen(true)}>新增专家</Button>
+        </div>
       </div>
 
       <div className="wb2-metrics c6">
         {[
-          { t: '在册专家', v: db.experts.filter((e) => e.status === '接诊中').length, accent: true },
+          { t: '在册专家', v: db.experts.filter((e) => e.status === '接诊中' && !e.is_deleted).length, accent: true },
           { t: '累计预约', v: totalBookings },
           { t: '履约率', v: `${Math.round((done / Math.max(1, totalBookings)) * 100)}%` },
           { t: '爽约次数', v: noShow },
@@ -240,7 +308,8 @@ export default function ExpertAdminV2() {
               key: 'experts', label: '专家入驻与认证',
               children: (
                 <Table
-                  size="small" rowKey="id" pagination={false} dataSource={db.experts}
+                  size="small" rowKey="id" pagination={false}
+                  dataSource={db.experts.filter((e) => !e.is_deleted)}
                   columns={[
                     {
                       title: '专家',
@@ -277,7 +346,7 @@ export default function ExpertAdminV2() {
                       ),
                     },
                     {
-                      title: '操作', width: 160,
+                      title: '操作', width: 210,
                       render: (_, r) => (
                         <div style={{ display: 'flex', gap: 'var(--wb-space-2)' }}>
                           <Button size="small" type="link" onClick={() => { log('授予认证标识', r.name, '官方认证'); message.success('已授予官方认证标识'); }}>授予认证</Button>
@@ -285,6 +354,8 @@ export default function ExpertAdminV2() {
                             setDb((p) => ({ ...p, experts: p.experts.map((x) => (x.id === r.id ? { ...x, status: x.status === '接诊中' ? '停诊' : '接诊中' } : x)) }));
                             message.success('排班状态已切换（停诊将自动通知已预约用户改约）');
                           }}>{r.status === '接诊中' ? '停诊' : '恢复接诊'}</Button>
+                          {/* V8.3-10.08 需求③.1：删除专家走软删 —— 有历史记录（预约/评价/纪要）也保留可追溯，只是不再出现在门诊与台账 */}
+                          <Button size="small" type="link" danger onClick={() => removeExpert(r)}>删除</Button>
                         </div>
                       ),
                     },
@@ -575,6 +646,45 @@ export default function ExpertAdminV2() {
           </Form.Item>
           <Form.Item name="status" label="状态" rules={[{ required: true }]} style={{ marginBottom: 0 }}>
             <Select options={['OPEN', 'FULL', 'CLOSED', 'HOLIDAY'].map((v) => ({ value: v, label: scheduleStatusText(v) }))} />
+          </Form.Item>
+        </Form>
+      </Dialog>
+
+      {/* V8.3-10.08 需求③.1：新增专家弹窗（成员来自钉钉通讯录，部门/职称/擅长领域手填） */}
+      <Dialog
+        open={addOpen}
+        title="新增专家"
+        onCancel={() => { setAddOpen(false); addForm.resetFields(); }}
+        onOk={submitAdd}
+        okText="确认新增"
+      >
+        <Form form={addForm} layout="vertical">
+          <Form.Item
+            name="union_id" label="所属成员（钉钉通讯录）" rules={[{ required: true, message: '请选择成员' }]}
+            extra="专家必须有钉钉身份，否则预约后收不到消息通知"
+          >
+            <Select
+              showSearch placeholder="搜索姓名或工号" optionFilterProp="label"
+              options={db.users.filter((u) => u.status !== 99).map((u) => ({
+                value: u.union_id,
+                label: `${u.name} · ${u.job_number} · ${u.dept_names[0] ?? ''}`,
+              }))}
+            />
+          </Form.Item>
+          <Form.Item name="dept_name" label="部门" rules={[{ required: true, message: '请填写部门' }]}>
+            <Input placeholder="如：中小微事业群/商业侧" />
+          </Form.Item>
+          <Form.Item name="title" label="职称 / 头衔" rules={[{ required: true, message: '请填写职称' }]}>
+            <Input placeholder="如：高级客户经理" />
+          </Form.Item>
+          <Form.Item name="expertise_tags" label="擅长领域" extra="多个用逗号分隔，如：话术训练, 客诉处理">
+            <Input placeholder="话术训练, 客诉处理" />
+          </Form.Item>
+          <Form.Item name="cert" label="认证标识">
+            <Select mode="multiple" allowClear options={['官方认证', '上届获奖', '外部顾问'].map((c) => ({ value: c, label: c }))} />
+          </Form.Item>
+          <Form.Item name="intro" label="一句话介绍">
+            <Input.TextArea rows={3} placeholder="擅长解决什么问题、有哪些可复制的方法" />
           </Form.Item>
         </Form>
       </Dialog>

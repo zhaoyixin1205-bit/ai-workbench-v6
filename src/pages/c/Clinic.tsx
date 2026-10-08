@@ -24,12 +24,13 @@ export default function Clinic() {
   const isExpert = db.experts.some((e) => e.union_id === me.union_id);
   const [kw, setKw] = useState('');
   const [sort, setSort] = useState('评分');
-  const [expertId, setExpertId] = useState(db.experts[0].id);
+  /** V8.3-10.08 需求③.1：已删除的专家不再出现在门诊（软删） */
+  const [expertId, setExpertId] = useState(db.experts.filter((e) => !e.is_deleted)[0]?.id ?? '');
   const [booking, setBooking] = useState<ExpertSchedule | null>(null);
   const [question, setQuestion] = useState('');
 
   const experts = useMemo(() => {
-    let arr = db.experts.filter((e) => !kw || e.name.includes(kw) || e.expertise_tags.some((t) => t.includes(kw)) || e.dept_name.includes(kw));
+    let arr = db.experts.filter((e) => !e.is_deleted && (!kw || e.name.includes(kw) || e.expertise_tags.some((t) => t.includes(kw)) || e.dept_name.includes(kw)));
     arr = [...arr].sort((a, b) =>
       sort === '评分' ? b.rating_avg - a.rating_avg : sort === '接诊量' ? b.serve_count - a.serve_count : 0
     );

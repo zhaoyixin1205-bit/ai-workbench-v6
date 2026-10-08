@@ -25,13 +25,14 @@ export function useClinicBoard() {
 
   const [kw, setKw] = useState('');
   const [sort, setSort] = useState('评分');
-  const [expertId, setExpertId] = useState(db.experts[0]?.id ?? '');
+  const [expertId, setExpertId] = useState(db.experts.filter((e) => !e.is_deleted)[0]?.id ?? '');
   const [booking, setBooking] = useState<ExpertSchedule | null>(null);
   const [question, setQuestion] = useState('');
 
   const experts = useMemo(() => {
+    /** V8.3-10.08 需求③.1：已删除的专家不再出现在门诊列表（软删，不物理删） */
     let arr = db.experts.filter(
-      (e) => !kw || e.name.includes(kw) || e.expertise_tags.some((t) => t.includes(kw)) || e.dept_name.includes(kw)
+      (e) => !e.is_deleted && (!kw || e.name.includes(kw) || e.expertise_tags.some((t) => t.includes(kw)) || e.dept_name.includes(kw))
     );
     arr = [...arr].sort((a, b) =>
       sort === '评分' ? b.rating_avg - a.rating_avg : sort === '接诊量' ? b.serve_count - a.serve_count : 0
@@ -39,7 +40,7 @@ export function useClinicBoard() {
     return arr;
   }, [db.experts, kw, sort]);
 
-  const expert = db.experts.find((e) => e.id === expertId) ?? db.experts[0];
+  const expert = db.experts.find((e) => e.id === expertId) ?? db.experts.filter((e) => !e.is_deleted)[0];
   const schedules = useMemo(
     () => db.schedules.filter((s) => s.expert_id === expertId).slice(0, 14),
     [db.schedules, expertId]

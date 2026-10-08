@@ -1,4 +1,4 @@
-import { noticeRescheduleToStudents } from '@/service/bookingNotice';
+import { noticeRescheduleToStudents, noticeStopToStudents } from '@/service/bookingNotice';
 import { Alert, AutoComplete, Avatar, Button, Card, Col, DatePicker, Empty, Form, Input, InputNumber, List, Modal, Row, Select, Space, Statistic, Switch, Table, Tabs, Tag, Typography, App as AntApp } from 'antd';
 import { StarFilled } from '@ant-design/icons';
 import { useState } from 'react';
@@ -6,7 +6,7 @@ import { useStore } from '@/store/store';
 import { COLOR } from '@/theme';
 import { PageHeader, StatCard } from '@/components/ui';
 import { DEMO_TODAY } from '@/mock/seedBiz';
-import type { ExpertSchedule, ScheduleRequest } from '@/mock/types';
+import type { Expert, ExpertSchedule, ScheduleRequest } from '@/mock/types';
 import BatchImport from '@/components/BatchImport';
 import dayjs from 'dayjs';
 /* V7.0 CR-36：排班字段契约 + 时段预置枚举（拍板 8-C：预置优先、允许自定义） */
@@ -45,6 +45,33 @@ export default function ExpertAdmin() {
   /** V6.0 CR-26：已发布排班直接修改（有预约时必须二次确认并触发改约通知） */
   const [editTarget, setEditTarget] = useState<ExpertSchedule | null>(null);
   const [editForm] = Form.useForm();
+
+  /**
+   * V8.3-10.08 需求③.1：删除专家 = **软删**（is_deleted）。
+   * 不物理删：Booking / ExpertReview / ExpertMinute 三处都硬引用 expert_id，
+   * 物理删会让历史预约找不到专家、评价与纪要变孤儿数据。
+   */
+  const removeExpert = (r: Expert) => {
+    const pending = db.bookings.filter((b) => b.expert_id === r.id && b.status === '待就诊');
+    modal.confirm({
+      title: `删除专家「${r.name}」？`,
+      content: pending.length
+        ? `该专家还有 ${pending.length} 条待就诊预约，将从门诊列表移除，并通知这些学员改约。历史预约、评价与纪要都会保留。`
+        : '将从门诊列表与专家台账中移除。历史预约、评价与纪要都会保留，可追溯。',
+      okText: '确认删除',
+      okButtonProps: { danger: true },
+      onOk: () => {
+        const at = `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`;
+        setDb((p) => ({
+          ...p,
+          experts: p.experts.map((x) => (x.id === r.id ? { ...x, is_deleted: true, deleted_at: at, deleted_by: me.name } : x)),
+          messages: noticeStopToStudents(p.messages, pending.map((b) => ({ union_id: b.union_id, name: b.name })), r.name),
+        }));
+        log('删除专家', r.name, `软删；${pending.length} 条待就诊预约已通知学员改约`);
+        message.success(`已删除专家 ${r.name}${pending.length ? `，已通知 ${pending.length} 位学员改约` : ''}`);
+      },
+    });
+  };
 
   const editSchedule = (s: ExpertSchedule) => {
     setEditTarget(s);
@@ -213,7 +240,7 @@ export default function ExpertAdmin() {
               key: 'experts', label: '专家入驻与认证',
               children: (
                 <Table
-                  size="small" rowKey="id" pagination={false} dataSource={db.experts}
+                  size="small" rowKey="id" pagination={false} dataSource={db.experts.filter((e) => !e.is_deleted)}
                   columns={[
                     {
                       title: '专家', render: (_, r) => (
@@ -246,6 +273,8 @@ export default function ExpertAdmin() {
                             setDb((p) => ({ ...p, experts: p.experts.map((x) => (x.id === r.id ? { ...x, status: x.status === '接诊中' ? '停诊' : '接诊中' } : x)) }));
                             message.success('排班状态已切换（停诊将自动通知已预约用户改约）');
                           }}>{r.status === '接诊中' ? '停诊' : '恢复接诊'}</Button>
+                          {/* V8.3-10.08 需求③.1：删除专家走软删 —— 历史预约/评价/纪要全部保留可追溯 */}
+                          <Button size="small" type="link" danger onClick={() => removeExpert(r)}>删除</Button>
                         </Space>
                       ),
                     },
