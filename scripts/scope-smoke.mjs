@@ -152,6 +152,27 @@ check('C5 组织者回写不受限制（仍可管全库）', () => {
   return merged.messages.length === 1 ? true : '组织者写入被拦';
 });
 
+/* ---- D组：401竞态判定（2026-10-08 线上「扫码成功却进不去」的元凶） ---- */
+import { readFileSync } from 'node:fs';
+const readFile = (p) => readFileSync(p, 'utf8');
+const src = readFile('src/service/stateService.ts');
+check('D1 401 清理前必须校验 sentToken（防旧请求擦掉新会话）', () => {
+  const ok = /function handleUnauthorized\(sentToken/.test(src) && /current !== sentToken/.test(src);
+  return ok ? true : 'handleUnauthorized 未做 token 竞态判定';
+});
+check('D2 getJson / pushState 都把 auth.token 传给 handleUnauthorized', () => {
+  const calls = (src.match(/handleUnauthorized\(auth\.token\)/g) || []).length;
+  return calls === 2 ? true : `只传了 ${calls} 处（应为 getJson + pushState 两处）`;
+});
+check('D3 登录成功后必须重新拉数据（否则 db.users 为空 → 永远停在登录页）', () => {
+  const login = readFile('src/pages/Login.tsx');
+  return /await pullRemote\(\)/.test(login) ? true : 'Login 落地身份后没有重拉数据';
+});
+check('D4 降级选人路径也要重拉（否则看到的是上一个人的裁剪数据）', () => {
+  const login = readFile('src/pages/Login.tsx');
+  return /void pullRemote\(\)/.test(login) ? true : '降级选人后没有重拉数据';
+});
+
 /* ------------------------------------------------------------------ */
 const failed = results.filter((r) => !r.ok);
 results.forEach((r) => console.log(`${r.ok ? '✅' : '❌'} ${r.name}${r.detail ? ' — ' + r.detail : ''}`));

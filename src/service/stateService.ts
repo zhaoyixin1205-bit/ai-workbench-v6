@@ -14,21 +14,39 @@ const TIMEOUT_MS = 8000;
 /**
  * V8.3-10.08 需求①收尾：所有数据面请求都带会话 token。
  * 服务端配了免登时，缺 token 会被 401 拒（并返回「请重新登录」）。
+ *
+ * 同时把**这次实际发出的 token** 回传给调用方 —— 401 处理要用它做竞态判定。
  */
-function authHeaders(): Record<string, string> {
+function authHeaders(): { headers: Record<string, string>; token: string } {
   const t = getSessionToken();
-  return t ? { 'X-WB-Token': t } : {};
+  return { headers: t ? { 'X-WB-Token': t } : {}, token: t };
 }
 
 /**
  * 401 = 会话失效（token 缺失/过期/被篡改）。
  * 此时**清掉本地身份与 token**：store 的 meMissing 会变 true，App 立刻回到登录页。
  *
- * ⚠️ 同时必须**留下原因**：否则用户会被无声地弹回登录页，完全不知道发生了什么
- * （典型场景：会话鉴权上线前登录过 → 本地只有 union_id 没有 token → 每次刷新都 401 →反复弹回）。
- * 登录页会读取这个原因并明确告知「需要重新扫码」。
+ * ⚠️⚠️ `sentToken` 是竞态判定的关键，**不能省**（2026-10-08 线上实测）：
+ * 回调页加载时 store 会先发一次**不带 token** 的数据请求（那时 exchange 还没返回），
+ * 它拿到的 401 会**迟到**。如果无脑清身份，就会把用户刚扫码换到的 token 一起擦掉，
+ * 于是形成死循环：扫码成功 → 落地 → 旧请求 401 → 清身份 → 又回登录页 → 再扫…
+ *
+ * 判定规则：
+ *   - 这次请求带了 token，且**当前存储里的 token 已经不是它** → 说明期间重新登录过，
+ *     这个 401 属于「历史请求」，**绝不能动**当前会话（直接返回）；
+ *   - 这次请求带了 token，且当前还是它 → 真会话失效，清干净；
+ *   - 这次请求**没带** token（首屏拉数据 / 已登录态丢失）→ 属未登录，清掉残留身份即可。
  */
-function handleUnauthorized() {
+function handleUnauthorized(sentToken: string) {
+  const current = getSessionToken();
+  if (sentToken && current !== sentToken) {
+    // 期间换了会话：这是旧请求的 401，不作为失效依据
+    return;
+  }
+  if (!sentToken && current) {
+    // 请求发出时没有 token，现在却有 —— 说明是「首屏那次无凭证请求」迟到的 401，同上不处理
+    return;
+  }
   try {
     localStorage.removeItem('wb-workbench-me-v3.0.0');
     localStorage.removeItem('wb-session-token-v1');
@@ -62,10 +80,11 @@ async function getJson<T>(url: string): Promise<T | null> {
   try {
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
-    const res = await fetch(url, { signal: ctl.signal, headers: { Accept: 'application/json', ...authHeaders() } });
+    const auth = authHeaders();
+    const res = await fetch(url, { signal: ctl.signal, headers: { Accept: 'application/json', ...auth.headers } });
     clearTimeout(timer);
     if (res.status === 401) {
-      handleUnauthorized();
+      handleUnauthorized(auth.token);
       return null;
     }
     if (!res.ok) return null;
@@ -92,10 +111,11 @@ export async function pushState(data: unknown, baseVersion: number, by: string):
   try {
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), 15000);
+    const auth = authHeaders();
     const res = await fetch('/api/state', {
       method: 'PUT',
       signal: ctl.signal,
-      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      headers: { 'Content-Type': 'application/json', ...auth.headers },
       body: JSON.stringify({ data, baseVersion, by }),
     });
     clearTimeout(timer);
@@ -110,7 +130,7 @@ export async function pushState(data: unknown, baseVersion: number, by: string):
       };
     }
     if (res.status === 401) {
-      handleUnauthorized();
+      handleUnauthorized(auth.token);
       return { ok: false, conflict: false, error: '会话已过期，请重新登录' };
     }
     if (!res.ok) return { ok: false, conflict: false, error: String(body.error ?? `写入失败（HTTP ${res.status}）`) };

@@ -29,7 +29,7 @@ const go = (path: string) => {
 };
 
 export default function Login({ callbackPath = '' }: { callbackPath?: string }) {
-  const { db, switchIdentity } = useStore();
+  const { db, switchIdentity, pullRemote } = useStore();
   const [dingtalkOn, setDingtalkOn] = useState<boolean | null>(null);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -91,7 +91,7 @@ export default function Login({ callbackPath = '' }: { callbackPath?: string }) 
   useEffect(() => {
     if (!code || !state) return;
     setBusy(true);
-    void loginWithCode(code, state).then((r) => {
+    void loginWithCode(code, state).then(async (r) => {
       // 用 replace 清掉 URL 上的授权码，避免刷新时重复兑换（code 一次性）
       window.history.replaceState({}, '', window.location.pathname || '/');
       if (r.ok) {
@@ -101,25 +101,35 @@ export default function Login({ callbackPath = '' }: { callbackPath?: string }) 
          * 否则免登锁定后连登录都进不去。
          */
         switchIdentity(r.profile.unionId, { force: true });
+        /**
+         * ⚠️⚠️ **必须重新拉一次数据**（2026-10-08 线上实测的真正元凶）。
+         *
+         * store 的 pullRemote 只在**挂载时**跑一次，那时 token 还没拿到 → 401 → db.users 为空。
+         * 于是 `me = db.users.find(meId) ?? ANON_USER` 恒为 ANON → meMissing 恒为 true
+         * → 登录页永远不消失，看起来就是「扫完码进不去」。
+         *
+         * 而且这不只是体验问题：数据面现在**按身份裁剪**，不重拉就意味着
+         * 上一位访问者的残留数据会留在内存里给下一个人看。
+         */
+        await pullRemote();
         if (callbackPath) go(callbackPath);
         /**
-         * ⚠️ 兜底：成功分支**不能永远停在 busy**。
-         * 钉钉身份已拿到，但落地后可能因为「数据尚未拉取完成 / 数据面 401 清了身份」
-         * 而导致页面仍是登录页 —— 此时没有提示，用户只看到永久转圈。
-         * 这里 6 秒后若还停在登录页，就解除转圈并说明情况，让用户能重试。
+         * 兜底：重拉之后若**仍**停在登录页，说明身份确实没能在数据里解析出来
+         * （钉钉 unionId 与通讯录不一致 / 该成员不在名单内）。
+         * 此时必须给出可读原因，而不是让人对着圈圈干等。
          */
         setTimeout(() => {
           setBusy((b) => {
-            if (b) setErr('身份已通过钉钉验证，但进入工作台失败（数据加载未完成或会话失效）。请点下方按钮重试，或用手机浏览器打开本链接。');
+            if (b) setErr('身份已通过钉钉验证，但仍未在工作台名单中匹配到。请联系组织者核对钉钉 unionId 与通讯录是否一致。');
             return false;
           });
-        }, 6000);
+        }, 8000);
       } else {
         setErr(r.error);
         setBusy(false);
       }
     });
-  }, [code, state, callbackPath, switchIdentity]);
+  }, [code, state, callbackPath, switchIdentity, pullRemote]);
 
   /** 降级模式：按角色分组列人（点谁就是谁，语义与顶栏身份切换器一致） */
   const byRole = useMemo(() => {
@@ -142,7 +152,10 @@ export default function Login({ callbackPath = '' }: { callbackPath?: string }) 
   /** 降级模式下的「选人登录」同理：force 落地身份 */
   const pick = (unionId: string) => {
     switchIdentity(unionId, { force: true });
-    if (callbackPath) go(callbackPath);
+    // 同上：换人后必须重拉，否则看到的还是上一个人的（裁剪后的）数据
+    void pullRemote().then(() => {
+      if (callbackPath) go(callbackPath);
+    });
   };
 
   return (
