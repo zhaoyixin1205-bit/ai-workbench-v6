@@ -16,6 +16,7 @@ import { useStore } from '@/store/store';
 import { SoftTag } from '@/components/ui';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import ScopePicker from '@/components/ScopePicker';
+import PostRichEditor from '@/components/PostRichEditor';
 import { usePostComposer } from '@/hooks/usePostComposer';
 import type { ScopeSubject } from '@/mock/types';
 import '../../theme/v2/template.css';
@@ -158,18 +159,8 @@ export default function CommunityV2() {
           <Input placeholder="标题（≤50 字）" maxLength={50} showCount value={c.title} onChange={(e) => c.setTitle(e.target.value)} />
           {c.v2 ? (
             <>
-              <div className="wb2-card-pad" style={{ padding: 0, border: '1px solid var(--wb-border)', borderRadius: 'var(--wb-radius-md)', overflow: 'hidden' }}>
-                <div style={{ padding: '6px 8px', background: 'var(--wb-surface-sunken)', borderBottom: '1px solid var(--wb-border)', display: 'flex', gap: 4, alignItems: 'center' }}>
-                  <Button size="small" type="text" icon={<BoldOutlined />} onClick={() => c.insert('**')} />
-                  <Button size="small" type="text" icon={<ItalicOutlined />} onClick={() => c.insert('*')} />
-                  <Button size="small" type="text" icon={<UnorderedListOutlined />} onClick={() => c.insert('\n- ', '')} />
-                  <Divider type="vertical" style={{ margin: '0 4px' }} />
-                  <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-                    富文本支持加粗 / 斜体 / 列表，支持 Markdown
-                  </Typography.Text>
-                </div>
-                <Input.TextArea id="wb-post-content" rows={6} placeholder="正文（≤5000 字）" value={c.content} onChange={(e) => c.setContent(e.target.value)} style={{ border: 'none' }} />
-              </div>
+              {/* V8.3-10.08 需求⑥：正文换成所见即所得编辑器，支持**内嵌图片**（上限 5 张，走统一文件服务） */}
+              <PostRichEditor value={c.content} onChange={c.setContent} maxImages={5} />
               <div>
                 <div className="wb2-fl">可见范围（默认全员可见）</div>
                 <ScopePicker value={c.subjects} onChange={c.setSubjects} />
@@ -184,7 +175,7 @@ export default function CommunityV2() {
                 >
                   <Button size="small" icon={<PaperClipOutlined />}>添加附件</Button>
                 </Upload>
-                <div className="wb2-fhint">演示环境不做真实上传，仅记录附件名；涉客户数据的附件请先在「资产库」脱敏。</div>
+                <div className="wb2-fhint">正文图片请直接插入上方编辑器（最多 5 张）；这里挂的是独立附件（Word / PDF 等）。</div>
               </div>
             </>
           ) : (

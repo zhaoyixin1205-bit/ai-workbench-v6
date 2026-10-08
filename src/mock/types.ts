@@ -185,7 +185,8 @@ export interface Attachment {
 export interface AttachmentFile {
   id: string;
   /** 业务归属：案例 Skill 包 / 案例附件 / 作业提报 / 悬赏方案 */
-  biz_type: 'CASE_SKILL' | 'CASE_ATTACH' | 'SUBMIT' | 'BOUNTY_SOLUTION';
+  /** V8.3-10.08 需求⑥：POST_ATTACH = 社区发帖正文内嵌图片（随帖公开，同 CASE_* 口径） */
+  biz_type: 'CASE_SKILL' | 'CASE_ATTACH' | 'SUBMIT' | 'BOUNTY_SOLUTION' | 'POST_ATTACH';
   biz_id: string;
   name: string;
   ext: string;

@@ -12,6 +12,7 @@ import {
 import { Link, useParams } from 'react-router-dom';
 import { useState } from 'react';
 import { useStore } from '@/store/store';
+import RichContent from '@/components/RichContent';
 import { SoftTag } from '@/components/ui';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import '../../theme/v2/template.css';
@@ -121,9 +122,8 @@ export default function PostDetailV2() {
         </div>
 
         <div style={{ padding: 'var(--wb-space-6) var(--wb-space-7)' }}>
-          <Typography.Paragraph style={{ fontSize: 'var(--wb-fs-body)', lineHeight: 1.85, whiteSpace: 'pre-wrap', color: 'var(--wb-ink-1)', marginBottom: 0 }}>
-            {p.content}
-          </Typography.Paragraph>
+          {/* V8.3-10.08 需求⑥：富文本正文（可能内嵌图片），经 DOMPurify 白名单过滤后渲染 */}
+          <RichContent html={p.content} style={{ fontSize: 'var(--wb-fs-body)', color: 'var(--wb-ink-1)' }} />
           {p.tags.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
               {p.tags.map((t) => <span key={t} className="wb2-chip" style={{ cursor: 'default' }}>#{t}</span>)}

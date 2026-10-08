@@ -7,6 +7,7 @@ import { COLOR } from '@/theme';
 import { SoftTag } from '@/components/ui';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import ScopePicker from '@/components/ScopePicker';
+import PostRichEditor from '@/components/PostRichEditor';
 import type { ScopeSubject } from '@/mock/types';
 
 export default function Community() {
@@ -224,18 +225,8 @@ export default function Community() {
           <Input placeholder="标题（≤50 字）" maxLength={50} showCount value={title} onChange={(e) => setTitle(e.target.value)} />
           {v2 ? (
             <>
-              <div style={{ border: `1px solid ${COLOR.borderLight}`, borderRadius: 10, overflow: 'hidden' }}>
-                <div style={{ padding: '6px 8px', background: '#F9FAFB', borderBottom: `1px solid ${COLOR.borderLight}`, display: 'flex', gap: 4 }}>
-                  <Button size="small" type="text" icon={<BoldOutlined />} onClick={() => insert('**')} />
-                  <Button size="small" type="text" icon={<ItalicOutlined />} onClick={() => insert('*')} />
-                  <Button size="small" type="text" icon={<UnorderedListOutlined />} onClick={() => insert('\n- ', '')} />
-                  <Divider type="vertical" style={{ margin: '0 4px' }} />
-                  <Typography.Text type="secondary" style={{ fontSize: 11, lineHeight: '24px' }}>
-                    富文本支持加粗 / 斜体 / 列表，支持 Markdown
-                  </Typography.Text>
-                </div>
-                <Input.TextArea id="wb-post-content" rows={6} placeholder="正文（≤5000 字）" value={content} onChange={(e) => setContent(e.target.value)} style={{ border: 'none' }} />
-              </div>
+              {/* V8.3-10.08 需求⑥：正文换成所见即所得编辑器，支持内嵌图片（上限 5 张），与 v2 同源 */}
+              <PostRichEditor value={content} onChange={setContent} maxImages={5} />
               <div>
                 <div style={{ fontSize: 13, marginBottom: 4 }}>可见范围（默认全员可见）</div>
                 <ScopePicker value={subjects} onChange={setSubjects} />

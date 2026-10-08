@@ -3,6 +3,7 @@ import { ArrowLeftOutlined, LikeOutlined, LikeFilled, StarOutlined, StarFilled, 
 import { Link, useParams } from 'react-router-dom';
 import { useState } from 'react';
 import { useStore } from '@/store/store';
+import RichContent from '@/components/RichContent';
 import { COLOR, GRADIENT } from '@/theme';
 import { SoftTag } from '@/components/ui';
 import { DEMO_TODAY } from '@/mock/seedBiz';
@@ -100,9 +101,8 @@ export default function PostDetail() {
         </div>
 
         <div style={{ padding: 24 }}>
-          <Typography.Paragraph style={{ fontSize: 14.5, lineHeight: 1.85, whiteSpace: 'pre-wrap', color: COLOR.text }}>
-            {p.content}
-          </Typography.Paragraph>
+          {/* V8.3-10.08 需求⑥：富文本正文（可能内嵌图片），经 DOMPurify 白名单过滤后渲染 */}
+          <RichContent html={p.content} style={{ fontSize: 14.5, color: COLOR.text }} />
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 12 }}>
             {p.tags.map((t) => <SoftTag key={t} text={`#${t}`} tone="gray" />)}
           </div>

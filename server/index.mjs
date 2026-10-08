@@ -85,7 +85,7 @@ function readBody(req, limit = MAX_BYTES + 1024) {
  */
 function canDownload(meta, actor) {
   if (!meta) return false;
-  if (meta.biz_type === 'CASE_SKILL' || meta.biz_type === 'CASE_ATTACH') return true;
+  if (meta.biz_type === 'CASE_SKILL' || meta.biz_type === 'CASE_ATTACH' || meta.biz_type === 'POST_ATTACH') return true;
   return meta.uploaded_by === actor?.name || actor?.roles?.includes('ORGANIZER') || actor?.roles?.includes('ADMIN');
 }
 
@@ -266,7 +266,7 @@ async function handle(req, res) {
     const uploadedBy = q.get('uploaded_by') || '';
     const roles = (q.get('roles') || '').split(',').filter(Boolean);
 
-    if (!['CASE_SKILL', 'CASE_ATTACH', 'SUBMIT', 'BOUNTY_SOLUTION'].includes(bizType)) {
+    if (!['CASE_SKILL', 'CASE_ATTACH', 'SUBMIT', 'BOUNTY_SOLUTION', 'POST_ATTACH'].includes(bizType)) {
       return sendJson(res, 400, { ok: false, error: `biz_type 非法：${bizType}` });
     }
     const ext = name.split('.').pop()?.toLowerCase() ?? '';
