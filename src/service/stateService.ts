@@ -21,14 +21,25 @@ function authHeaders(): Record<string, string> {
 }
 
 /**
- * 401 = 会话失效（token 过期或被篡改）。
+ * 401 = 会话失效（token 缺失/过期/被篡改）。
  * 此时**清掉本地身份与 token**：store 的 meMissing 会变 true，App 立刻回到登录页。
- * 不这么做的话，用户会卡在一个「拉不到数据」的页面上，不知道该重新扫码。
+ *
+ * ⚠️ 同时必须**留下原因**：否则用户会被无声地弹回登录页，完全不知道发生了什么
+ * （典型场景：会话鉴权上线前登录过 → 本地只有 union_id 没有 token → 每次刷新都 401 →反复弹回）。
+ * 登录页会读取这个原因并明确告知「需要重新扫码」。
  */
 function handleUnauthorized() {
   try {
     localStorage.removeItem('wb-workbench-me-v3.0.0');
     localStorage.removeItem('wb-session-token-v1');
+    sessionStorage.setItem('wb-session-reason', '会话已失效，请重新通过钉钉扫码登录');
+  } catch { /* ignore */ }
+  /**
+   * 派发全局事件：登录页挂载**之后**才发生的 401（拉数据阶段）也能第一时间显示原因。
+   * 只靠 sessionStorage 的话，挂载时读一次，读不到后面发生的事 —— 实测就是这个坑。
+   */
+  try {
+    window.dispatchEvent(new CustomEvent('wb-session-expired'));
   } catch { /* ignore */ }
 }
 

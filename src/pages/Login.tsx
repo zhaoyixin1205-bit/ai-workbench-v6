@@ -35,6 +35,25 @@ export default function Login({ callbackPath = '' }: { callbackPath?: string }) 
   const [busy, setBusy] = useState(false);
   /** 探测失败/超时的提示（钉钉 WebView 里 fetch 可能长期挂起，必须给用户兜底出口） */
   const [probeFailed, setProbeFailed] = useState(false);
+  /**
+   * V8.3-10.08：会话失效原因（由 stateService 在 401 时写入）。
+   * 不展示的话，用户会被无声弹回登录页 —— 尤其「会话鉴权上线前登录过、只有 union_id 没有 token」的人，
+   * 会陷入「扫码成功 → 拉数据 401 → 被清身份 → 又回到登录页」的循环且毫无线索。
+   */
+  const [sessionNotice, setSessionNotice] = useState('');
+  useEffect(() => {
+    try {
+      const r = sessionStorage.getItem('wb-session-reason');
+      if (r) { setSessionNotice(r); sessionStorage.removeItem('wb-session-reason'); }
+    } catch { /* ignore */ }
+    /**
+     * 还要监听事件：store 拉数据阶段的 401 发生在**本组件挂载之后**，
+     * 只在挂载时读一次 sessionStorage 读不到（实测踩过）。
+     */
+    const onExpired = () => setSessionNotice('会话已失效，请重新通过钉钉扫码登录');
+    window.addEventListener('wb-session-expired', onExpired);
+    return () => window.removeEventListener('wb-session-expired', onExpired);
+  }, []);
   const [probeTick, setProbeTick] = useState(0);
 
   useEffect(() => {
@@ -83,6 +102,18 @@ export default function Login({ callbackPath = '' }: { callbackPath?: string }) 
          */
         switchIdentity(r.profile.unionId, { force: true });
         if (callbackPath) go(callbackPath);
+        /**
+         * ⚠️ 兜底：成功分支**不能永远停在 busy**。
+         * 钉钉身份已拿到，但落地后可能因为「数据尚未拉取完成 / 数据面 401 清了身份」
+         * 而导致页面仍是登录页 —— 此时没有提示，用户只看到永久转圈。
+         * 这里 6 秒后若还停在登录页，就解除转圈并说明情况，让用户能重试。
+         */
+        setTimeout(() => {
+          setBusy((b) => {
+            if (b) setErr('身份已通过钉钉验证，但进入工作台失败（数据加载未完成或会话失效）。请点下方按钮重试，或用手机浏览器打开本链接。');
+            return false;
+          });
+        }, 6000);
       } else {
         setErr(r.error);
         setBusy(false);
@@ -133,9 +164,24 @@ export default function Login({ callbackPath = '' }: { callbackPath?: string }) 
           </div>
         </div>
 
+        {sessionNotice && !busy && (
+          <div style={{
+            background: '#FFF7E6', border: '1px solid #FFE0A3', borderRadius: 10,
+            padding: '10px 12px', marginBottom: 14, fontSize: 12.5, color: '#92400E', lineHeight: 1.7,
+          }}>
+            {sessionNotice}
+          </div>
+        )}
+
         {busy && (
-          <div style={{ textAlign: 'center', padding: '40px 0' }}>
+          <div style={{ textAlign: 'center', padding: '28px 0 0' }}>
             <Spin tip="正在通过钉钉验证身份…" />
+            <div style={{ marginTop: 14, fontSize: 11.5, color: '#AAA5AF' }}>
+              验证较慢时可直接点下方「重新检测」，无需等待
+            </div>
+            <Button size="small" style={{ marginTop: 10 }} onClick={() => { setBusy(false); setErr(''); }}>
+              重新检测
+            </Button>
           </div>
         )}
 
