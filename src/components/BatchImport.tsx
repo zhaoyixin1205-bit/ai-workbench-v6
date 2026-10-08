@@ -4,7 +4,7 @@ import { DownloadOutlined, InboxOutlined, UploadOutlined } from '@ant-design/ico
 import { useStore } from '@/store/store';
 import type { ImportSchema } from '@/constants/importSchemas';
 import { schemaColumns, schemaHint, validateRowBySchema } from '@/constants/importSchemas';
-import { parseCsv, toCsv } from '@/constants/csv';
+import { matchHeader, normalizeDateCell, parseCsv, toCsv } from '@/constants/csv';
 
 /** 三态回执：成功 / 失败 / 跳过（沿用 CR-11 用户导入的成熟交互） */
 export type BatchResult = '成功' | '失败' | '跳过';
@@ -107,8 +107,17 @@ export default function BatchImport<T>({
     const reader = new FileReader();
     reader.onload = () => {
       const rows = parse(String(reader.result ?? ''));
-      /** 去掉表头行（与模板表头一致时） */
-      const body = rows.length && rows[0].join() === cols.join() ? rows.slice(1) : rows;
+      /**
+       * V8.3-10.08 需求③.2：表头容错。
+       * 原判断是 `rows[0].join() === cols.join()` —— 运营方从 Excel 另存后，
+       * 表头常带空格/换行或多了个「序号」列，一旦不完全相等，**整张表被当成数据**，
+       * 于是每行都报「第 1 列格式不对」，看起来就是「模板传不上去」。
+       * 现在按归一化匹配表头，匹配上就按映射列取值（多出的序号列自动忽略）。
+       */
+      const headerMap = rows.length ? matchHeader(rows[0], cols) : null;
+      const body = (headerMap ? rows.slice(1) : rows).map((r) =>
+        headerMap ? headerMap.map((i) => r[i] ?? '') : r
+      );
       if (body.length === 0) { message.error('文件为空或格式不正确'); return; }
       if (body.length > maxRows) {
         message.error(`单次导入上限 ${maxRows} 行，本次解析到 ${body.length} 行，请拆分后重试`);
@@ -119,12 +128,26 @@ export default function BatchImport<T>({
         message.error(`模板共 ${cols.length} 列，检测到存在少于 ${cols.length} 列的行，请按模板补齐后重导`);
         return;
       }
-      let res = validate(body);
+      /**
+       * V8.3-10.08 需求③.2：日期归一化后再校验。
+       * Excel 另存的日期可能是 2026/10/8、2026年10月8日 或日期序列号（46027），
+       * 原实现只认 YYYY-MM-DD，于是**整批失败**且看不出原因。
+       */
+      const dateCols = (schema?.fields ?? []).map((f, i) => (f.date ? i : -1)).filter((i) => i >= 0);
+      const normalized = dateCols.length
+        ? body.map((r) => {
+            const copy = [...r];
+            for (const i of dateCols) copy[i] = normalizeDateCell(copy[i] ?? '');
+            return copy;
+          })
+        : body;
+
+      let res = validate(normalized);
       /** 契约校验作为附加层：业务校验通过但契约不合规的行降级为「失败」并注明原因 */
       if (schema && schemaOn) {
         res = res.map((it) => {
           if (it.result !== '成功') return it;
-          const raw = body[it.row - 2];
+          const raw = normalized[it.row - 2];
           if (!raw) return it;
           const v = validateRowBySchema(schema, raw);
           return v.ok ? it : { ...it, result: '失败' as const, reason: v.reason };
