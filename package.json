@@ -13,7 +13,8 @@
     "smoke:files": "node scripts/file-service-smoke.mjs",
     "guard": "node scripts/guard-regression.mjs",
     "smoke:v7": "node scripts/v7-smoke.mjs",
-    "smoke:pipeline": "node scripts/pipeline-smoke.mjs"
+    "smoke:pipeline": "node scripts/pipeline-smoke.mjs",
+    "smoke:scene": "node scripts/scene-smoke.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "^5.5.1",

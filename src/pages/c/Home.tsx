@@ -1,4 +1,4 @@
-import { Badge, Button, Card, Col, Progress, Row, Space, Tag, Tooltip, Typography, Empty, List } from 'antd';
+import { Badge, Button, Card, Col, Progress, Row, Space, Tag, Typography, Empty, List } from 'antd';
 import {
   ArrowRightOutlined, FireOutlined, TrophyOutlined, ClockCircleOutlined,
   CheckCircleOutlined, TeamOutlined, RocketOutlined, WalletOutlined,
@@ -9,6 +9,8 @@ import { useStore, useStats } from '@/store/store';
 import { COLOR, GRADIENT, SHADOW } from '@/theme';
 import { CoverBlock, HoverCard, MetricCard, Nudge, TrackTag } from '@/components/ui';
 import TeamBoard from '@/components/TeamBoard';
+import SceneBoard from '@/components/SceneBoard';
+import { buildSceneBoard } from '@/service/sceneBoard';
 import AnnounceTicker, { type TickerItem } from '@/components/AnnounceTicker';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import { currentStageOf, stageLabel, submitDeadlineOf } from '@/utils/campaignTime';
@@ -81,16 +83,13 @@ export default function Home() {
     .slice(0, 5);
 
   /**
-   * V6.0 CR-28：场景卡改读独立实体 sceneCards（此前由 cases.slice(0,6) 派生）。
-   * 口径：仅「已发布」且未软删；数据源为空时回落到派生逻辑，保证旧库不出现空壳区块。
+   * V8.5-10.08：场景卡判定搬到共享层 @/service/sceneBoard.ts，v1 / v2 同源。
+   * 口径变化（组织者 2026-10-08 拍板）：
+   *   ①只展示「本周」发布的已发布卡，不再用案例列表兜底凑数；
+   *   ②本周为空时给空态文案 + 案例库入口，不留 chip 的假热闹；
+   *   ③「本周」按真实今天的 ISO 周计算（不用 DEMO_TODAY，否则演示基准日会让周次失真）。
    */
-  const sceneCards = (db.sceneCards ?? []).filter((c) => c.status === 'PUBLISHED' && !c.is_deleted);
-  const sceneFallback = sceneCards.length === 0
-    ? db.cases.slice(0, 6).map((c) => ({
-      id: c.id, title: c.title, summary: c.summary, emoji: c.cover,
-      source_case_id: c.id,
-    })) as typeof sceneCards
-    : sceneCards;
+  const sceneBoard = buildSceneBoard(db.sceneCards ?? []);
 
   const tickerItems: TickerItem[] = announcements.map((a) => ({
     id: a.id,
@@ -346,26 +345,12 @@ export default function Home() {
         </Card>
       )}
 
-      {/* V6.0 CR-14：场景卡上移至「案例精选」正下方，共用同一视觉分组 */}
+      {/* V6.0 CR-14：场景卡上移至「案例精选」正下方；V8.5-10.08 改文件夹页签卡九宫格 */}
       <Card
         title={<Space size={8}><span style={{ fontWeight: 700 }}>本周高频场景卡</span><span style={{ fontSize: 13, fontWeight: 400, color: COLOR.textMuted }}>30 秒学一个</span></Space>}
+        extra={<Link to="/cases" style={{ fontSize: 13, color: COLOR.primary }}>全部案例 ›</Link>}
       >
-        <Space wrap size={8}>
-          {sceneFallback.map((c) => (
-            <Tooltip key={c.id} title={c.summary}>
-              <Link to={c.source_case_id ? `/cases/${c.source_case_id}` : '/cases'}>
-                <span style={{
-                  display: 'inline-block', padding: '6px 14px', borderRadius: 999,
-                  background: COLOR.primaryLight, color: '#C2410C', fontSize: 13, fontWeight: 500,
-                  transition: 'all 0.2s ease', boxShadow: SHADOW.inset,
-                }}>{c.emoji} {c.title}</span>
-              </Link>
-            </Tooltip>
-          ))}
-        </Space>
-        <div style={{ marginTop: 14, fontSize: 12, color: COLOR.textMuted }}>
-          <CheckCircleOutlined /> 本周已发布 {sceneFallback.length} 张场景卡 · 阅读埋点计入个人活跃
-        </div>
+        <SceneBoard week={sceneBoard.week} total={sceneBoard.total} bands={sceneBoard.bands} />
       </Card>
 
       {/* V6.0 CR-14：悬赏榜与社区热帖一行 2 列（各 12 栅格，取消 14/10 非对称） */}

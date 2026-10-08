@@ -645,6 +645,103 @@
 /* 场景卡 chip 组 */
 .wb2-chips { display: flex; flex-wrap: wrap; gap: var(--wb-space-3); }
 
+/* ---------------- 本周高频场景卡（V8.5-10.08） ----------------
+   文件夹页签卡：右上页签凸起托住图标，卡内 2 行标题 + 一行摘要 + 弯箭头；
+   外层赛道横带用渐变底，三赛道三色（见 service/sceneBoard.ts 下发）。 */
+.wb2-scband {
+  position: relative;
+  border-radius: var(--wb-radius-lg);
+  padding: 44px 16px 16px;
+  margin-bottom: var(--wb-space-5);
+}
+.wb2-scpill {
+  position: absolute;
+  top: 12px;
+  left: 16px;
+  font-size: var(--wb-fs-caption);
+  font-weight: 600;
+  padding: 2px 12px;
+  border-radius: var(--wb-radius-pill);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: var(--wb-shadow-popover);
+}
+.wb2-scgrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+@media (max-width: 960px) {
+  .wb2-scgrid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 640px) {
+  .wb2-scgrid { grid-template-columns: 1fr; }
+}
+.wb2-fcard {
+  position: relative;
+  display: block;
+  background: var(--wb-surface-card);
+  border-radius: 14px;
+  padding: 18px 16px 12px;
+  margin-top: 34px;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.10);
+  color: inherit;
+  transition: transform var(--wb-motion-fast), box-shadow var(--wb-motion-fast);
+}
+.wb2-fcard:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.16);
+}
+.wb2-ftab {
+  position: absolute;
+  top: -34px;
+  right: 14px;
+  width: 78px;
+  height: 34px;
+  background: var(--wb-surface-card);
+  border-radius: 12px 12px 0 0;
+}
+.wb2-fico {
+  position: absolute;
+  bottom: 1px;
+  right: 6px;
+  font-size: 40px;
+  line-height: 1;
+  filter: drop-shadow(0 5px 6px rgba(15, 23, 42, 0.28));
+  transform: rotate(-4deg);
+  transition: transform var(--wb-motion-fast);
+}
+.wb2-fcard:hover .wb2-fico { transform: rotate(2deg) scale(1.06); }
+.wb2-fti {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--wb-ink-1);
+  line-height: 1.35;
+}
+.wb2-fsub {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+}
+.wb2-ftx {
+  font-size: var(--wb-fs-caption);
+  color: var(--wb-ink-3);
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wb2-farw {
+  flex: none;
+  color: var(--wb-ink-1);
+  margin-bottom: 1px;
+}
+
 /* ---------------- B 端补充件（P3-5） ---------------- */
 
 /* 规则 / 口径提示条：中性底 + 左 3px 语义条

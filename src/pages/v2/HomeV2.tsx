@@ -14,6 +14,8 @@ import {
 import { Link } from 'react-router-dom';
 import { useStore, useStats } from '@/store/store';
 import TeamBoard from '@/components/TeamBoard';
+import SceneBoard from '@/components/SceneBoard';
+import { buildSceneBoard } from '@/service/sceneBoard';
 import AnnounceTicker, { type TickerItem } from '@/components/AnnounceTicker';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import { currentStageOf, stageLabel, submitDeadlineOf } from '@/utils/campaignTime';
@@ -101,11 +103,8 @@ export default function HomeV2() {
     })
     .slice(0, 5);
 
-  /** V6.0 CR-28：场景卡读 sceneCards 实体，为空时回落到 cases 派生（旧库不出现空壳） */
-  const sceneCards = (db.sceneCards ?? []).filter((c) => c.status === 'PUBLISHED' && !c.is_deleted);
-  const sceneFallback = sceneCards.length === 0
-    ? db.cases.slice(0, 6).map((c) => ({ id: c.id, title: c.title, summary: c.summary, emoji: c.cover, source_case_id: c.id })) as typeof sceneCards
-    : sceneCards;
+  /** V8.5-10.08：场景卡判定搬到共享层 @/service/sceneBoard.ts，与 v1 同源同口径（本周 + 已发布 + 按赛道分组） */
+  const sceneBoard = buildSceneBoard(db.sceneCards ?? []);
 
   const tickerItems: TickerItem[] = announcements.map((a) => ({
     id: a.id,
@@ -288,21 +287,13 @@ export default function HomeV2() {
         </section>
       )}
 
-      {/* CR-14：场景卡 */}
+      {/* CR-14：场景卡 —— V8.5-10.08 由 chip 组升级为文件夹页签卡九宫格 */}
       <section className="wb2-card">
         <div className="wb2-sechd">
           <div className="t">本周高频场景卡 <span className="s">30 秒学一个</span></div>
+          <Link to="/cases" className="more">全部案例 ›</Link>
         </div>
-        <div className="wb2-chips">
-          {sceneFallback.map((c) => (
-            <Link key={c.id} to={c.source_case_id ? `/cases/${c.source_case_id}` : '/cases'} title={c.summary}>
-              <span className="wb2-chip">{c.emoji} {c.title}</span>
-            </Link>
-          ))}
-        </div>
-        <div className="wb2-note" style={{ marginTop: 14 }}>
-          <CheckCircleOutlined /> 本周已发布 {sceneFallback.length} 张场景卡 · 阅读埋点计入个人活跃
-        </div>
+        <SceneBoard week={sceneBoard.week} total={sceneBoard.total} bands={sceneBoard.bands} />
       </section>
 
       {/* CR-14：悬赏榜与社区热帖一行 2 列 */}
