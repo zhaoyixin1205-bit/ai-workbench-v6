@@ -218,11 +218,83 @@ check('F2 写权限 canWriteAll **不得**含 JUDGE（否则整包写回会抹�
     : 'canWriteAll 应含 ORGANIZER + ADMIN';
 });
 check('F3 读/写两个判断必须分别用在正确位置（不能残留旧名 isPrivileged）', () => {
-  const reads = /if \(canReadAll\(user\)\) return data;/.test(codeDs);
+  const reads = /if \(canReadAll\(user\)\)/.test(codeDs);
   const writes = /if \(canWriteAll\(user\)\) return incoming;/.test(codeDs);
   const stale = /isPrivileged/.test(codeDs);
   if (stale) return '仍有 isPrivileged 残留，会造成读写判断混用';
-  return reads && writes ? true : 'canReadAll / canWriteAll 的调用位置不对';
+  if (!reads || !writes) return 'canReadAll / canWriteAll 的调用位置不对';
+  /**
+   * 读分支**不要求**原样 return data —— V8.3-10.09 起它会补一个统计口径字段后再返回
+   * （`return { ...data, statsScopeUnionIds: ... }`），这是有意为之。
+   * 这里只守住关键点：读分支里不能调canWriteAll（否则读权限一放开就把写权限也放开）。
+   */
+  const readSeg = /if \(canReadAll\(user\)\)[\s\S]{0,420}?\n  \}/.exec(codeDs);
+  if (readSeg && /canWriteAll/.test(readSeg[0])) {
+    return '读分支里出现了 canWriteAll —— 放开读权限时会连带放开写权限';
+  }
+  return true;
+});
+
+/* ---- G组：裁剪字段与前端使用的契约（2026-10-09 线上白屏修复） ---- */
+/**
+ * 线上白屏：徐铭瑞（SELF）、周紫怡（DEPT_TREE）登录后整页崩，
+ * 报 `Cannot read properties of undefined (reading 'includes')`。
+ *
+ * 根因链：scopeData 把「非本人档案」裁成 6 个 PUBLIC_FIELDS（**tags 被剥掉**）
+ * → 首页 useStats 里 `db.users.filter(x => x.tags.includes(...))`
+ * → 对被裁剪的人 x.tags 是 undefined → 抛错 → 整页白屏。
+ * 而 scope_type=ALL / 组织者 / 评委走 canReadAll 拿全量，字段齐全，所以不崩。
+ *
+ * 这组断言锁的是「裁剪契约」：服务端裁哪些字段，前端就必须在同一批字段上兜底。
+ */
+const dsFull = readFile('server/lib/dataScope.mjs');
+const storeRaw = readFile('src/store/store.tsx');
+
+check('G1 前端对被裁剪用户的 tags 必须兜底（x.tags ?? []）', () => {
+  // useStats 里的 tagUsers：不能再出现裸的 x.tags.includes
+  const seg = /const tagUsers =[\s\S]{0,420}?\n    }/.exec(storeRaw);
+  if (!seg) return '未找到 useStats 的 tagUsers';
+  return /\(x\.tags \?\? \[\]\)/.test(seg[0])
+    ? true
+    : "❌ useStats 仍用 x.tags.includes —— SELF/DEPT_TREE 用户一进首页就白屏（线上已复现）";
+});
+check('G2 服务端必须下发 statsScopeUnionIds（否则 SELF 用户统计恒为 0）', () => {
+  return /statsScopeUnionIds:\s*statsScopeUnionIdsOf\(data\)/.test(dsFull)
+    ? true
+    : '裁剪分支未补 statsScopeUnionIds —— 首页「X/Y 人」会显示 0/0（数字是错的）';
+});
+check('G3 🔴 全量分支（canReadAll）也要补名单，否则同一指标两种算法', () => {
+  // 早期只在裁剪分支补 → 组织者/评委拿到的包没有该字段，会回退到从 tags 算，
+  // 于是「组织者走 tags、SELF 走名单」，同一个指标两种口径。
+  const n = (dsFull.match(/statsScopeUnionIdsOf\(data\)/g) || []).length;
+  return n >= 2
+    ? true
+    : `只有 ${n} 处调用 —— 全量分支漏了，组织者与 SELF 会出现两种统计口径`;
+});
+check('G4 名单口径 = CADRE + BACKBONE 并集，且从全量 users 算', () => {
+  const seg = /function statsScopeUnionIdsOf\([\s\S]{0,700}?\n}/.exec(dsFull);
+  if (!seg) return '未找到 statsScopeUnionIdsOf';
+  const s = seg[0];
+  return /CADRE/.test(s) && /BACKBONE/.test(s) && /data\?\.users/.test(s)
+    ? true
+    : "名单口径或数据源不对（必须用全量 data.users，不能用裁剪后的 —— 这是全公司口径）";
+});
+check('G5 🟡 不得把 tags 加进 PUBLIC_FIELDS（干部/骨干标签属组织内部信息）', () => {
+  const m = /PUBLIC_FIELDS = \[([^\]]+)\]/.exec(dsFull);
+  if (!m) return '未找到 PUBLIC_FIELDS';
+  return /tags/.test(m[1])
+    ? '🔴 PUBLIC_FIELDS 里有 tags —— 等于让所有人能枚举「谁是干部」，是信息泄露'
+    : true;
+});
+check('G6 DB 类型里 statsScopeUnionIds 是可选字段（字段只增不删、老数据兼容）', () => {
+  return /statsScopeUnionIds\?:\s*string\[\]/.test(storeRaw)
+    ? true
+    : '未声明为可选（老数据/本地种子没有该字段会类型报错）';
+});
+check('G7 前端必须「优先用服务端名单、回退到 tags」而不是二选一硬替换', () => {
+  return /Array\.isArray\(serverScope\)/.test(storeRaw) && /tagUsers\('CADRE'\)/.test(storeRaw)
+    ? true
+    : "缺回退分支 —— 服务端没下发名单时（老数据）会退化成 0/0";
 });
 
 /* ------------------------------------------------------------------ */

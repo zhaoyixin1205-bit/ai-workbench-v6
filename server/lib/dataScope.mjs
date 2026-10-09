@@ -91,13 +91,47 @@ function canWriteAll(user) {
 }
 
 /**
+ * V8.3-10.09「干部 ∪ 核心骨干」union_id 名单（首页统计口径）。
+ *
+ * 单独抽成函数：`scopeData` 有**两个出口**（canReadAll 全量分支 + 裁剪分支），
+ * 早期只在裁剪分支里补 → 组织者/评委拿到的包没这个字段，于是同一个指标
+ * 出现「两种算法」（组织者走 tags、SELF 走名单），口径不一致、埋隐患。
+ *
+ * 口径来源：CADRE + BACKBONE 并集（V8-10.07 起），与前端 useStats 的回退分支一致。
+ * @param data **全量** DB（不能传裁剪后的 —— 这是全公司口径，与谁在看无关）
+ */
+function statsScopeUnionIdsOf(data) {
+  const scopeTagIds = new Set(
+    (data?.tags ?? [])
+      .filter((t) => t.code === 'CADRE' || t.code === 'BACKBONE')
+      .map((t) => t.id),
+  );
+  if (scopeTagIds.size === 0) return [];
+  return [
+    ...new Set(
+      (data?.users ?? [])
+        .filter((u) => (u.tags ?? []).some((t) => scopeTagIds.has(t)))
+        .map((u) => u.union_id),
+    ),
+  ];
+}
+
+/**
  * GET /api/state：按身份裁剪后的数据包。
  * @param data 服务端完整 DB
  * @param user 身份（来自业务库，不是前端传来的 —— 前端传的一律不可信）
  */
 export function scopeData(data, user) {
   if (!data || !user) return data;
-  if (canReadAll(user)) return data;
+  if (canReadAll(user)) {
+    /**
+     * V8.3-10.09：全量分支也要补 statsScopeUnionIds ——
+     * 否则组织者/评委/管理员（都走 canReadAll）拿到的包里没这个字段，
+     * 前端 useStats 会回退到从 tags 算。当前 tags 齐全时结果相同，
+     * 但口径会与 SELF 用户不一致（同一指标两种算法），埋隐患。
+     */
+    return { ...data, statsScopeUnionIds: statsScopeUnionIdsOf(data) };
+  }
 
   const users = data.users ?? [];
   const depts = data.depts ?? [];
@@ -141,6 +175,22 @@ export function scopeData(data, user) {
     ...data,
     users: scopedUsers,
     depts: scopedDepts,
+    /**
+     * V8.3-10.09（白屏修复配套）**统计口径名单**：干部 ∪ 核心骨干的 union_id。
+     *
+     * 背景：首页「X/Y 人 · 激活率」按干部+骨干口径统计（src/store/store.tsx 的 useStats）。
+     * 但 tags 被裁剪掉了（不在 PUBLIC_FIELDS 里），被裁剪的人前端 filter 不出来 →
+     * SELF 用户首页直接白屏（`undefined.includes`）。
+     *
+     * 为什么**不把 tags 加进 PUBLIC_FIELDS**：
+     * tags 是人工标注的干部/骨干名单，属**组织内部信息**；
+     * 放开后任何人都能枚举「谁是干部」，这是信息泄露。
+     * 所以只补一份聚合名单（union_id 集合，不含任何标签定义）。
+     *
+     * 口径：CADRE + BACKBONE 并集（V8-10.07 起），与 useStats 一致。
+     * 数据来源用**全量 data.users**，与裁剪无关 —— 这是全公司口径，不该随谁在看而变。
+     */
+    statsScopeUnionIds: statsScopeUnionIdsOf(data),
     /** 消息：只属于自己的 + 全员广播 */
     messages: (data.messages ?? []).filter(
       (m) => m.union_id === user.union_id || m.union_id === 'all'

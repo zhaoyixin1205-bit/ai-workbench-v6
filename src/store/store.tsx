@@ -22,6 +22,17 @@ export interface DB {
   depts: Dept[];
   tags: Tag[];
   users: User[];
+  /**
+   * V8.3-10.09（可选字段，字段只增不删）：服务端算好的「干部 ∪ 核心骨干」union_id 名单。
+   *
+   * 存在的理由：他人档案的 `tags` 被 `scopeData`裁掉（不在 PUBLIC_FIELDS 里），
+   * 前端无法从 tags 判断统计口径 → SELF / DEPT_TREE 用户首页会显示「0/0 人」。
+   * 服务端下发名单绕开这个困境，同时**不必放开 tags**（干部/骨干标签属组织内部信息，
+   * 放开等于让所有人能枚举「谁是干部」）。
+   *
+   * 老数据 / 本地种子没有这个字段时，前端回退到从 tags filter（见 useStats）。
+   */
+  statsScopeUnionIds?: string[];
   campaigns: Campaign[];
   cases: CaseItem[];
   topics: Topic[];
@@ -739,22 +750,51 @@ export function useStore() {
   return ctx;
 }
 
-/** 常用派生：当前用户在所选标签人群中的统计 */
+/**
+ * V8.3-10.09 加 `?? []` 兜底 —— **线上白屏的根因**。
+ *
+ * 现象：徐铭瑞（SELF）、周紫怡（DEPT_TREE）登录后首页直接白屏，
+ * 报 `TypeError: Cannot read properties of undefined (reading 'includes')`；
+ * 而赵冰艳、李铭铖正常。
+ *
+ * 根因：`db.users` 里的**非本人用户**在服务端`scopeData` 裁剪后只剩 6 个公开字段
+ * （union_id/name/avatar/dept_names/title/roles，见 server/lib/dataScope.mjs 的
+ * PUBLIC_FIELDS），**`tags` 被剥掉变成 undefined**。这里直接 `.includes` 就炸。
+ *
+ * 为什么只炸这两人：ALL 范围/组织者/评委走 `canReadAll` 拿全量，字段都在；
+ * SELF / DEPT_TREE 拿到的是裁剪子集 —— 首页是默认路由，一进站就调用 useStats()，必崩。
+ *
+ * ⚠️ 注意：这里**不能用 visibleUsers() 替代** —— 进度看板的分母口径是
+ * 「干部 ∪ 核心骨干」全量统计，收敛成可见用户会导致数字变小、口径失真。
+ * 正确做法是**统计时容忍字段缺失**，而不是改变统计范围。
+ */
 export function useStats() {
   const { db, campaign } = useStore();
   return useMemo(() => {
+    /**
+     * 🔴 裁剪后的他人档案**没有 tags**（服务端 PUBLIC_FIELDS 不含 tags），
+     * 这里必须 `?? []`，否则 SELF / DEPT_TREE 用户一进首页就抛
+     * `Cannot read properties of undefined (reading 'includes')` → 整页白屏。
+     */
     const tagUsers = (code: string) => {
       const tag = db.tags.find((t) => t.code === code);
       if (!tag) return [] as User[];
-      return db.users.filter((x) => x.tags.includes(tag.id));
+      return db.users.filter((x) => (x.tags ?? []).includes(tag.id));
     };
     /**
      * V8-10.07：进度看板默认分母 = 干部 ∪ 核心骨干
      * 口径来自钉钉表格《用户标签》（52 人权威名单），见 scripts/apply-v8.mjs。
-     * 此前只取 CADRE（且是钉钉标签派生的 114 人），与人工名单口径不一致。
+     *
+     * V8.3-10.09：口径优先级改为「服务端名单优先」。
+     * SELF / DEPT_TREE 用户的他人档案 tags 被裁剪，前端 filter 不出他们 →
+     * 首页会显示「0/0 人 · 激活率 0%」（数字是错的，不是真的 0）。
+     * 服务端下发 statsScopeUnionIds 解决，且不必放开 tags（那是组织内部信息）。
      */
+    const serverScope = db.statsScopeUnionIds;
     const cadreUnion = new Set(
-      [...tagUsers('CADRE'), ...tagUsers('BACKBONE')].map((x) => x.union_id)
+      Array.isArray(serverScope) && serverScope.length
+        ? serverScope
+        : [...tagUsers('CADRE'), ...tagUsers('BACKBONE')].map((x) => x.union_id),
     );
     const cadre = db.users.filter((x) => cadreUnion.has(x.union_id));
     const submittedIds = new Set(
