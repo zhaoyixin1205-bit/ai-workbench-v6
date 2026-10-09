@@ -548,6 +548,31 @@ body[data-ui="v1"] .ant-list:not(.ant-list-grid) .ant-list-item:hover{
 body[data-ui="v1"] .ant-list-item-action{
   margin-inline-start: var(--wb-space-5);
 }
+
+/* —— V8.3-10.09 可点击列表行 ——
+   个人中心「我的悬赏 / 我的预约」等明细行外面套了 <Link>（v2 用 Link，v1 同样），
+   这里统一给出「可点」的视觉信号，并去掉 <a> 的默认下划线与蓝字 ——
+   卡片化已由上面的 .ant-list-item 规则提供，不重复加卡片。 */
+body[data-ui="v1"] .wb-list-row-link{
+  display: block;
+  color: inherit !important;
+  text-decoration: none !important;
+  cursor: pointer;
+}
+/* 键盘 Tab 聚焦时也要看得见（无障碍：只用 :hover 提示键盘用户会漏） */
+body[data-ui="v1"] .wb-list-row-link:focus-visible{
+  outline: 2px solid var(--wb-primary);
+  outline-offset: 2px;
+  border-radius: var(--wb-radius-lg);
+}
+
+/* V8.3-10.09：长文本防溢出（商品名/长标题在列表里撑破卡片）。
+   与 v2 的 WRAP 口径一致：overflow-wrap:anywhere + word-break:break-word。 */
+body[data-ui="v1"] .wb-text-wrap{
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
+}
 body[data-ui="v1"] .ant-descriptions-item-label{
   color: var(--wb-ink-2) !important;
   font-size: 13px;

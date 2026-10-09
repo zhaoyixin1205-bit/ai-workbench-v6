@@ -1,6 +1,6 @@
 import { Avatar, Badge, Button, Card, Col, Empty, List, Progress, Row, Space, Statistic, Switch, Table, Tabs, Tag, Typography, App as AntApp } from 'antd';
 import { TrophyOutlined, WalletOutlined, BellOutlined, InboxOutlined, CalendarOutlined, FileTextOutlined } from '@ant-design/icons';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useStore } from '@/store/store';
 import { COLOR, GRADIENT, SHADOW } from '@/theme';
 import { SoftTag, StatCard } from '@/components/ui';
@@ -22,6 +22,8 @@ export default function Profile() {
   /** V8.6-10.08：技术标识与不可编辑说明仅运营方与管理员可见 */
   const note = useNoteVisible();
   const { message } = AntApp.useApp();
+  /** V8.3-10.09：明细行要跳对应业务页（兑换记录 → 商品详情） */
+  const nav = useNavigate();
   const [qs, setQs] = useSearchParams();
   const tab = qs.get('tab') ?? 'progress';
 
@@ -173,15 +175,25 @@ export default function Profile() {
               children: myBookings.length === 0 ? <Empty description="暂无预约" /> : (
                 <List
                   dataSource={myBookings}
-                  renderItem={(b) => (
-                    <List.Item actions={[<Tag key="s" color={b.status === '已完成' ? 'green' : 'orange'}>{b.status}</Tag>]}>
-                      <List.Item.Meta
-                        avatar={<CalendarOutlined />}
-                        title={`${b.expert_name} · ${b.date} ${b.slot}`}
-                        description={b.question}
-                      />
-                    </List.Item>
-                  )}
+                  renderItem={(b) => {
+                    /** V8.3-10.09：整行可点进该专家详情页（/clinic/expert/:id） */
+                    const expert = db.experts.find((e) => e.id === b.expert_id);
+                    return (
+                      <Link
+                        to={expert ? `/clinic/expert/${expert.id}` : '/clinic/mine'}
+                        style={{ display: 'block', color: 'inherit' }}
+                        className="wb-list-row-link"
+                      >
+                        <List.Item actions={[<Tag key="s" color={b.status === '已完成' ? 'green' : 'orange'}>{b.status}</Tag>]}>
+                          <List.Item.Meta
+                            avatar={<CalendarOutlined />}
+                            title={`${b.expert_name} · ${b.date} ${b.slot}`}
+                            description={b.question}
+                          />
+                        </List.Item>
+                      </Link>
+                    );
+                  }}
                 />
               ),
             },
@@ -208,12 +220,19 @@ export default function Profile() {
                 <List
                   dataSource={myBounties}
                   renderItem={(b) => (
-                    <List.Item actions={[<Tag key="p" color="orange">{b.points} 分</Tag>]}>
-                      <List.Item.Meta
-                        title={b.owner_union_id === me.union_id ? `我发布：${b.title}` : `我认领：${b.title}`}
-                        description={<span style={{ fontSize: 12 }}>{b.status} · 截止 {b.due_date}</span>}
-                      />
-                    </List.Item>
+                    /** V8.3-10.09：整行可点进悬赏详情（/bounty/:id 已存在） */
+                    <Link
+                      to={`/bounty/${b.id}`}
+                      style={{ display: 'block', color: 'inherit' }}
+                      className="wb-list-row-link"
+                    >
+                      <List.Item actions={[<Tag key="p" color="orange">{b.points} 分</Tag>]}>
+                        <List.Item.Meta
+                          title={b.owner_union_id === me.union_id ? `我发布：${b.title}` : `我认领：${b.title}`}
+                          description={<span style={{ fontSize: 12 }}>{b.status} · 截止 {b.due_date}</span>}
+                        />
+                      </List.Item>
+                    </Link>
                   )}
                 />
               ),
@@ -224,7 +243,16 @@ export default function Profile() {
                 <List
                   dataSource={myOrders}
                   renderItem={(o) => (
+                    /**
+                     * V8.3-10.09：整行可点进该商品详情（/shop?item=<id> 深链）。
+                     * 兑换记录没有独立详情页，能对应到的就是它买的那件商品。
+                     * ⚠️ 行内有「取消 / 确认收货」按钮 —— AntD 的 actions 区域
+                     * 点击不会冒泡到行的 onClick，所以不需要额外 stopPropagation
+                     * （v2 用的是普通 div 内嵌 Button，必须显式 stopPropagation）。
+                     */
                     <List.Item
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => nav(`/shop?item=${o.item_id}`)}
                       actions={[
                         <Tag key="s" color={STATUS_COLOR[o.status] ?? 'default'}>{o.status}</Tag>,
                         o.status === '待核销' ? (
@@ -250,7 +278,7 @@ export default function Profile() {
                     >
                       <List.Item.Meta
                         avatar={<InboxOutlined />}
-                        title={o.item_name}
+                        title={<span className="wb-text-wrap">{o.item_name}</span>}
                         description={(
                           <span style={{ fontSize: 12 }}>
                             核销码 <b>{o.code}</b> · {o.points_cost} 积分 · {o.created_at}

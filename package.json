@@ -20,7 +20,8 @@
     "smoke:dept": "node scripts/dept-smoke.mjs",
     "smoke:import": "node scripts/import-smoke.mjs",
     "smoke:scope": "node scripts/scope-smoke.mjs",
-    "smoke:overflow": "node scripts/overflow-smoke.mjs"
+    "smoke:overflow": "node scripts/overflow-smoke.mjs",
+    "smoke:profilelink": "node scripts/profile-link-smoke.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "^5.5.1",

@@ -277,6 +277,18 @@
   box-shadow: var(--wb-shadow-card-hover);
   border-color: var(--wb-primary-subtle);
 }
+/* V8.3-10.09：可点击的行（个人中心「我的悬赏 / 我的预约 / 我的兑换」等）。
+   显式给 cursor —— 纯 hover 抬升对鼠标用户够用，但键盘用户与触屏用户
+   看不到任何"这行能点"的信号。 */
+.wb2-li[role='link'],
+.wb2-li[tabindex] {
+  cursor: pointer;
+}
+.wb2-li[role='link']:focus-visible,
+.wb2-li[tabindex]:focus-visible {
+  outline: 2px solid var(--wb-primary);
+  outline-offset: 2px;
+}
 .wb2-li-dot {
   width: 6px;
   height: 6px;

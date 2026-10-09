@@ -7,7 +7,7 @@
  */
 import { Badge, Button, Empty, Progress, Switch, Table, Tabs, Tag, Typography, App as AntApp } from 'antd';
 import { BellOutlined, CalendarOutlined, FileTextOutlined, InboxOutlined } from '@ant-design/icons';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useStore } from '@/store/store';
 import { SoftTag } from '@/components/ui';
 import TeamBoard from '@/components/TeamBoard';
@@ -25,6 +25,8 @@ const STATUS_COLOR: Record<string, string> = {
 
 export default function ProfileV2() {
   const { db, me, setDb, flags } = useStore();
+  /** V8.3-10.09：明细行要跳对应业务页（兑换记录 → 商品详情） */
+  const nav = useNavigate();
   /** V8.6-10.08：技术标识与不可编辑说明仅运营方与管理员可见 */
   const note = useNoteVisible();
   const { message } = AntApp.useApp();
@@ -180,17 +182,30 @@ export default function ProfileV2() {
               key: 'booking', label: `我的预约（${myBookings.length}）`,
               children: myBookings.length === 0 ? <Empty description="暂无预约" /> : (
                 <div className="wb2-list">
-                  {myBookings.map((b) => (
-                    <div key={b.id} className="wb2-li">
-                      <div className="wb2-li-m">
-                        <div className="wb2-li-t"><CalendarOutlined /> {b.expert_name} · {b.date} {b.slot}</div>
-                        <div className="wb2-li-s">{b.question}</div>
-                      </div>
-                      <div className="wb2-li-r">
-                        <Tag color={b.status === '已完成' ? 'green' : 'orange'}>{b.status}</Tag>
-                      </div>
-                    </div>
-                  ))}
+                  {myBookings.map((b) => {
+                    /**
+                     * V8.3-10.09：整行可点进该专家的详情页（/clinic/expert/:id）。
+                     * 已取消 / 已完成的预约也允许点进去看专家资料，只是不再提供操作按钮。
+                     */
+                    const expert = db.experts.find((e) => e.id === b.expert_id);
+                    return (
+                      <Link
+                        key={b.id}
+                        to={expert ? `/clinic/expert/${expert.id}` : '/clinic/mine'}
+                        style={{ display: 'block', color: 'inherit' }}
+                      >
+                        <div className="wb2-li">
+                          <div className="wb2-li-m">
+                            <div className="wb2-li-t"><CalendarOutlined /> {b.expert_name} · {b.date} {b.slot}</div>
+                            <div className="wb2-li-s">{b.question}</div>
+                          </div>
+                          <div className="wb2-li-r">
+                            <Tag color={b.status === '已完成' ? 'green' : 'orange'}>{b.status}</Tag>
+                          </div>
+                        </div>
+                      </Link>
+                    );
+                  })}
                 </div>
               ),
             },
@@ -217,13 +232,21 @@ export default function ProfileV2() {
               children: myBounties.length === 0 ? <Empty description="暂无悬赏" /> : (
                 <div className="wb2-list">
                   {myBounties.map((b) => (
-                    <div key={b.id} className="wb2-li">
-                      <div className="wb2-li-m">
-                        <div className="wb2-li-t">{b.owner_union_id === me.union_id ? `我发布：${b.title}` : `我认领：${b.title}`}</div>
-                        <div className="wb2-li-s">{b.status} · 截止 {b.due_date}</div>
+                    /**
+                     * V8.3-10.09：整行可点进悬赏详情（/bounty/:id 已存在）。
+                     * 原来这里是纯 div，看着像列表但点不动 —— 用户明确要求
+                     * 「点击标签下的明细数据，进入对应详情页」。
+                     * 与「我的作品 / 我的帖子」口径一致（它们本来就用了 Link）。
+                     */
+                    <Link key={b.id} to={`/bounty/${b.id}`} style={{ display: 'block', color: 'inherit' }}>
+                      <div className="wb2-li">
+                        <div className="wb2-li-m">
+                          <div className="wb2-li-t">{b.owner_union_id === me.union_id ? `我发布：${b.title}` : `我认领：${b.title}`}</div>
+                          <div className="wb2-li-s">{b.status} · 截止 {b.due_date}</div>
+                        </div>
+                        <div className="wb2-li-r"><Tag color="orange">{b.points} 分</Tag></div>
                       </div>
-                      <div className="wb2-li-r"><Tag color="orange">{b.points} 分</Tag></div>
-                    </div>
+                    </Link>
                   ))}
                 </div>
               ),
@@ -233,9 +256,32 @@ export default function ProfileV2() {
               children: myOrders.length === 0 ? <Empty description="暂无兑换订单" /> : (
                 <div className="wb2-list">
                   {myOrders.map((o) => (
-                    <div key={o.id} className="wb2-li" style={{ alignItems: 'flex-start' }}>
+                    /**
+                     * V8.3-10.09：整行可点进该商品详情（/shop?item=<id> 深链，商城页会自动打开）。
+                     * 兑换记录没有独立详情页，能对应到的就是它买的那件商品。
+                     *
+                     * ⚠️ 行内还有「取消 / 确认收货」按钮，所以**不能整行套 <a>**：
+                     * 那样按钮点击会被导航吞掉。这里改用「可点击的 div + onClick」，
+                     * 按钮处显式 stopPropagation（下方按钮 onClick 已加）。
+                     */
+                    <div
+                      key={o.id}
+                      className="wb2-li"
+                      role="link"
+                      tabIndex={0}
+                      style={{ alignItems: 'flex-start', cursor: 'pointer' }}
+                      onClick={() => nav(`/shop?item=${o.item_id}`)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          nav(`/shop?item=${o.item_id}`);
+                        }
+                      }}
+                    >
                       <div className="wb2-li-m">
-                        <div className="wb2-li-t"><InboxOutlined /> {o.item_name}</div>
+                        <div className="wb2-li-t" style={{ overflowWrap: 'anywhere', wordBreak: 'break-all' }}>
+                          <InboxOutlined /> {o.item_name}
+                        </div>
                         <div className="wb2-li-s">
                           核销码 <b>{o.code}</b> · {o.points_cost} 积分 · {o.created_at}
                           {shopV2 && o.shipping_no && <> · 物流单号 <b>{o.shipping_no}</b>（{o.shipping_at}）</>}
@@ -245,7 +291,8 @@ export default function ProfileV2() {
                       <div className="wb2-li-r" style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                         <Tag color={STATUS_COLOR[o.status] ?? 'default'}>{o.status}</Tag>
                         {o.status === '待核销' && (
-                          <Button size="small" danger onClick={() => {
+                          <Button size="small" danger onClick={(e) => {
+                            e.stopPropagation();
                             setDb((p) => ({
                               ...p,
                               shopOrders: p.shopOrders.map((x) => (x.id === o.id ? { ...x, status: '已取消' } : x)),
@@ -255,7 +302,8 @@ export default function ProfileV2() {
                           }}>取消</Button>
                         )}
                         {shopV2 && o.status === '已发货' && (
-                          <Button size="small" type="primary" onClick={() => {
+                          <Button size="small" type="primary" onClick={(e) => {
+                            e.stopPropagation();
                             setDb((p) => ({
                               ...p,
                               shopOrders: p.shopOrders.map((x) => (x.id === o.id ? { ...x, status: '已完成' } : x)),

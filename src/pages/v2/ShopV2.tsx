@@ -6,8 +6,8 @@
  */
 import { Button, Empty, Modal, Progress, Space, Tag, Typography, App as AntApp } from 'antd';
 import { ShoppingOutlined, WalletOutlined } from '@ant-design/icons';
-import { Link } from 'react-router-dom';
-import { useState } from 'react';
+import { Link , useSearchParams} from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import { useStore } from '@/store/store';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import type { ShopItem } from '@/mock/types';
@@ -17,6 +17,24 @@ export default function ShopV2() {
   const { db, me, setDb, log } = useStore();
   const { message, modal } = AntApp.useApp();
   const [detail, setDetail] = useState<ShopItem | null>(null);
+
+  /**
+   * V8.3-10.09：支持深链 `/shop?item=<商品id>` 自动打开该商品详情。
+   * 个人中心「我的兑换」里的每一行都跳到这里 —— 兑换记录没有独立详情页，
+   * 能对应到的只有它买的那件商品。
+   */
+  /**
+   * ⚠️ 必须用 useSearchParams 而不是 window.location.search：
+   * 全站是 **HashRouter**（见 main.tsx），`#/shop?item=x` 里的 query 在 hash 内，
+   * `location.search` 永远是空字符串 —— 实测踩过，深链静默失效。
+   */
+  const [sp] = useSearchParams();
+  const deepLinkItem = sp.get('item');
+  useEffect(() => {
+    if (!deepLinkItem) return;
+    const item = db.shopItems.find((i) => i.id === deepLinkItem);
+    if (item) setDetail(item);
+  }, [deepLinkItem, db.shopItems]);
 
   const myPoints = me.points;
   const myOrders = db.shopOrders.filter((o) => o.union_id === me.union_id);
