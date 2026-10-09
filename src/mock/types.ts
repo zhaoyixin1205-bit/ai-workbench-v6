@@ -370,6 +370,12 @@ export interface Bounty {
   reject_reason?: string;
   desensitized: boolean;
   created_at: string;
+  /**
+   * V8.3-10.09 补字段（字段只增不删）：所属届次。
+   * 原来积分入账时 campaign_id 是**硬编码 'C2026Q4'**，换届次后积分会记到错的活动上。
+   * 新建悬赏时写入，缺省（历史数据）回退到当前届次。
+   */
+  campaign_id?: string;
   /** V8.2-10.07：后台管理留痕（编辑 / 下架 / 重新上架） */
   updated_at?: string;
   updated_by?: string;
@@ -626,6 +632,14 @@ export interface ScoreResult {
   scorer_union_id: string;
   scorer_name: string;
   created_at: string;
+  /**
+   * V8.3-10.09 多人评委评分（口径：多个评委均可评价，最终分取**平均值**）。
+   *
+   * 多人同时评同一条作业时，最终分取所有评委分的算术平均；
+   * 同一评委**只能算一次** —— 他再次打分会替换自己上一条（JUDGE 源），
+   * 不参与重复累加，避免「一个人点多次就把平均分拉偏」。
+   */
+  superseded?: boolean;
 }
 
 /* ---------- M4 专家门诊 ---------- */

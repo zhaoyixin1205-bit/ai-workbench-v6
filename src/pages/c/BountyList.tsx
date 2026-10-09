@@ -9,6 +9,7 @@ import type { Attachment, Bounty, BountyStatus } from '@/mock/types';
 import type { UploadFile } from 'antd';
 import { useFileUpload } from '@/service/useFileUpload';
 import { claimHint } from '@/constants/bounty';
+import { useSolutionReview } from '@/hooks/useSolutionReview';
 
 /** V6.0 CR-20：附件白名单与作业提报一致 */
 const ALLOW_EXT = ['zip', 'md', 'yaml', 'pdf', 'docx', 'xlsx', 'png', 'jpg'];
@@ -52,6 +53,10 @@ export default function BountyList() {
   /** V6.0 CR-31：真实附件元数据（提交时落库，带 file_id 可下载） */
   const [solAtts, setSolAtts] = useState<Attachment[]>([]);
   const [modifyTarget, setModifyTarget] = useState<Bounty | null>(null);
+  /** V8.3-10.09 口径 2=B：发布者在C 端审方案的驳回弹窗 */
+  const [ownerRejecting, setOwnerRejecting] = useState<Bounty | null>(null);
+  const [ownerReason, setOwnerReason] = useState('');
+  const { canReviewAsOwner, approve: ownerApprove, reject: ownerReject } = useSolutionReview();
   const [supplementTarget, setSupplementTarget] = useState<Bounty | null>(null);
 
   const list = useMemo(() => {
@@ -256,6 +261,12 @@ export default function BountyList() {
     && !me.roles.includes('ORGANIZER');
 
   /** 操作区：列表卡片与详情页共用一套按钮，避免两处漂移 */
+  /** V8.3-10.09：打开发布者驳回方案弹窗 */
+  const openOwnerReject = (b: Bounty) => {
+    setOwnerRejecting(b);
+    setOwnerReason('');
+  };
+
   const actionsOf = (b: Bounty) => (
     <>
       {b.status === 'PUBLISHED' && b.owner_union_id !== me.union_id && (
@@ -293,6 +304,20 @@ export default function BountyList() {
       )}
       {b.status === 'REJECTED' && b.owner_union_id === me.union_id && (
         <Button size="small" onClick={() => nav('/bounty/create')}>修改后重提</Button>
+      )}
+      {/**
+       * V8.3-10.09 口径 2=B：方案审核 = 组织者 **或悬赏发布者** 双通道。
+       * 原来只有 /admin/bounty 能审，发布者在 C 端没有任何入口。
+       * 回避：发布者本人不能审自己发布的方案（与后台同一把尺子）。
+       */}
+      {canReviewAsOwner(b) && b.owner_union_id !== me.union_id && (
+        <>
+          <Button size="small" type="primary" onClick={() => ownerApprove(b)}>通过方案</Button>
+          <Button size="small" danger onClick={() => openOwnerReject(b)}>驳回方案</Button>
+        </>
+      )}
+      {b.status === 'SUBMITTED' && b.owner_union_id === me.union_id && (
+        <SoftTag text="你是发布人，不能审自己的方案" tone="gray" />
       )}
     </>
   );
@@ -682,6 +707,38 @@ export default function BountyList() {
             )}
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* V8.3-10.09 口径 2=B：发布者驳回方案的弹窗（与后台同一把尺子：理由 ≥10 字、退回 CLAIMED） */}
+      <Modal
+        open={!!ownerRejecting}
+        title={`驳回方案 · ${ownerRejecting?.title}`}
+        okText="确认驳回"
+        okButtonProps={{ danger: true, disabled: ownerReason.trim().length < 10 }}
+        onCancel={() => { setOwnerRejecting(null); setOwnerReason(''); }}
+        onOk={() => {
+          if (!ownerRejecting) return;
+          ownerReject(ownerRejecting, ownerReason);
+          setOwnerRejecting(null);
+          setOwnerReason('');
+        }}
+      >
+        <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
+          驳回后方案将退回认领人（{ownerRejecting?.claimant_name}），对方可以重新提交。
+        </Typography.Paragraph>
+        <Input.TextArea
+          rows={4}
+          value={ownerReason}
+          onChange={(e) => setOwnerReason(e.target.value)}
+          placeholder="驳回理由（≥10 字，对认领人可见）"
+          maxLength={200}
+          showCount
+        />
+        {ownerReason.trim().length > 0 && ownerReason.trim().length < 10 && (
+          <Typography.Text type="warning" style={{ fontSize: 12 }}>
+            还差 {10 - ownerReason.trim().length} 字才可提交驳回。
+          </Typography.Text>
+        )}
       </Modal>
     </Space>
   );

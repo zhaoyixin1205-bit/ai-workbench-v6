@@ -39,6 +39,8 @@ export default function BountyReviewV2() {
   const [points, setPoints] = useState(200);
   const [due, setDue] = useState<dayjs.Dayjs>(dayjs('2026-10-15'));
   const [rejecting, setRejecting] = useState<Bounty | null>(null);
+  /** V8.3-10.09：区分驳回的是「悬赏发布」还是「已提交方案」（决定 status 落点） */
+  const [rejectKind, setRejectKind] = useState<'PUBLISH' | 'SOLUTION'>('PUBLISH');
   const [reason, setReason] = useState('');
 
   /**
@@ -67,18 +69,45 @@ export default function BountyReviewV2() {
     setApproving(null);
   };
 
-  const reject = () => {
+  /**
+   * 驳回。**两种语义必须分开**（V8.3-10.09 修 P0 死锁）：
+   * - PUBLISH：驳回悬赏本身 → REJECTED（终态，发布人可改后重提）；
+   * - SOLUTION：驳回已提交方案 → 回 **CLAIMED**（口径 1=A），认领人必须能重新提交。
+   *   原来两者共用同一个 reject() 置 REJECTED，导致方案一被驳回，
+   *   提交/修改/补充三个入口同时关闭 → 认领人永久死锁（线上已复现）。
+   */
+  const reject = (kind: 'PUBLISH' | 'SOLUTION') => {
     if (reason.trim().length < 10) { message.error('驳回理由至少 10 字'); return; }
+    const nextStatus = kind === 'SOLUTION' ? 'CLAIMED' : 'REJECTED';
     setDb((p) => ({
       ...p,
-      bounties: p.bounties.map((b) => (b.id === rejecting!.id ? { ...b, status: 'REJECTED', reject_reason: reason } : b)),
+      bounties: p.bounties.map((b) => (b.id === rejecting!.id
+        ? {
+            ...b,
+            status: nextStatus,
+            reject_reason: reason,
+            /** 方案驳回时清掉「已提交」痕迹，重提会写新的 solution_versions */
+            ...(kind === 'SOLUTION' ? { solution: undefined, solution_fields: undefined } : {}),
+          }
+        : b)),
     }));
-    log('悬赏驳回', rejecting!.title, `理由：${reason}`);
-    message.success('已驳回，通知发布人（发布人可修改后重提）');
+    log(kind === 'SOLUTION' ? '方案驳回' : '悬赏驳回', rejecting!.title,
+      `理由：${reason}${kind === 'SOLUTION' ? '（已退回认领人，可重新提交方案）' : ''}`);
+    message.success(kind === 'SOLUTION'
+      ? '已驳回，方案退回认领人，可重新提交'
+      : '已驳回，通知发布人（发布人可修改后重提）');
     setRejecting(null); setReason('');
   };
 
   const approveSolution = (b: Bounty) => {
+    /**
+     * V8.3-10.09 补回避校验（BUG-03）：发布审核有 owner!==me 的 disabled，
+     * 方案审核这边没有 —— 自己发布的悬赏自己审方案等于自己给自己打分。
+     */
+    if (b.owner_union_id === me.union_id) {
+      message.warning('回避原则：你不能审核自己发布的悬赏方案');
+      return;
+    }
     confirm({
       title: '方案审核通过？',
       content: `通过后按悬赏积分 ${b.points} 自动入账到 ${b.claimant_name}，来源标记 bounty。`,
@@ -88,7 +117,9 @@ export default function BountyReviewV2() {
           bounties: p.bounties.map((x) => (x.id === b.id ? { ...x, status: 'APPROVED' } : x)),
           pointRecords: [{
             id: `PR${Date.now()}`, union_id: b.claimant_union_id!, name: b.claimant_name!,
-            source: '悬赏通过', points: b.points, campaign_id: 'C2026Q4',
+            /** V8.3-10.09 修 BUG-10：原硬编码 'C2026Q4'，换届次后积分会记到错的活动上 */
+            source: '悬赏通过', points: b.points,
+            campaign_id: b.campaign_id || p.campaigns?.[0]?.id || '',
             remark: `${b.title} 方案审核通过`, created_at: DEMO_TODAY,
           }, ...p.pointRecords],
         }));
@@ -151,7 +182,7 @@ export default function BountyReviewV2() {
                         <Button size="small" type="primary" disabled={r.owner_union_id === me.union_id}
                           onClick={() => { setApproving(r); setPoints(r.points); setDue(dayjs(r.due_date)); }}>通过</Button>
                         <Button size="small" danger disabled={r.owner_union_id === me.union_id}
-                          onClick={() => setRejecting(r)}>驳回</Button>
+                          onClick={() => { setRejectKind('PUBLISH'); setRejecting(r); }}>驳回</Button>
                       </div>
                     )),
                 },
@@ -206,7 +237,7 @@ export default function BountyReviewV2() {
                     : (
                       <div style={{ display: 'flex', gap: 'var(--wb-space-2)' }}>
                         <Button size="small" type="primary" onClick={() => approveSolution(r)}>通过并入账</Button>
-                        <Button size="small" danger onClick={() => setRejecting(r)}>驳回</Button>
+                        <Button size="small" danger onClick={() => { setRejectKind('SOLUTION'); setRejecting(r); }}>驳回</Button>
                       </div>
                     )),
                 },
@@ -263,11 +294,14 @@ export default function BountyReviewV2() {
 
       {/* ---------- 驳回弹窗（危险操作：danger + 默认聚焦取消） ---------- */}
       <Dialog
-        open={!!rejecting} title={`驳回 · ${rejecting?.title}`}
-        sub="驳回后成员可修改重提（保留驳回记录，次数上限可配置）。"
+        open={!!rejecting}
+        title={rejectKind === 'SOLUTION' ? `驳回方案 · ${rejecting?.title}` : `驳回悬赏 · ${rejecting?.title}`}
+        sub={rejectKind === 'SOLUTION'
+          ? '方案将退回认领人，可重新提交（原方案版本会保留在方案历史里）。'
+          : '驳回后发布人可修改重提（保留驳回记录，次数上限可配置）。'}
         okText="确认驳回" danger okDisabled={reason.trim().length < 10}
         onCancel={() => setRejecting(null)}
-        onOk={reject}
+        onOk={() => reject(rejectKind)}
       >
         <DialogField label="驳回理由（≥10 字，对发布人可见）" hint={`演示日期 ${DEMO_TODAY}`}>
           <Input.TextArea

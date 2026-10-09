@@ -60,8 +60,16 @@ export function useBountyBoard() {
     if (tab === 'mine') arr = arr.filter((b) => b.owner_union_id === me.union_id);
     if (tab === 'claimed') arr = arr.filter((b) => b.claimant_union_id === me.union_id);
     if (tab === 'all') {
+      /**
+       * V8.3-10.09 修 BUG-09：补上 OFFLINE（已下架）。
+       * 组织者「下架」的悬赏原本仍出现在大厅、还能点认领 —— 与下架的设计意图冲突。
+       */
       arr = arr.filter(
-        (b) => b.status !== 'MEMBER_DRAFT' && b.status !== 'PENDING_REVIEW' && b.status !== 'REJECTED'
+        (b) =>
+          b.status !== 'MEMBER_DRAFT' &&
+          b.status !== 'PENDING_REVIEW' &&
+          b.status !== 'REJECTED' &&
+          b.status !== 'OFFLINE'
       );
     }
     if (filter !== '全部') arr = arr.filter((b) => BOUNTY_STATUS_META[b.status].text === filter);

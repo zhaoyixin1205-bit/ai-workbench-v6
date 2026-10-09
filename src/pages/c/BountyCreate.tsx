@@ -44,6 +44,8 @@ export default function BountyCreate() {
           due_date: vals.due_date ? dayjs(vals.due_date as never).format('YYYY-MM-DD') : '2026-10-15',
           desensitized: true,
           created_at: DEMO_TODAY + ' 12:00',
+          /** V8.3-10.09：写入所属届次，方案通过后积分入账要按届次记账（原先是硬编码 C2026Q4） */
+          campaign_id: db.campaigns?.[0]?.id ?? '',
         },
         ...p.bounties,
       ],

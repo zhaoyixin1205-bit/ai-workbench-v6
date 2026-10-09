@@ -191,6 +191,40 @@ check('E3 DingtalkProfile.token 保持可选（字段只增不删），但落库
   return hasField && hasGuard ? true : 'token 字段声明或运行时校验缺失';
 });
 
+/* ---- F组：评委可见性（2026-10-09 线上报障修法） ---- */
+/**
+ * 线上现象：作业已 AI 评分到 REVIEWING，评委王倩与组织者赵冰艳在复核列表都看不到。
+ * 根因：dataScope 的 isPrivileged 只含 ORGANIZER/ADMIN，**不含 JUDGE**，
+ *       而 submits 分支只按 union_id 过滤 → 评委拿到的 submits 恒为 0 条。
+ * 口径（运营方拍板）：评委看全部、多人可评 → 数据面必须给评委全量。
+ */
+const ds = readFile('server/lib/dataScope.mjs');
+const codeDs = ds.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+check('F1 读权限 canReadAll 必须含 JUDGE（评委看不到作业的根因）', () => {
+  if (!/function canReadAll\(/.test(codeDs)) return '未拆出 canReadAll，读/写权限仍共用同一个判断';
+  const seg = /function canReadAll\([\s\S]*?\n}/.exec(codeDs);
+  return /includes\('JUDGE'\)/.test(seg[0])
+    ? true
+    : 'canReadAll 不含 JUDGE —— 评委仍拿不到 submits，复核队列会继续是 0 条';
+});
+check('F2 写权限 canWriteAll **不得**含 JUDGE（否则整包写回会抹掉他人数据）', () => {
+  const seg = /function canWriteAll\([\s\S]*?\n}/.exec(codeDs);
+  if (!seg) return '未拆出 canWriteAll';
+  if (/includes\('JUDGE'\)/.test(seg[0])) {
+    return 'canWriteAll 含 JUDGE —— mergeProtected 会对评委放行整包写回，评委保存一次评分就能覆盖 users/depts/他人messages';
+  }
+  return /includes\('ORGANIZER'\)/.test(seg[0]) && /includes\('ADMIN'\)/.test(seg[0])
+    ? true
+    : 'canWriteAll 应含 ORGANIZER + ADMIN';
+});
+check('F3 读/写两个判断必须分别用在正确位置（不能残留旧名 isPrivileged）', () => {
+  const reads = /if \(canReadAll\(user\)\) return data;/.test(codeDs);
+  const writes = /if \(canWriteAll\(user\)\) return incoming;/.test(codeDs);
+  const stale = /isPrivileged/.test(codeDs);
+  if (stale) return '仍有 isPrivileged 残留，会造成读写判断混用';
+  return reads && writes ? true : 'canReadAll / canWriteAll 的调用位置不对';
+});
+
 /* ------------------------------------------------------------------ */
 const failed = results.filter((r) => !r.ok);
 results.forEach((r) => console.log(`${r.ok ? '✅' : '❌'} ${r.name}${r.detail ? ' — ' + r.detail : ''}`));

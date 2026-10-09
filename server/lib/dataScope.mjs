@@ -59,8 +59,33 @@ export function visibleDeptSet(user, depts) {
   return out;
 }
 
-/** 组织者 / 管理员 / 评委：数据面全量（与前端 auth/access.ts 的口径对齐） */
-function isPrivileged(user) {
+/**
+ * 数据面**读取**全量：组织者 / 管理员 / 评委
+ *
+ * ⚠️ V8.3-10.09 新增 JUDGE（线上报障修复）：
+ * 原来只含 ORGANIZER / ADMIN，导致**评委在复核列表里看不到任何作业** ——
+ * 王倩是 JUDGE + DEPT_TREE，`scopeData` 的 submits 只按 union_id 过滤
+ * （「是不是我自己的」），她拿到的 submits 恒为 0 条，于是「待复核队列 0」。
+ *
+ * 运营方口径（2026-10-09 拍板）：**评委看全部，多个评委均可评价** → 既然评分队列
+ * 不按推送归属收敛，数据面就必须给评委全量，否则前端放开、后端还在裁剪，等于没放开。
+ * 这也让 submits 与 users 的口径一致：评委能在通讯录看到人，也能看到这些人的作业。
+ */
+function canReadAll(user) {
+  const r = user?.roles ?? [];
+  return r.includes('ORGANIZER') || r.includes('ADMIN') || r.includes('JUDGE');
+}
+
+/**
+ * 数据面**写入**豁免：只有组织者 / 管理员
+ *
+ * ⚠️ 读权限与写权限**必须分开**（V8.3-10.09 加 JUDGE 时踩到的坑）：
+ * mergeProtected 依赖这个判断来决定「客户端提交的内容能不能整包采纳」。
+ * 若把 JUDGE 一起放进豁免名单，评委保存一次评分就会把 users / depts /
+ * 别人的 messages / bookings 全量覆盖 —— 前端拿到的是裁剪后的子集，整包写回会抹掉他人数据。
+ * 评委是「评阅者」不是「管理员」，不��有整包写权限。
+ */
+function canWriteAll(user) {
   const r = user?.roles ?? [];
   return r.includes('ORGANIZER') || r.includes('ADMIN');
 }
@@ -72,7 +97,7 @@ function isPrivileged(user) {
  */
 export function scopeData(data, user) {
   if (!data || !user) return data;
-  if (isPrivileged(user)) return data;
+  if (canReadAll(user)) return data;
 
   const users = data.users ?? [];
   const depts = data.depts ?? [];
@@ -151,7 +176,7 @@ export function scopeData(data, user) {
  */
 export function mergeProtected(data, incoming, user) {
   if (!data || !incoming || !user) return incoming ?? data;
-  if (isPrivileged(user)) return incoming;
+  if (canWriteAll(user)) return incoming;
 
   /**
    * 只采纳**客户端提交且属于本人**的条目；其余一律沿用服务端现有数据。

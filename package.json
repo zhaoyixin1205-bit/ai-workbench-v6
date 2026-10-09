@@ -22,7 +22,9 @@
     "smoke:scope": "node scripts/scope-smoke.mjs",
     "smoke:overflow": "node scripts/overflow-smoke.mjs",
     "smoke:profilelink": "node scripts/profile-link-smoke.mjs",
-    "smoke:topic": "node scripts/topic-detail-smoke.mjs"
+    "smoke:topic": "node scripts/topic-detail-smoke.mjs",
+    "smoke:judge": "node scripts/judge-score-smoke.mjs",
+    "smoke:bounty": "node scripts/bounty-flow-smoke.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "^5.5.1",

@@ -8,6 +8,7 @@ import { DEMO_TODAY } from '@/mock/seedBiz';
 import { statusText, statusColor } from '@/constants/statusMeta';
 import { Dialog, DialogField, DialogKV, useConfirm } from '@/components/v2/Dialog';
 import { useNoteVisible } from '@/auth/annotation';
+import { averageJudgeScore, composeFinalScore, effectiveJudgeScores } from '@/service/judgeScoring';
 import '../../theme/v2/template.css';
 
 /**
@@ -132,17 +133,32 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
   const submitRevise = () => {
     const r = reviseTarget!;
     const s = current!;
-    const final = Math.round(((s.ai_score ?? 0) * card.ai_weight / 100 + total * card.judge_weight / 100) * 10) / 10;
-    setDb((p) => ({
-      ...p,
-      submits: p.submits.map((x) => (x.id === s.id ? { ...x, judge_score: total, final_score: final } : x)),
-      scoreResults: [...p.scoreResults, {
-        id: `SR-${s.id}-JD-RV-${Date.now()}`, target_type: 'submit', target_id: s.id,
-        card_id: card.id, card_version: card.version, source: 'JUDGE',
+    /**
+     * V8.3-10.09 修订同样走「替换本人旧分 + 取均分」口径 ——
+     * 修订是「同一评委改自己的分」，若把旧分留着一起平均，等于让一个人占两票。
+     */
+    setDb((p) => {
+      const prevOfMe = p.scoreResults.filter(
+        (x) => x.target_id === s.id && x.source === 'JUDGE' && x.scorer_union_id === me.union_id,
+      );
+      const kept = p.scoreResults.map((x) =>
+        prevOfMe.some((o) => o.id === x.id) ? { ...x, superseded: true } : x,
+      );
+      const next = [...kept, {
+        id: `SR-${s.id}-JD-${me.union_id}-${Date.now()}`, target_type: 'submit' as const, target_id: s.id,
+        card_id: card.id, card_version: card.version, source: 'JUDGE' as const,
         dim_scores: scores, total, reason: opinion,
         scorer_union_id: me.union_id, scorer_name: me.name, created_at: now(),
-      }],
-    }));
+      }];
+      const avg = averageJudgeScore(next, s.id);
+      const final = composeFinalScore(s.ai_score, avg, card.ai_weight, card.judge_weight);
+      return {
+        ...p,
+        submits: p.submits.map((x) => (x.id === s.id
+          ? { ...x, judge_score: Math.round((avg ?? total) * 10) / 10, final_score: final } : x)),
+        scoreResults: next,
+      };
+    });
     log('修订历史评分', s.code,
       `原 ${r.total} 分（${r.created_at}）→ 现 ${total} 分；修订不覆写，原记录保留可追溯`);
     message.success(`已修订为 ${total} 分（原 ${r.total} 分记录保留）`);
@@ -156,28 +172,50 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
     /** 修订态走另一条分支：新增记录而非覆写 */
     if (reviseTarget) { submitRevise(); return; }
     const scoredAt = now();
-    setDb((p) => ({
-      ...p,
-      submits: p.submits.map((s) => (s.id === current!.id
-        ? {
-            ...s, status: 'REVIEWED', judge_score: total,
-            final_score: Math.round(((s.ai_score ?? 0) * card.ai_weight / 100 + total * card.judge_weight / 100) * 10) / 10,
-          } : s)),
-      scoreResults: [...p.scoreResults, {
-        id: `SR-${current!.id}-JD-${Date.now()}`, target_type: 'submit', target_id: current!.id,
-        card_id: card.id, card_version: card.version, source: 'JUDGE',
+    /**
+     * V8.3-10.09 多人评委：同一评委再打分 → 替换自己上一条（标 superseded），
+     * 不重复累加；最终分取所有有效评委分的**平均**（口径：多个评委均可评价，取平均值）。
+     */
+    setDb((p) => {
+      const prevOfMe = p.scoreResults.filter(
+        (r) => r.target_id === current!.id && r.source === 'JUDGE' && r.scorer_union_id === me.union_id,
+      );
+      const kept = p.scoreResults.map((r) =>
+        prevOfMe.some((o) => o.id === r.id) ? { ...r, superseded: true } : r,
+      );
+      const mine = {
+        id: `SR-${current!.id}-JD-${me.union_id}-${Date.now()}`, target_type: 'submit' as const,
+        target_id: current!.id, card_id: card.id, card_version: card.version, source: 'JUDGE' as const,
         dim_scores: scores, total, reason: opinion,
         scorer_union_id: me.union_id, scorer_name: me.name, created_at: scoredAt,
-      }],
-      /** V8.3-10.07：打分是链路上的一环，必须留流转痕；随后由流水线自动推送「真实性复核」待办 */
-      submitFlowLogs: [{
-        id: `FL${Date.now()}`, submit_id: current!.id,
-        from_status: current!.status, to_status: 'REVIEWED',
-        operator: me.name, reason: `${card.name} ${card.version} 四维合计 ${total}`, created_at: scoredAt,
-      }, ...p.submitFlowLogs],
-    }));
+      };
+      const nextResults = [...kept, mine];
+      const avg = averageJudgeScore(nextResults, current!.id);
+      const final = composeFinalScore(current!.ai_score, avg, card.ai_weight, card.judge_weight);
+      const judgeCount = effectiveJudgeScores(nextResults, current!.id).length;
+      return {
+        ...p,
+        submits: p.submits.map((s) => (s.id === current!.id
+          ? { ...s, status: 'REVIEWED', judge_score: Math.round((avg ?? total) * 10) / 10, final_score: final }
+          : s)),
+        scoreResults: nextResults,
+        /** V8.3-10.07：打分是链路上的一环，必须留流转痕；随后由流水线自动推送「真实性复核」待办 */
+        submitFlowLogs: [{
+          id: `FL${Date.now()}`, submit_id: current!.id,
+          from_status: current!.status, to_status: 'REVIEWED',
+          operator: me.name,
+          reason: `${card.name} ${card.version} 四维合计 ${total}（第 ${judgeCount} 位评委，当前均分 ${(avg ?? total).toFixed(1)}）`,
+          created_at: scoredAt,
+        }, ...p.submitFlowLogs],
+      };
+    });
     log('评委复核打分', current!.code, `四维合计 ${total}，意见：${opinion.slice(0, 20)}…`);
-    message.success(`复核完成，最终分按 AI ${card.ai_weight}% + 评委 ${card.judge_weight}% 合成${autoPush ? '；已推送组织者做真实性复核' : '；组织者不会自动收到提醒，需到「作业管理」手动发起推送'}`);
+    const cnt = (db.scoreResults.filter((r) => r.target_id === current!.id && r.source === 'JUDGE' && !r.superseded).length) + 1;
+    message.success(
+      `复核完成，最终分按 AI ${card.ai_weight}% + 评委 ${card.judge_weight}% 合成` +
+      `（当前 ${cnt} 位评委，取平均）` +
+      `${autoPush ? '；已推送组织者做真实性复核' : '；组织者不会自动收到提醒，需到「作业管理」手动发起推送'}`,
+    );
     setCurrent(null); setScores({}); setOpinion('');
   };
 

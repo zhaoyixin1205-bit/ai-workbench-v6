@@ -1,4 +1,5 @@
 import { Alert, Button, Form, Input, Modal, Segmented, Tabs, Upload } from 'antd';
+import { useState } from 'react';
 import {
   PlusOutlined, ClockCircleOutlined, DownloadOutlined, InboxOutlined, EditOutlined, FileAddOutlined,
 } from '@ant-design/icons';
@@ -11,6 +12,7 @@ import { TrackTag } from '@/components/ui';
 import { trackVar } from '@/theme/v2/track';
 import type { Bounty, BountyStatus } from '@/mock/types';
 import { claimHint } from '@/constants/bounty';
+import { useSolutionReview } from '@/hooks/useSolutionReview';
 import '../../theme/v2/template.css';
 
 /**
@@ -49,6 +51,10 @@ export default function BountyListV2() {
   const { id: detailId } = useParams<{ id?: string }>();
   const b = useBountyBoard();
   const detail = detailId ? db.bounties.find((x) => x.id === detailId) : undefined;
+  /** V8.3-10.09 口径 2=B：发布者在 C 端审方案的通道 + 驳回弹窗 */
+  const { canReviewAsOwner: ownerCanReview, approve: ownerApprove, reject: ownerReject } = useSolutionReview();
+  const [ownerRejecting, setOwnerRejecting] = useState<Bounty | null>(null);
+  const [ownerReason, setOwnerReason] = useState('');
 
   /** 操作区：列表与详情共用一套按钮，避免两处按钮逻辑漂移 */
   const actionsOf = (x: Bounty) => (
@@ -88,6 +94,16 @@ export default function BountyListV2() {
       )}
       {x.status === 'PENDING_REVIEW' && (
         <span className="wb2-tag wa"><i className="d" />组织者审核中（对外不可见）</span>
+      )}
+      {/*V8.3-10.09 口径 2=B：方案审核 = 组织者 或悬赏发布者 双通道；发布者本人回避 */}
+      {ownerCanReview(x) && x.owner_union_id !== me.union_id && (
+        <>
+          <Button size="small" type="primary" onClick={() => ownerApprove(x)}>通过方案</Button>
+          <Button size="small" danger onClick={() => setOwnerRejecting(x)}>驳回方案</Button>
+        </>
+      )}
+      {x.status === 'SUBMITTED' && x.owner_union_id === me.union_id && (
+        <span className="wb2-note">你是发布人，不能审自己的方案</span>
       )}
       {x.status === 'REJECTED' && x.owner_union_id === me.union_id && (
         <Button size="small" onClick={() => nav('/bounty/create')}>修改后重提</Button>
@@ -267,9 +283,15 @@ export default function BountyListV2() {
       );
     }
     const mine = detail.owner_union_id === me.union_id;
+    /**
+     * V8.3-10.09 修 BUG-04：原来这里写的是 `me.roles.includes('ORGANIZER')`（**缺 `!`**），
+     * 与 v1（BountyList.tsx:252-256）口径完全相反 —— 结果组织者访问
+     * PENDING_REVIEW / REJECTED 的悬赏详情时被判成「当前对外不可见」，而 v1 正常。
+     * v2 是默认版本，等于组织者在 v2 下审不了自己该审的悬赏。
+     */
     const hidden =
       ['MEMBER_DRAFT', 'PENDING_REVIEW', 'REJECTED'].includes(detail.status) && !mine
-      && me.roles.includes('ORGANIZER');
+      && !me.roles.includes('ORGANIZER');
     if (hidden) {
       return (
         <div className="wb2-empty">
@@ -440,6 +462,38 @@ export default function BountyListV2() {
       )}
 
       {dialogs}
+
+      {/* V8.3-10.09 口径 2=B：发布者驳回方案的弹窗（理由 ≥10 字、退回 CLAIMED 可重提） */}
+      <Modal
+        open={!!ownerRejecting}
+        title={`驳回方案 · ${ownerRejecting?.title}`}
+        okText="确认驳回"
+        okButtonProps={{ danger: true, disabled: ownerReason.trim().length < 10 }}
+        onCancel={() => { setOwnerRejecting(null); setOwnerReason(''); }}
+        onOk={() => {
+          if (!ownerRejecting) return;
+          ownerReject(ownerRejecting, ownerReason);
+          setOwnerRejecting(null);
+          setOwnerReason('');
+        }}
+      >
+        <p style={{ fontSize: 'var(--wb-fs-label)', color: 'var(--wb-ink-3)' }}>
+          驳回后方案将退回认领人（{ownerRejecting?.claimant_name}），对方可以重新提交。
+        </p>
+        <Input.TextArea
+          rows={4}
+          value={ownerReason}
+          onChange={(e) => setOwnerReason(e.target.value)}
+          placeholder="驳回理由（≥10 字，对认领人可见）"
+          maxLength={200}
+          showCount
+        />
+        {ownerReason.trim().length > 0 && ownerReason.trim().length < 10 && (
+          <div className="wb2-note" style={{ color: 'var(--wb-warn)', marginTop: 6 }}>
+            还差 {10 - ownerReason.trim().length} 字才可提交驳回。
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
