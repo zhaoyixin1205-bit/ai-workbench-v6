@@ -288,13 +288,63 @@ async function handle(req, res) {
     return sendJson(res, 200, { ok: true, version: r.version });
   }
 
-  // 清空服务端数据：下一次拉取时前端用种子重新播种（演示环境一键复原）
+  /**
+   * 清空服务端数据：下一次拉取时前端用种子重新播种（演示环境一键复原）
+   *
+   * 🔴 V8.3-10.09 加角色校验（此前**完全无鉴权**）：这个端点会清空**整库**
+   * （作业/ 悬赏 / 积分 / 通讯录 / 全部提报），任何一次误触或好奇尝试都不可逆。
+   * 线上排障时误调此接口，真的把库清空过一次（靠 .bak 恢复）。
+   *
+   * 口径（运营方 2026-10-09 拍板）：**A 加角色校验** —— 仅组织者 / 管理员可调用。
+   *
+   * ⚠️ 与 PUT /api/state 一致地受 `dingtalkConfig().enabled` 约束：
+   *未配钉钉免登时（本地开发 / 演示）没有身份体系可校验，此时**放行但打警告**——
+   * 不能因为开发环境方便就把生产环境的门也拆了。生产已配免登（config.enabled=true），
+   * 因此线上是实打实生效的。
+   */
   if (pathname === '/api/state/reset' && req.method === 'POST') {
     let by = '';
     try {
       const read = await readBody(req, 1024);
       by = JSON.parse(read.buf.toString('utf8') || '{}').by || '';
     } catch { /* 没有 body 也算合法 */ }
+
+    if (dingtalkConfig().enabled) {
+      const token = readToken(req);
+      const uid = token ? verifyToken(token) : null;
+      if (!uid) {
+        return sendJson(res, 401, {
+          ok: false,
+          error: '会话已过期，请重新通过钉钉登录',
+          code: 'NO_SESSION',
+        });
+      }
+      const current = await state.read();
+      const meRow = (current?.data?.users ?? []).find((u) => u.union_id === uid);
+      if (!meRow) {
+        return sendJson(res, 403, { ok: false, error: '该成员已不在名单内', code: 'NOT_IN_WORKBENCH' });
+      }
+      const roles = meRow.roles ?? [];
+      if (!roles.includes('ORGANIZER') && !roles.includes('ADMIN')) {
+        /** 留痕：谁在什么时候试图清库、身份是什么 —— 审计需要 */
+        console.warn(`[reset] 拒绝：${meRow.name}(${uid}) 角色=${JSON.stringify(roles)} 不在允许名单`);
+        return sendJson(res, 403, {
+          ok: false,
+          error: '只有组织者或系统管理员可以清空数据',
+          code: 'NOT_ALLOWED',
+        });
+      }
+      // 操作者取身份库里的真名，不信前端传来的 by（那个字段可伪造）
+      await state.reset(null, meRow.name);
+      console.log(`[reset] 已清空，操作者：${meRow.name}(${uid})`);
+      return sendJson(res, 200, { ok: true, message: '已清空服务端数据，刷新后按种子重新初始化' });
+    }
+
+    // 未配免登：无身份体系可校验，放行但**必须留痕**，避免线上误配时静默裸奔
+    console.warn(
+      `[reset] ⚠️ 钉钉免登未启用，本次清空请求未被鉴权拦截（操作者声明：${by || '未声明'}）。` +
+        '若这是生产环境，请检查 DINGTALK_CLIENT_ID / DINGTALK_CLIENT_SECRET 配置。',
+    );
     await state.reset(null, by);
     return sendJson(res, 200, { ok: true, message: '已清空服务端数据，刷新后按种子重新初始化' });
   }

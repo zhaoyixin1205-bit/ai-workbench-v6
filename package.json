@@ -25,7 +25,8 @@
     "smoke:topic": "node scripts/topic-detail-smoke.mjs",
     "smoke:judge": "node scripts/judge-score-smoke.mjs",
     "smoke:bounty": "node scripts/bounty-flow-smoke.mjs",
-    "smoke:decision": "node scripts/decision-lock-smoke.mjs"
+    "smoke:decision": "node scripts/decision-lock-smoke.mjs",
+    "smoke:resetauth": "node scripts/reset-auth-smoke.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "^5.5.1",

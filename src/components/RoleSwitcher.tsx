@@ -21,6 +21,8 @@ export default function RoleSwitcher() {
   const [open, setOpen] = useState(false);
   const [kw, setKw] = useState('');
   const [tab, setTab] = useState<string>('按角色');
+  /** V8.3-10.09：清库入口只对组织者/管理员可见（与服务端口径一致，前端少一次 futile请求） */
+  const canReset = me.roles.includes('ORGANIZER') || me.roles.includes('ADMIN');
 
   const grouped = useMemo(() => {
     const map = new Map<Role, User[]>();
@@ -61,12 +63,27 @@ export default function RoleSwitcher() {
             },
             { type: 'divider' },
             { key: 'all', label: '选择具体人员…' },
-            { key: 'reset', label: '重置演示数据', danger: true },
+            /**
+             * V8.3-10.09：清库是**不可逆的高危操作**，菜单里就直接不让非管理者看到 ——
+             * 服务端已加角色校验（口径 A：仅 ORGANIZER/ADMIN），前端再挡一层属体验优化，
+             * 不是安全依赖。真正的门在服务端。
+             */
+            ...(canReset
+              ? [{ key: 'reset', label: '重置演示数据', danger: true } as const]
+              : []),
           ],
-          onClick: ({ key }) => {
+          onClick: async ({ key }) => {
             if (key === 'all') setOpen(true);
-            else if (key === 'reset') { resetDemo(); message.success('演示数据已重置'); }
-            else if (key.startsWith('r-')) {
+            else if (key === 'reset') {
+              /**
+               * ⚠️ 原来这里无条件 `message.success('演示数据已重置')`，而 resetDemo 是异步的——
+               * 被服务端403 拒绝时用户照样看到"已重置"，会去刷新页面然后发现数据还在，
+               * 完全不知道发生了什么。改成等结果再提示，且把服务端的话带出来。
+               */
+              const ok = await resetDemo();
+              if (ok) message.success('演示数据已重置');
+              else message.error('重置失败：仅组织者或系统管理员可执行（服务端已拒绝）');
+            } else if (key.startsWith('r-')) {
               const role = key.slice(2) as Role;
               const target = grouped.get(role)?.[0];
               if (target) { switchIdentity(target.union_id); message.success(`已切换为：${target.name}（${ROLE_LABEL[role]}）`); }

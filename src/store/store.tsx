@@ -328,7 +328,8 @@ interface Ctx {
   setCurrentCampaignId: (id: string) => void;
   /** V7.1：是否已创建过届次。false = 空态，页面应引导组织者创建 */
   hasCampaign: boolean;
-  resetDemo: () => Promise<void>;
+  /** V8.3-10.09：改为返回 Promise<boolean>（是否真的清成功），前端据此提示而非无条件报成功 */
+  resetDemo: () => Promise<boolean>;
   /** 可见数据范围过滤（SELF / DEPT_TREE / ALL） */
   visibleUsers: () => User[];
   /** V4.0 CR-01：是否带团队（有下属 / 有管辖部门），决定是否渲染「团队板块」 */
@@ -642,8 +643,21 @@ const meMissing = me.union_id === '';
     [db.users]
   );
   const hasRole = useCallback((...roles: Role[]) => roles.some((r) => me.roles.includes(r)), [me]);
-  const resetDemo = useCallback(async () => {
+  /**
+   * V8.3-10.09：返回是否真的清成功（`Promise<boolean>`）。
+   *
+   * ⚠️ 原来有个隐蔽但严重的问题：**不管服务端是否拒绝，都会清本地缓存并重播种**。
+   * 服务端加了角色校验后，非管理者点「重置」会：服务端 403 拒了，
+   * 但前端仍然 `removeItem(LS_DB)` + `setDb(initialDB())` → 内存里变成种子数据、
+   * 服务端还是真实数据 → 刷新后"数据又回来了"，用户完全不知道发生了什么。
+   * 现在**只有服务端确认清空才动本地**，失败就直接返回 false。
+   */
+  const resetDemo = useCallback(async (): Promise<boolean> => {
     const ok = await resetRemoteState(me?.name ?? '');
+    if (!ok) {
+      // 被拒（或网络失败）：**不动任何本地数据**，让调用方把服务端的话带出来
+      return false;
+    }
     localStorage.removeItem(LS_KEY);
     /**
      * V8.3-10.08 需求①：重置演示数据**不再顺手改身份**。
@@ -651,16 +665,13 @@ const meMissing = me.union_id === '';
      * 而且 'uid001' 在真实钉钉数据里根本不存在，只会得到一个空身份。
      */
     setMeId(authLockedRef.current ? meId : '');
-    if (ok) {
-      // 服务端已清空（version+1）→ 先取回新版本号再播种，否则回写会撞上乐观锁
-      const env = await fetchState();
-      versionRef.current = env?.version ?? 0;
-      setMode('remote', { state: 'saving' });
-      setDb(initialDB());
-      return;
-    }
+    // 服务端已清空（version+1）→ 先取回新版本号再播种，否则回写会撞上乐观锁
+    const env = await fetchState();
+    versionRef.current = env?.version ?? 0;
+    setMode('remote', { state: 'saving' });
     setDb(initialDB());
-  }, [me?.name, setMode]);
+    return true;
+  }, [me?.name, setMode, meId]);
 
   /**
    * V8.3-10.08 需求②：部门可见范围统一走 deptTree 的显式子树（选父含子）。

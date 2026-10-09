@@ -140,15 +140,32 @@ export async function pushState(data: unknown, baseVersion: number, by: string):
   }
 }
 
-/** 清空服务端数据（演示环境一键复原） */
+/**
+ * 清空服务端数据（演示环境一键复原）
+ *
+ * 🔴 V8.3-10.09：服务端已加角色校验（仅 ORGANIZER/ADMIN），
+ * 这里必须把 token带上，否则线上会直接吃 401。
+ * 口径来源：运营方 2026-10-09 拍板「A 加角色校验」。
+ */
 export async function resetRemoteState(by: string): Promise<boolean> {
   try {
     const res = await fetch('/api/state/reset', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        // 与其它数据面请求同一套会话凭证；没登录时为空，服务端会拒
+        ...authHeaders().headers,
+      },
       body: JSON.stringify({ by }),
     });
-    return res.ok;
+    if (!res.ok) {
+      /** 被拒时把服务端的话带出来，否则用户只看到「重置失败」不知道原因 */
+      const body = await res.json().catch(() => null);
+      const msg = body?.error || `HTTP ${res.status}`;
+      console.warn('[reset] 被服务端拒绝：' + msg);
+      return false;
+    }
+    return true;
   } catch {
     return false;
   }
