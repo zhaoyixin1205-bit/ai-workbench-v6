@@ -119,27 +119,95 @@ check('B6 失败要报 error 而不是 success（原来无条件报「已重置�
   return /message\.error/.test(seg2[0]) ? true : "被拒时仍提示「已重置」——用户会以为成功然后发现数据没变";
 });
 
-/* ---------- C1组：文件下载/删除的「伪鉴权」（🔴 已确认存在，待拍板） ---------- */
+/* ---------- C1组：文件下载/删除的鉴权（🔴 曾是伪鉴权，本轮已修） ---------- */
 /**
- * 现状：`GET|DELETE /api/files/:id` 的权限判断**完全信任 query 参数**里的
+ * 原状：`GET|DELETE /api/files/:id` 的权限判断**完全信任 query 参数**里的
  *   `actor` / `roles`（server/index.mjs 的 canDownload 与 DELETE 分支）：
  *     canDownload: meta.uploaded_by === actor.name || actor.roles.includes('ORGANIZER') || ...
+ * 实测复现：任何人传 `?roles=OPERATOR&actor=任何人` 就能**下载到文件内容**（200）；
+ * 反过来前端 `deleteFile()` 根本不带 actor → **上传者本人也删不掉自己传的文件**（403）——
+ * 也就是说它既是安全漏洞，也是功能 bug。
  *
- * 也就是说：任何人传 `?roles=ORGANIZER&actor=任何人` 就能**下载或删除任意文件**。
- * 这比 upload 无鉴权严重得多（可读、可删他人文件）。
- *
- * ⚠️ 这条写成**真实断言**而不是"现状记录"：漏洞确实存在，就该红。
- * 若将来运营方拍板修好，把 ok 条件反过来即可（要求不再信任 query）。
- * 修法建议：与 upload 同款——从 X-WB-Token 解出身份，actor 不再从 query 取。
+ * 现修法：身份只从可信来源取 —— ①X-WB-Token 头 ②?sig= 短时签名（5 分钟、绑定 fileId）。
+ * 为什么必须有②：下载是 window.open / <img src> / <a href> 触发的，
+ * **浏览器不会给这些请求带自定义 header**，光靠 header 会让所有附件/帖子图片全部裂图。
  */
-check('C1 🔴 文件下载/删除不得信任 query 里的 actor/roles（可越权删任意文件）', () => {
-  const trustsClientRoles = /searchParams\.get\('actor'\)/.test(srv)
-    && (/actor\.roles\.includes\('ORGANIZER'\)|actor\?\.roles\?\.includes\('ORGANIZER'\)/.test(srv));
-  if (trustsClientRoles) {
-    return '🔴 确认存在：canDownload / DELETE 用 query 的 actor+roles 判权限 —— '
-      + '任何人可传 ?roles=ORGANIZER 下载或删除任意文件。需单独拍板修法（不在 14:36 授权范围）';
+const dlSeg = /if \(m\) \{[\s\S]{0,4200}?\n  \}/.exec(srv);
+
+check('C1 🔴 下载/删除不得再信任 query 的 actor/roles（曾可越权读+删任意文件）', () => {
+  /**
+   * ⚠️ 判据必须落在**下载端点里的那个调用点**，不能只看文件里有没有 resolveActor 定义。
+   * 我第一版判`/resolveActor\(req\)/.test(srv)` —— 结果把调用点改回 query 直取、
+   * 函数定义还留着，断言照样通过 → 假断言。已改为同时要求存在「赋给 actor」的调用。
+   */
+  if (!dlSeg) return '未找到下载端点段';
+  // 关键：必须是 `let actor = await resolveActor(req)` 这��赋值，不能是 query 直取
+  const usesResolve = /let actor = await resolveActor\(req\)/.test(dlSeg[0]);
+  if (!usesResolve) {
+    return "下载端点的 actor 不是从 resolveActor 取 —— query 直取即越权口子；"
+      + "（注意：只看文件里有没有 resolveActor 定义会漏判，必须看调用点）";
+  }
+  // 再兜一层：query 直取只允许出现在「未配免登时」的降级分支里
+  const fallbackIdx = dlSeg[0].indexOf('const authFallback');
+  const directIdx = dlSeg[0].search(/let actor = \{ name: url\.searchParams/);
+  if (directIdx >= 0 && (fallbackIdx < 0 || directIdx < fallbackIdx)) {
+    return 'query 直取的 actor 出现在降级分支之前 —— 生产（已配免登）仍会走它';
   }
   return true;
+});
+check('C2 身份解析集中在 resolveActor（下载与删除共用同一把尺子）', () => {
+  return /async function resolveActor\(req\)/.test(srv) && /canDeleteFile/.test(srv)
+    ? true
+    : "缺 resolveActor / canDeleteFile —— 下载与删除会各写一套判断，迟早漂移";
+});
+check('C3 🔴 个人交付物（SUBMIT/BOUNTY_SOLUTION）必须有可信身份', () => {
+  const fn = /function canDownload\([\s\S]{0,700}?\n}/.exec(srv);
+  if (!fn) return '未找到 canDownload';
+  const seg3 = fn[0];
+  if (!/if \(!actor\) return false/.test(seg3)) return 'actor 为空时应直接拒绝';
+  return /uploaded_by === actor\.name/.test(seg3) && /roles\.includes\('ORGANIZER'\)/.test(seg3)
+    ? true
+    : 'canDownload 未按「本人或组织者/管理员」判定';
+});
+check('C4 🟢 公开类附件仍可全员下载（否则帖子图片/案例附件会全部裂）', () => {
+  const fn = /function canDownload\([\s\S]{0,700}?\n}/.exec(srv);
+  if (!fn) return '未找到 canDownload';
+  return /CASE_SKILL[\s\S]{0,120}POST_ATTACH[\s\S]{0,80}return true/.test(fn[0])
+    ? true
+    : '公开类（CASE_SKILL/CASE_ATTACH/POST_ATTACH）被误伤 —— 会导致图片裂图';
+});
+check('C5 🟡 必须支持 ?sig= 短时签名（window.open/<img src> 带不了 header）', () => {
+  if (!/verifyFileToken/.test(srv)) return '下载端未解析 ?sig= 签名 —— 附件在浏览器里会全部加载失败';
+  return /get\('sig'\)/.test(srv) ? true : '未从 query 读取 sig 参数';
+});
+check('C6 🔴 签名必须比对 fileId（A 文件的签名不能改去下 B 文件）', () => {
+  if (!dlSeg) return '未找到下载端点段';
+  return /v\.fileId === id/.test(dlSeg[0])
+    ? true
+    : '未比对 fileId —— 拿到任一有效签名即可遍历下载所有文件';
+});
+check('C7 上传时给 url 签发凭证（前端拿到的 url 要能直接用）', () => {
+  if (!/issueFileToken/.test(srv)) return '上传时未签发文件签名';
+  return /meta\.url = `\/api\/files\/\$\{meta\.id\}\?sig=/.test(srv)
+    ? true
+    : '上传返回的 url 未带 sig —— 前端 window.open(f.url) 会 401';
+});
+check('C8 签名有效期 5 分钟且带 fileId（session.mjs 侧）', () => {
+  const ses = read('server/lib/session.mjs');
+  const hasFn = /export function issueFileToken/.test(ses) && /export function verifyFileToken/.test(ses);
+  if (!hasFn) return 'session.mjs 缺 issueFileToken / verifyFileToken';
+  return /fid:\s*fileId/.test(ses) && /5 \* 60 \* 1000/.test(ses)
+    ? true
+    : '文件签名未绑定 fileId 或有效期不是 5 分钟';
+});
+check('C9 删除要留痕（谁删的）', () => {
+  if (!dlSeg) return '未找到下载端点段';
+  return /\[files\] 删除/.test(dlSeg[0]) ? true : '删除未留痕 —— 删了文件查不到是谁';
+});
+check('C10 未登录时给 401 而不是 403（别让用户以为文件不存在）', () => {
+  if (!dlSeg) return '未找到下载端点段';
+  const n401 = (dlSeg[0].match(/sendJson\(res,\s*401/g) || []).length;
+  return n401 >= 2 ? true : `只有 ${n401} 处 401（下载与删除各需 1 处）`;
 });
 
 /* ---------- C2组：upload 登录态校验（运营方 14:36 拍板 B：只要登录态） ---------- */

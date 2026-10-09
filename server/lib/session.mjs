@@ -48,6 +48,49 @@ export function issueToken(unionId, env = process.env, ttlMs = TTL_MS) {
   return `${payload}.${sign(payload, env)}`;
 }
 
+/**
+ * V8.3-10.09 文件下载用的**短时签名**（file payload + 签名，5 分钟有效）
+ *
+ * 为什么需要它：下载是 `window.open(url)` / `<img src>` / `<a href>` 触发的，
+ * **浏览器不会给这些请求带自定义 header**，所以「必须带 X-WB-Token」的做法
+ * 会让所有附件、帖子图片全部加载失败（403/401）。
+ *
+ * 业界标准解法就是短时签名 URL：服务端把「谁、哪个文件、到什么时候」签进 URL，
+ * 客户端直接用，无需 header；URL 泄露也只有 5 分钟窗口，且换文件 id 就失效。
+ *
+ * 关键设计：签名**绑定 fileId** —— 拿到 A 文件的签名 URL 不能用来下 B 文件。
+ */
+const FILE_SIG_TTL_MS = 5 * 60 * 1000;
+
+export function issueFileToken(unionId, fileId, env = process.env, ttlMs = FILE_SIG_TTL_MS) {
+  const payload = b64url(Buffer.from(JSON.stringify({ uid: unionId, fid: fileId, exp: Date.now() + ttlMs })));
+  return `${payload}.${sign(payload, env)}`;
+}
+
+/**
+ * 校验文件签名：返回 { uid, fileId } 或 null。
+ * ⚠️ 调用方**必须**再比一次 fileId 是否与请求路径一致 —— 签名本身不校验路径，
+ * 校验的是「这个签名对应哪个文件」，别的地方拿到别的文件的签名一样能验过。
+ */
+export function verifyFileToken(token, env = process.env) {
+  if (!token || typeof token !== 'string') return null;
+  const parts = token.split('.');
+  if (parts.length !== 2) return null;
+  const [payload, sig] = parts;
+  const expect = sign(payload, env);
+  const a = Buffer.from(sig);
+  const b = Buffer.from(expect);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  try {
+    const data = JSON.parse(b64urlParse(payload).toString('utf8'));
+    if (!data?.uid || !data?.fid || typeof data.exp !== 'number') return null;
+    if (Date.now() > data.exp) return null;
+    return { uid: String(data.uid), fileId: String(data.fid) };
+  } catch {
+    return null;
+  }
+}
+
 /** 校验 token：返回 union_id，失败返回 null（签名不符/过期/格式错一律 null） */
 export function verifyToken(token, env = process.env) {
   if (!token || typeof token !== 'string') return null;

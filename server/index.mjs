@@ -18,7 +18,7 @@ import { createFileRepository, newFileMeta, makeObjectKey } from './lib/fileRepo
 import { createStateStore } from './lib/stateStore.mjs';
 import { validateSkillZip } from './lib/zip.mjs';
 import { authorizeUrl, dingtalkConfig, exchangeCodeForUnionId, newState } from './lib/dingtalkAuth.mjs';
-import { issueToken, readToken, verifyToken } from './lib/session.mjs';
+import { issueFileToken, issueToken, readToken, verifyFileToken, verifyToken } from './lib/session.mjs';
 import { mergeProtected, scopeData } from './lib/dataScope.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -80,15 +80,50 @@ function readBody(req, limit = MAX_BYTES + 1024) {
 }
 
 /**
- * 可见范围校验（简化但真实的口径）：
+ * 可见范围校验（口径不变，改的是「身份从哪来」）：
  * SUBMIT / BOUNTY_SOLUTION 属于个人交付物，仅上传者本人与组织者 / 管理员可下载；
  * CASE_* 属于公开内容，登录态即可下载。
  * 目的：避免「拿到链接就能下别人的作业」。
+ *
+ * 🔴 V8.3-10.09 `actor` 改为**只接受服务端解出的身份**。
+ *
+ * 原来调用方传的是 `{ name: searchParams.get('actor'), roles: searchParams.get('roles') }`
+ * —— 完全是客户端自称：任何人加 `?roles=ORGANIZER` 就能下任意文件。
+ * 现在 actor 由 verifyToken + 身份库解析得到，客户端无从伪造。
+ *
+ * @param actor 服务端解析出的 { name, roles }；**不可**来自 query
  */
 function canDownload(meta, actor) {
   if (!meta) return false;
   if (meta.biz_type === 'CASE_SKILL' || meta.biz_type === 'CASE_ATTACH' || meta.biz_type === 'POST_ATTACH') return true;
-  return meta.uploaded_by === actor?.name || actor?.roles?.includes('ORGANIZER') || actor?.roles?.includes('ADMIN');
+  if (!actor) return false;
+  const roles = actor.roles ?? [];
+  return meta.uploaded_by === actor.name || roles.includes('ORGANIZER') || roles.includes('ADMIN');
+}
+
+/**
+ * 🔴 删除权限：同样改为只认服务端解出的身份（口径不变：上传者本人 / 组织者 / 管理员）。
+ * 抽出成函数是为了让下载与删除**共用同一把尺子** —— 原来两处各写一遍 actor 解析，
+ * 很容易改一处漏一处。
+ */
+function canDeleteFile(meta, actor) {
+  if (!meta || !actor) return false;
+  const roles = actor.roles ?? [];
+  return meta.uploaded_by === actor.name || roles.includes('ORGANIZER') || roles.includes('ADMIN');
+}
+
+/**
+ * 从请求里解出可信身份。
+ * @returns {{name: string, roles: string[]}|null} 未登录/不在名单返回 null
+ */
+async function resolveActor(req) {
+  const token = readToken(req);
+  const uid = token ? verifyToken(token) : null;
+  if (!uid) return null;
+  const current = await state.read();
+  const row = (current?.data?.users ?? []).find((u) => u.union_id === uid);
+  if (!row) return null;
+  return { name: row.name, roles: row.roles ?? [] };
 }
 
 /* ----------------------------- 路由 ----------------------------- */
@@ -368,6 +403,7 @@ async function handle(req, res) {
      * 不能为开发方便把生产的门也拆了。
      */
     let meRow = null;
+    let meUid = '';
     if (dingtalkConfig().enabled) {
       const token = readToken(req);
       const uid = token ? verifyToken(token) : null;
@@ -383,6 +419,7 @@ async function handle(req, res) {
       if (!meRow) {
         return sendJson(res, 403, { ok: false, error: '该成员已不在名单内', code: 'NOT_IN_WORKBENCH' });
       }
+      meUid = uid;
     } else {
       console.warn('[files] ⚠️ 钉钉免登未启用，本次上传未被鉴权拦截（生产环境请检查 DINGTALK 配置）');
     }
@@ -443,6 +480,16 @@ async function handle(req, res) {
     }
 
     try {
+      /**
+       * 🔴 V8.3-10.09 上传时把**短时签名**拼进 url（5 分钟有效，绑定本文件 id）。
+       * 前端 `window.open(f.url)` / `<img src>` / `<a href>` 不会带自定义 header，
+       * 所以凭证必须落在 URL 里；签名绑定 fileId，泄露也只能用 5 分钟且换不了文件。
+       *
+       * 未登录时（免登未配置的开发环境）不签发 —— 那种环境本就没有身份体系。
+       */
+      if (meUid) {
+        meta.url = `/api/files/${meta.id}?sig=${issueFileToken(meUid, meta.id)}`;
+      }
       // 顺序必须是「先元数据后内容」：pg 驱动的 put 是按 object_key 做 UPDATE，
       // 颠倒会更新 0 行却报成功 → 内容静默丢失（V6.1 修复）
       await repo.writeMeta(meta);
@@ -461,19 +508,73 @@ async function handle(req, res) {
     const meta = await repo.readMeta(id).catch(() => null);
     if (!meta || meta.is_deleted) return sendJson(res, 404, { ok: false, error: '文件不存在或已被删除' });
 
+    /**
+     * 🔴 V8.3-10.09 身份改为**从 X-WB-Token 解**（原来取 query 的 actor/roles，
+     * 任何人可`?roles=ORGANIZER` 冒充越权下载/删除 —— 实测已复现）。
+     *
+     * 两种可信来源，任一即可：
+     *  1. `X-WB-Token` 头 —— fetch / XHR 走这条；
+     *  2. `?sig=` **短时签名**（5 分钟、绑定 fileId）—— window.open / `<img src>`
+     *     这类**浏览器不会带自定义 header** 的场景走这条。
+     *     签名绑定 fileId：拿到 A 文件的签名 URL 不能改去下B 文件。
+     *
+     * 兼容说明：query 里的 actor/roles **仅在免登未配置时**作为开发兜底，
+     * 生产已配钉钉免登（enabled=true），走的一定是上面两条可信路径。
+     */
+    let actor = await resolveActor(req);
+    if (!actor) {
+      const sig = url.searchParams.get('sig');
+      if (sig) {
+        const v = verifyFileToken(sig);
+        // ⚠️ 必须比对 fileId：签名只证明「这个签名对应哪个文件」，不证明它对当前路径有效
+        if (v && v.fileId === id) {
+          const current = await state.read();
+          const row = (current?.data?.users ?? []).find((u) => u.union_id === v.uid);
+          if (row) actor = { name: row.name, roles: row.roles ?? [] };
+        }
+      }
+    }
+    const authFallback = !actor && !dingtalkConfig().enabled;
+    if (authFallback) {
+      actor = {
+        name: url.searchParams.get('actor') || '',
+        roles: (url.searchParams.get('roles') || '').split(',').filter(Boolean),
+      };
+    }
+
     if (req.method === 'DELETE') {
-      const actor = { name: url.searchParams.get('actor') || '', roles: (url.searchParams.get('roles') || '').split(',').filter(Boolean) };
-      const allowed = meta.uploaded_by === actor.name || actor.roles.includes('ORGANIZER') || actor.roles.includes('ADMIN');
-      if (!allowed) return sendJson(res, 403, { ok: false, error: '仅上传者本人 / 组织者 / 管理员可删除' });
+      if (!canDeleteFile(meta, actor)) {
+        /** 未登录时给明确提示，别让用户以为文件不存在 */
+        if (!actor) {
+          return sendJson(res, 401, {
+            ok: false,
+            error: '会话已过期，请重新通过钉钉登录后再删除文件',
+            code: 'NO_SESSION',
+          });
+        }
+        return sendJson(res, 403, { ok: false, error: '仅上传者本人 / 组织者 / 管理员可删除' });
+      }
       meta.is_deleted = true;
       await repo.writeMeta(meta);
       await repo.del(meta.object_key).catch(() => undefined);
+      console.log(`[files] 删除 ${id} by ${actor.name}(${actor.roles.join(',') || '无角色'})`);
       return sendJson(res, 200, { ok: true, id });
     }
 
     if (req.method === 'GET') {
-      const actor = { name: url.searchParams.get('actor') || '', roles: (url.searchParams.get('roles') || '').split(',').filter(Boolean) };
+      /**
+       * 口径（见 canDownload）：公开内容（案例附件 / Skill 包 / 帖子图片）全员可下载，
+       * 因此**不带token 也能下** —— 否则「别人发在帖子里的图片」会加载不出来。
+       * 涉及个人交付物（SUBMIT / BOUNTY_SOLUTION）的必须有可信身份。
+       */
       if (!canDownload(meta, actor)) {
+        if (!actor) {
+          return sendJson(res, 401, {
+            ok: false,
+            error: '会话已过期，请重新通过钉钉登录后再下载文件',
+            code: 'NO_SESSION',
+          });
+        }
         return sendJson(res, 403, { ok: false, error: '该文件不在你的可见范围内' });
       }
       let buf;
