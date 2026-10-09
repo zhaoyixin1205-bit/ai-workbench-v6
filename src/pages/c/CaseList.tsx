@@ -20,6 +20,12 @@ export default function CaseList() {
   const nav = useNavigate();
   const { message } = AntApp.useApp();
   const [customOpen, setCustomOpen] = useState(false);
+  /**
+   * V8.3-10.09：选题详情浮层。
+   * 不新建 /topics/:id 详情页 —— 选题与案例是两批独立内容，选题的 `case_id`
+   * 指向早已不存在的旧 id（线上 21 条全部对不上）且全代码库零使用，属历史废弃字段。
+   */
+  const [topicView, setTopicView] = useState<Topic | null>(null);
   const [customForm] = Form.useForm();
   const [track, setTrack] = useState<string>('全部');
   const [kw, setKw] = useState('');
@@ -332,7 +338,24 @@ export default function CaseList() {
             return (
               <div
                 key={t.id}
-                style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '14px 0', borderBottom: `1px solid ${COLOR.borderLight}` }}
+                /**
+                 * V8.3-10.09：整行可点开详情浮层（与悬赏池卡片可点对齐）。
+                 * 行内有「选它」按钮，故用 role=link + 按钮 stopPropagation，不能套 <a>。
+                 */
+                role="link"
+                tabIndex={0}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 16, padding: '14px 0',
+                  borderBottom: `1px solid ${COLOR.borderLight}`,
+                  cursor: 'pointer',
+                }}
+                onClick={() => setTopicView(t)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setTopicView(t);
+                  }
+                }}
               >
                 <TrackTag track={t.track} />
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -370,7 +393,11 @@ export default function CaseList() {
                   <Button
                     size="small" type={mine ? 'default' : 'primary'}
                     disabled={full && !mine}
-                    onClick={() => pickTopic(t)}
+                    onClick={(e) => {
+                      /* V8.3-10.09：不拦会连带触发整行的「打开详情」 */
+                      e.stopPropagation();
+                      pickTopic(t);
+                    }}
                   >
                     {mine ? '继续提报' : full ? '已满' : '选它'}
                   </Button>
@@ -380,6 +407,71 @@ export default function CaseList() {
           })}
         </Card>
       )}
+
+      {/* V8.3-10.09：选题详情浮层（点选题行打开，不新建路由，理由见 topicView 声明处注释） */}
+      <Modal
+        open={!!topicView}
+        title="选题详情"
+        onCancel={() => setTopicView(null)}
+        footer={[
+          <Button key="c" onClick={() => setTopicView(null)}>关闭</Button>,
+          topicView && topicView.status !== '已关闭' && (() => {
+            const n = pickedCount(topicView.id);
+            const mine = mineSelected(topicView.id);
+            const limit = multiSelect ? (topicView.select_limit ?? 0) : 1;
+            const full = limit > 0 && n >= limit;
+            return (
+              <Button
+                key="p"
+                type="primary"
+                disabled={full && !mine}
+                onClick={() => {
+                  pickTopic(topicView);
+                  setTopicView(null);
+                }}
+              >
+                {mine ? '继续提报' : full ? '已满' : '选它'}
+              </Button>
+            );
+          })(),
+        ].filter(Boolean)}
+      >
+        {topicView && (
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            <Typography.Text strong style={{ fontSize: 16, lineHeight: 1.5, overflowWrap: 'anywhere' }}>
+              {topicView.title}
+            </Typography.Text>
+            <Space size={6} wrap>
+              <TrackTag track={topicView.track} />
+              <Tag style={{ marginInlineEnd: 0 }}>难度 {topicView.difficulty}</Tag>
+              <Tag style={{ marginInlineEnd: 0 }}>{topicView.status}</Tag>
+              {pickedCount(topicView.id) > 0 && (
+                <Tag color="blue" style={{ marginInlineEnd: 0 }}>
+                  已被 {pickedCount(topicView.id)} 人选中
+                  {(multiSelect ? (topicView.select_limit ?? 0) : 1) === 0
+                    ? '（可重复选）'
+                    : `（上限 ${multiSelect ? (topicView.select_limit ?? 0) : 1}）`}
+                </Tag>
+              )}
+            </Space>
+            <div style={{ fontSize: 13, color: COLOR.text }}>
+              <b>期望产出：</b>
+              {topicView.expected_output || '未填写'}
+            </div>
+            {/* V6.0 CR-17：自定义选题的可见性要说清楚，避免以为别人也能看到 */}
+            {topicView.is_custom && (
+              <div style={{ fontSize: 13, color: COLOR.text }}>
+                <b>可见性：</b>
+                {topicView.visibility === 'PRIVATE' ? '自定义选题 · 仅本人与组织者可见' : '自定义选题 · 已公开给全员'}
+              </div>
+            )}
+            <div style={{ fontSize: 13, color: COLOR.text }}>
+              <b>标签：</b>
+              {(topicView.tags ?? []).length === 0 ? '未分类' : (topicView.tags ?? []).map((x) => `#${x}`).join('  ')}
+            </div>
+          </Space>
+        )}
+      </Modal>
 
       {/* V6.0 CR-17：自定义选题弹窗 */}
       <Modal

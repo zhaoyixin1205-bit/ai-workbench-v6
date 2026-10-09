@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { EyeOutlined, ThunderboltOutlined, FireOutlined, PlusOutlined } from '@ant-design/icons';
 import { useStore } from '@/store/store';
 import { TRACKS } from '@/mock/types';
-import type { Track } from '@/mock/types';
+import type { Topic, Track } from '@/mock/types';
 import { useCaseFilters } from '@/hooks/useCaseFilters';
 import { useTopicPick } from '@/hooks/useTopicPick';
 import { Dialog } from '@/components/v2/Dialog';
@@ -39,6 +39,15 @@ export default function CaseListV2() {
   /** V6.0 CR-17：自定义选题弹窗（入口受 flags.topicCustom 控制，关闭 ≡ 旧版无此入口） */
   const [customOpen, setCustomOpen] = useState(false);
   const [customForm] = Form.useForm();
+  /**
+   * V8.3-10.09：选题详情浮层。
+   *
+   * 为什么不新建 /topics/:id 详情页：选题与案例是**两批独立内容**（标题完全不同），
+   * 选题里的 `case_id` 字段指向的是早已不存在的旧 id（线上21 条全部对不上），
+   * 且全代码库零使用 —— 属历史废弃字段，不能拿它跳案例详情。
+   * 所以选题的「查看详情」用浮层承载，不引入新路由。
+   */
+  const [topicView, setTopicView] = useState<Topic | null>(null);
 
   const submitCustom = (vals: { title: string; track: Track; expected_output?: string }) => {
     createCustomTopic(vals);
@@ -237,7 +246,25 @@ export default function CaseListV2() {
               const limit = f.multiSelect ? (t.select_limit ?? 0) : 1;
               const full = limit > 0 && n >= limit;
               return (
-                <div className="wb2-li" key={t.id}>
+                /**
+                 * V8.3-10.09：整行可点开详情浮层（与悬赏池的卡片可点对齐）。
+                 * 用 div + role=link 而不是 <Link>：行内有「选它」按钮，
+                 * 套 <a> 会被导航吞掉 —— 按钮处显式 stopPropagation。
+                 */
+                <div
+                  className="wb2-li"
+                  key={t.id}
+                  role="link"
+                  tabIndex={0}
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => setTopicView(t)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setTopicView(t);
+                    }
+                  }}
+                >
                   <span className="wb2-li-dot" style={{ background: trackVar(t.track) }} />
                   <div className="wb2-li-m">
                     <div className="wb2-li-t">
@@ -271,7 +298,11 @@ export default function CaseListV2() {
                         size="small"
                         type={mine ? 'default' : 'primary'}
                         disabled={full && !mine}
-                        onClick={() => pickTopic(t)}
+                        onClick={(e) => {
+                          /* V8.3-10.09：不拦会连带触发整行的「打开详情」 */
+                          e.stopPropagation();
+                          pickTopic(t);
+                        }}
                       >
                         {mine ? '继续提报' : full ? '已满' : '选它'}
                       </Button>
@@ -284,6 +315,81 @@ export default function CaseListV2() {
         )}
         </>
       )}
+
+      {/* V8.3-10.09：选题详情浮层（点选题行打开，不新建路由，理由见 topicView 声明处注释） */}
+      <Dialog
+        open={!!topicView}
+        title="选题详情"
+        onCancel={() => setTopicView(null)}
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <Button onClick={() => setTopicView(null)}>关闭</Button>
+            {topicView && topicView.status !== '已关闭' && (() => {
+              const n = pickedCount(topicView.id);
+              const mine = mineSelected(topicView.id);
+              const limit = f.multiSelect ? (topicView.select_limit ?? 0) : 1;
+              const full = limit > 0 && n >= limit;
+              return (
+                <Button
+                  type="primary"
+                  disabled={full && !mine}
+                  onClick={() => {
+                    pickTopic(topicView);
+                    setTopicView(null);
+                  }}
+                >
+                  {mine ? '继续提报' : full ? '已满' : '选它'}
+                </Button>
+              );
+            })()}
+          </div>
+        }
+      >
+        {topicView && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--wb-space-4)' }}>
+            <div>
+              <div style={{ fontSize: 17, fontWeight: 700, lineHeight: 1.5, overflowWrap: 'anywhere' }}>
+                {topicView.title}
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                <span className="wb2-tag">
+                  <i className="d" style={{ background: trackVar(topicView.track) }} />
+                  {topicView.track}
+                </span>
+                <span className="wb2-tag">难度 {topicView.difficulty}</span>
+                <span className="wb2-tag">{topicView.status}</span>
+                {pickedCount(topicView.id) > 0 && (
+                  <span className="wb2-tag">
+                    已被 {pickedCount(topicView.id)} 人选中
+                    {(f.multiSelect ? (topicView.select_limit ?? 0) : 1) === 0
+                      ? '（可重复选）'
+                      : `（上限 ${f.multiSelect ? (topicView.select_limit ?? 0) : 1}）`}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="wb2-kv" style={{ fontSize: 'var(--wb-fs-body)' }}>
+              <b style={{ flexShrink: 0 }}>期望产出</b>
+              <span>{topicView.expected_output || '未填写'}</span>
+            </div>
+            {/* V6.0 CR-17：自定义选题的可见性要说清楚，避免以为别人也能看到 */}
+            {topicView.is_custom && (
+              <div className="wb2-kv" style={{ fontSize: 'var(--wb-fs-body)' }}>
+                <b style={{ flexShrink: 0 }}>可见性</b>
+                <span>
+                  {topicView.visibility === 'PRIVATE'
+                    ? '自定义选题 · 仅本人与组织者可见'
+                    : '自定义选题 · 已公开给全员'}
+                </span>
+              </div>
+            )}
+            <div className="wb2-kv" style={{ fontSize: 'var(--wb-fs-body)' }}>
+              <b style={{ flexShrink: 0 }}>标签</b>
+              <span>{(topicView.tags ?? []).length === 0 ? '未分类' : (topicView.tags ?? []).map((x) => `#${x}`).join('  ')}</span>
+            </div>
+          </div>
+        )}
+      </Dialog>
 
       {/* V6.0 CR-17：自定义选题弹窗 */}
       <Dialog
