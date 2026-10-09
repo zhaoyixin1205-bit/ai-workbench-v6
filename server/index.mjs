@@ -349,14 +349,53 @@ async function handle(req, res) {
     return sendJson(res, 200, { ok: true, message: '已清空服务端数据，刷新后按种子重新初始化' });
   }
 
-  /* ---- 上传：POST /api/files/upload?biz_type=&biz_id=&name=&uploaded_by= ---- */
+  /* ---- 上传：POST /api/files/upload?biz_type=&biz_id=&name= ---- */
   if (pathname === '/api/files/upload' && req.method === 'POST') {
     const q = url.searchParams;
     const bizType = q.get('biz_type') || '';
     const bizId = q.get('biz_id') || '';
     const name = q.get('name') || 'unnamed';
-    const uploadedBy = q.get('uploaded_by') || '';
-    const roles = (q.get('roles') || '').split(',').filter(Boolean);
+
+    /**
+     * V8.3-10.09 加登录态校验（运营方 14:36 拍板 **B：只要登录态**）。
+     *
+     * 为什么只要登录态、不做角色限制：员工要给自己提报的作业传附件、
+     * 给认领的悬赏方案传补充资料 —— 限制到组织者会把正常业务挡死。
+     * 所以判定是「**登录即可传**」，挡的只是未登录的陌生人。
+     *
+     * ⚠️ 与 /api/state/reset 一样按免登配置分叉：生产已配免登（enabled=true），
+     * 线上是实打实生效的；本地开发无身份体系，放行但打警告——
+     * 不能为开发方便把生产的门也拆了。
+     */
+    let meRow = null;
+    if (dingtalkConfig().enabled) {
+      const token = readToken(req);
+      const uid = token ? verifyToken(token) : null;
+      if (!uid) {
+        return sendJson(res, 401, {
+          ok: false,
+          error: '会话已过期，请重新通过钉钉登录后再上传文件',
+          code: 'NO_SESSION',
+        });
+      }
+      const current = await state.read();
+      meRow = (current?.data?.users ?? []).find((u) => u.union_id === uid);
+      if (!meRow) {
+        return sendJson(res, 403, { ok: false, error: '该成员已不在名单内', code: 'NOT_IN_WORKBENCH' });
+      }
+    } else {
+      console.warn('[files] ⚠️ 钉钉免登未启用，本次上传未被鉴权拦截（生产环境请检查 DINGTALK 配置）');
+    }
+
+    /**
+     * 上传者身份改从**身份库**取，不再信 query 里的 uploaded_by ——
+     * 那是客户端传来的，任何人都能自称「组织者」。与 reset 同一个道理。
+     *
+     * 顺带说明：原代码还有一个 `roles`（从 query 的 roles= 解析），
+     * 但它声明后**从未被消费**（newFileMeta 不收roles）—— 是个会误导人的死变量，
+     * 而且看起来像"客户端可以指定角色"。已一并删掉。
+     */
+    const uploadedBy = meRow ? meRow.name : (q.get('uploaded_by') || '');
 
     if (!['CASE_SKILL', 'CASE_ATTACH', 'SUBMIT', 'BOUNTY_SOLUTION', 'POST_ATTACH'].includes(bizType)) {
       return sendJson(res, 400, { ok: false, error: `biz_type 非法：${bizType}` });

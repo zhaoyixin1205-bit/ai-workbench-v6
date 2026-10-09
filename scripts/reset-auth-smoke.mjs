@@ -119,24 +119,75 @@ check('B6 失败要报 error 而不是 success（原来无条件报「已重置�
   return /message\.error/.test(seg2[0]) ? true : "被拒时仍提示「已重置」——用户会以为成功然后发现数据没变";
 });
 
-/* ---------- C组：同类端点体检（如实记录，不计入通过率） ---------- */
+/* ---------- C1组：文件下载/删除的「伪鉴权」（🔴 已确认存在，待拍板） ---------- */
 /**
- * upload 端点**当前也没有鉴权** —— 但这超出运营方本次授权范围（只说了 reset 加校验），
- * 按「不擅自扩大改动」原则不在本轮修。
+ * 现状：`GET|DELETE /api/files/:id` 的权限判断**完全信任 query 参数**里的
+ *   `actor` / `roles`（server/index.mjs 的 canDownload 与 DELETE 分支）：
+ *     canDownload: meta.uploaded_by === actor.name || actor.roles.includes('ORGANIZER') || ...
  *
- * 这里刻意用 results.push 而不 check()：它是**现状记录**不是待办断言。
- * 写进 check() 会让「修好reset」这件事因为一个没授权的问题而显示红，掩盖真实状态。
- * 将来运营方拍板要修时，把这里改成 check 即可。
+ * 也就是说：任何人传 `?roles=ORGANIZER&actor=任何人` 就能**下载或删除任意文件**。
+ * 这比 upload 无鉴权严重得多（可读、可删他人文件）。
+ *
+ * ⚠️ 这条写成**真实断言**而不是"现状记录"：漏洞确实存在，就该红。
+ * 若将来运营方拍板修好，把 ok 条件反过来即可（要求不再信任 query）。
+ * 修法建议：与 upload 同款——从 X-WB-Token 解出身份，actor 不再从 query 取。
  */
-{
-  const seg2 = /pathname === '\/api\/files\/upload'[\s\S]{0,900}/.exec(srv);
-  const has = seg2 ? /readToken\(req\)/.test(seg2[0]) : null;
-  results.push({
-    ok: true,
-    name: 'C1 [现状记录] upload 端点当前无鉴权 —— 需运营方单独拍板',
-    detail: has ? '已有鉴权' : '任何人都可调；不在本次授权范围，已记录在 TEST_REPORT 待办',
-  });
-}
+check('C1 🔴 文件下载/删除不得信任 query 里的 actor/roles（可越权删任意文件）', () => {
+  const trustsClientRoles = /searchParams\.get\('actor'\)/.test(srv)
+    && (/actor\.roles\.includes\('ORGANIZER'\)|actor\?\.roles\?\.includes\('ORGANIZER'\)/.test(srv));
+  if (trustsClientRoles) {
+    return '🔴 确认存在：canDownload / DELETE 用 query 的 actor+roles 判权限 —— '
+      + '任何人可传 ?roles=ORGANIZER 下载或删除任意文件。需单独拍板修法（不在 14:36 授权范围）';
+  }
+  return true;
+});
+
+/* ---------- C2组：upload 登录态校验（运营方 14:36 拍板 B：只要登录态） ---------- */
+/**
+ * upload 段落的**实际长度约 3600 字符**（加了鉴权块之后），
+ * 上限必须给够 —— 上次设 3200 导致整段匹配不到，7 条断言全部误报"未找到端点"。
+ * 这类"用正则切源码"的断言，段长上限要留余量，否则改一次代码就集体失效。
+ */
+const upSeg = /if \(pathname === '\/api\/files\/upload'[\s\S]{0,4200}?\n  \}/.exec(srv);
+
+check('C2 upload 必须校验登录态（未登录的挡掉）', () => {
+  if (!upSeg) return '未找到 upload 端点';
+  const s = upSeg[0];
+  return /readToken\(req\)/.test(s) && /verifyToken/.test(s) ? true : 'upload 无 token 校验 —— 任何人可传文件';
+});
+check('C3 🔴 未登录上传必须 401（不能静默放行）', () => {
+  if (!upSeg) return '未找到 upload 端点';
+  return /sendJson\(res,\s*401/.test(upSeg[0]) && /NO_SESSION/.test(upSeg[0])
+    ? true
+    : '缺 401 / NO_SESSION 分支';
+});
+check('C4 🟢 **不做角色限制**（B 方案：员工要传作业/方案附件，限组织者会挡死业务）', () => {
+  if (!upSeg) return '未找到 upload 端点';
+  const s = upSeg[0];
+  // 允许的判据：只判身份不判角色；若出现「上传需要 ORGANIZER」这类角色门则违反B 方案
+  const hasRoleGate = /上传.*ORGANIZER|upload.*requires.*ORGANIZER|needsRole/.test(s);
+  return hasRoleGate === false
+    ? true
+    : 'upload 加了角色限制 → 违反 B 方案，普通员工无法传作业附件';
+});
+check('C5 🔴 uploaded_by 取身份库真名，不信 query（可自称组织者）', () => {
+  if (!upSeg) return '未找到 upload 端点';
+  return /uploadedBy = meRow \? meRow\.name/.test(upSeg[0])
+    ? true
+    : "仍信 query 里的 uploaded_by —— 客户端可任意自称身份";
+});
+check('C6 按免登配置分叉，未配时放行但打警告', () => {
+  if (!upSeg) return '未找到 upload 端点';
+  const s = upSeg[0];
+  if (!/dingtalkConfig\(\)\.enabled/.test(s)) return '未按免登配置分叉 —— 本地开发会绕开门禁';
+  return /console\.warn/.test(s.split('dingtalkConfig().enabled')[1] || '')
+    ? true
+    : '未配免登的分支没有警告 —— 生产误配时静默裸奔';
+});
+check('C7 删掉客户端 roles 死变量（声明后无人消费，却看起来像"可指定角色"）', () => {
+  if (!upSeg) return '未找到 upload 端点';
+  return /const roles = meRow/.test(upSeg[0]) ? '❌ 死变量还在（newFileMeta 并不消费它）' : true;
+});
 
 /* ---------- D组：反向自检 ---------- */
 check('D1 反向：删掉角色校验，A3 必须失败', () => {
