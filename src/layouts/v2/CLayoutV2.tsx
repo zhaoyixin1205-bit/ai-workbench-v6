@@ -248,11 +248,8 @@ export default function CLayoutV2() {
       {/* ================= 顶栏 ================= */}
       <header className="wb2-hd only-pc">
         <button className="wb2-logo" onClick={() => nav('/')}>
-          <span className="wb2-logo-mark">W</span>
-          <span>
-            <span className="wb2-logo-name">AI 赋能工作台</span>
-            <span className="wb2-logo-sub">WorkBuddy · 中小微事业群</span>
-          </span>
+          <span className="wb2-logo-mark" style={{ fontSize: 12, fontWeight: 700 }}>AI</span>
+          <span className="wb2-logo-name">AI 赋能工作台</span>
         </button>
 
         <nav className="wb2-nav">
@@ -312,7 +309,7 @@ export default function CLayoutV2() {
       {/* 移动端顶栏 */}
       <header className="wb2-hd only-mobile" style={{ height: 52 }}>
         <button className="wb2-logo" onClick={() => nav('/')}>
-          <span className="wb2-logo-mark">W</span>
+          <span className="wb2-logo-mark" style={{ fontSize: 12, fontWeight: 700 }}>AI</span>
           <span className="wb2-logo-name">AI 赋能工作台</span>
         </button>
         <div className="wb2-hd-right">

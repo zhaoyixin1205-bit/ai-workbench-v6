@@ -79,12 +79,9 @@ export default function CLayout() {
           <div style={{
             width: 32, height: 32, borderRadius: 10, background: GRADIENT.primary,
             color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontWeight: 800, fontSize: 16, boxShadow: SHADOW.button,
-          }}>W</div>
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <Typography.Text strong style={{ fontSize: 16, whiteSpace: 'nowrap', lineHeight: 1.2 }}>AI 赋能工作台</Typography.Text>
-            <Typography.Text type="secondary" style={{ fontSize: 11, lineHeight: 1.2, color: COLOR.textMuted }}>WorkBuddy · 中小微事业群</Typography.Text>
-          </div>
+            fontWeight: 800, fontSize: 14, letterSpacing: '0.5px', boxShadow: SHADOW.button,
+          }}>AI</div>
+          <Typography.Text strong style={{ fontSize: 16, whiteSpace: 'nowrap', lineHeight: 1.2 }}>AI 赋能工作台</Typography.Text>
         </div>
 
         <nav className="only-pc" style={{ flex: 1, display: 'flex', gap: 4, alignItems: 'center', minWidth: 0, overflow: 'hidden' }}>
