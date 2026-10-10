@@ -421,7 +421,12 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
           render: (_: unknown, __: unknown, index: number) => <span className="wb2-num">{seqNo(index)}</span>,
         },
         {
-          title: '作业类型', ellipsis: true,
+          /**
+           * V8.3-10.10不给 ellipsis —— 作业类型名是本表最长的业务字段
+           * （「2026 Q4 AI 应用实践作业」），截断成「2026...」等于没改。
+           * 用 minWidth + 表格横向滚动，让它完整可读。
+           */
+          title: '作业类型', width: 200,
           render: (_: unknown, r: AssignmentSubmit) => typeNameOf(r, db.assignmentTypes),
         },
         {
@@ -502,6 +507,7 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
   const historyTable = (
     <Table
       size="small" rowKey="id" pagination={{ pageSize: 6 }} dataSource={myHistory}
+      scroll={{ x: 820 }}
       locale={{
         emptyText: (
           <div className="wb2-empty">
@@ -517,7 +523,12 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
           render: (_: unknown, __: ScoreResult, index: number) => <span className="wb2-num">{seqNo(index)}</span>,
         },
         {
-          title: '作业类型', ellipsis: true,
+          /**
+           * V8.3-10.10不给 ellipsis —— 作业类型名是本表最长的业务字段
+           * （「2026 Q4 AI 应用实践作业」），截断成「2026...」等于没改。
+           * 用 minWidth + 表格横向滚动，让它完整可读。
+           */
+          title: '作业类型', width: 200,
           render: (_: unknown, r: ScoreResult) =>
             typeNameOf(db.submits.find((s) => s.id === r.target_id), db.assignmentTypes),
         },
