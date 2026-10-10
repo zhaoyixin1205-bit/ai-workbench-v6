@@ -501,6 +501,100 @@ async function handle(req, res) {
     });
   }
 
+  /* ---- AI 评分：配置探针（前端据此决定「本地规则引擎」还是「服务端真实模型」） ---- */
+  if (pathname === '/api/ai/config' && req.method === 'GET') {
+    /** 不泄露密钥，只暴露「是否已配置可用模型」与模型名，供前端切换评分来源 */
+    return sendJson(res, 200, {
+      ok: true,
+      ready: aiScorerReady(),
+      model: process.env.AI_MODEL || 'hy3',
+    });
+  }
+
+  /* ---- AI 评分（自动线）：服务端批量给「待评分」提报打真实模型分 ---- */
+  if (pathname === '/api/ai/auto-score' && req.method === 'POST') {
+    /**
+     * V8.3-10.10「连上自动打分线」：
+     * 前端流水线把 AI 评分这一步交给服务端真实模型（密钥只留服务端，浏览器不碰）。
+     * 权限：免登开启时须有会话（任意登录用户即可，评分是系统动作，不暴露数据）；
+     * 本地开发（无免登）放行。
+     * 逐条打分、逐条落库（增量写，避免一次长请求中途失败丢掉全部进度）。
+     */
+    if (dingtalkConfig().enabled) {
+      const token = readToken(req);
+      const uid = token ? verifyToken(token) : null;
+      if (!uid) return sendJson(res, 401, { ok: false, error: '会话已过期，请重新通过钉钉登录', code: 'NO_SESSION' });
+    }
+    if (!aiScorerReady()) {
+      /** 服务端没配模型：前端会走本地规则引擎，这里直接放行（不报错，避免前端反复重试） */
+      return sendJson(res, 200, { ok: true, scored: 0, degraded: 0, skipped: true });
+    }
+
+    const cur = await state.read();
+    const data = cur?.data ?? {};
+    const pending = (data.submits ?? []).filter((s) => s.status === 'SUBMITTED' && s.ai_score === undefined);
+    if (pending.length === 0) return sendJson(res, 200, { ok: true, scored: 0, degraded: 0 });
+
+    let scored = 0;
+    let degraded = 0;
+    for (const s of pending) {
+      const card = (data.scoreCards ?? []).find(
+        (c) => !c.is_deleted && c.version === s.score_card_version && c.status === '启用',
+      ) ?? (data.scoreCards ?? []).find((c) => !c.is_deleted && c.status === '启用');
+      if (!card || (card.dimensions ?? []).length === 0) continue;
+
+      const r = await scoreWithModel({ submit: s, card, force: true });
+      const resultId = `SR-${s.id}-AI-AUTO`;
+      let attempt = 0;
+      while (attempt < 3) {
+        const c = await state.read();
+        const d = c?.data ?? {};
+        const nextResults = [
+          {
+            id: resultId,
+            target_type: 'submit',
+            target_id: s.id,
+            card_id: card.id,
+            card_version: card.version,
+            source: 'AI',
+            dim_scores: r.dimScores,
+            total: r.total,
+            reason: r.reason,
+            scorer_union_id: 'AI',
+            scorer_name: r.scorerName,
+            created_at: new Date().toISOString().slice(0, 16).replace('T', ' '),
+            ai_reasons: r.ok ? (r.reasons ?? null) : null,
+            ai_summary: r.ok ? (r.summary ?? '') : '',
+            ai_model: r.model ?? null,
+            ai_degraded: !!r.degraded,
+          },
+          ...(d.scoreResults ?? []).filter(
+            (x) => !(x.target_type === 'submit' && x.target_id === s.id && x.source === 'AI'),
+          ),
+        ];
+        const nextSubmits = (d.submits ?? []).map((x) => (
+          x.id === s.id ? { ...x, ai_score: r.total, status: 'AI_SCORED' } : x
+        ));
+        const writeData = { ...d, scoreResults: nextResults, submits: nextSubmits };
+        if (dingtalkConfig().enabled) {
+          const token = readToken(req);
+          const uid = token ? verifyToken(token) : null;
+          const me = (d.users ?? []).find((u) => u.union_id === uid);
+          if (me) mergeProtected(d, writeData, me);
+        }
+        const wr = await state.write(writeData, c?.version);
+        if (wr.ok) {
+          scored += 1;
+          if (r.degraded) degraded += 1;
+          break;
+        }
+        attempt += 1;
+      }
+    }
+    console.log(`[ai] 自动打分线完成：scored=${scored} degraded=${degraded}`);
+    return sendJson(res, 200, { ok: true, scored, degraded });
+  }
+
   /* ---- AI 评分（手动批量）：导出待评作业 JSON ---- */
   if (pathname === '/api/ai/export-submissions' && req.method === 'GET') {
     /**

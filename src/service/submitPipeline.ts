@@ -417,6 +417,12 @@ export function pushStage(
 export interface PipelineOptions {
   /** 时间戳字符串（留空前自动取当前时间） */
   at?: string;
+  /**
+   * V8.3-10.10：服务端是否已配置真实 AI 评分模型。
+   * true → 本地不再用规则引擎打分（交给服务端 /api/ai/auto-score，密钥不出浏览器）；
+   * 缺省 false → 沿用本地规则引擎（本地开发 / 服务端未配密钥时行为不变）。
+   */
+  aiScorerReady?: boolean;
 }
 
 export interface PipelineResult {
@@ -467,6 +473,12 @@ export function runSubmitPipeline(db: DB, opts?: PipelineOptions): PipelineResul
 
     /* —— 步骤 1：AI 自动评分 SUBMITTED → AI_SCORED —— */
     if (s.status === 'SUBMITTED') {
+      /**
+       * V8.3-10.10：服务端已配置真实模型时，本地规则引擎这一步让位给服务端，
+       * 只把提报留作「待服务端打分」；服务端打分后状态转为 AI_SCORED，再走下面推评委。
+       * 这样既不让密钥进浏览器，也不会出现「本地规则分 + 服务端模型分」两份打架。
+       */
+      if (opts?.aiScorerReady) continue;
       const card = resolveScoreCard(db, s);
       if (!card) {
         detail.push(`${s.code} 未匹配到评分卡，跳过 AI 评分`);

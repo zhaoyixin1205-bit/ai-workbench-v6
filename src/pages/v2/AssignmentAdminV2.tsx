@@ -20,6 +20,7 @@ import PeriodAdmin from '@/components/PeriodAdmin';
 import AssignmentParticipants from '@/components/AssignmentParticipants';
 /* V8.3-10.07：补跑 AI 评分走与自动流水线同一份算法（避免前后台两个分） */
 import { aiRescore, needsAiScore } from '@/service/submitPipeline';
+import { serverRescore } from '@/service/stateService';
 /* V8.3-10.10：手动 AI 评分闭环（导出待评作业 → 外部 AI 打分 → 导入回写） */
 import AiScoreManual from '@/components/AiScoreManual';
 /* V8.4-10.07：推送改由组织者手动发起（系统默认不自动打扰任何人）；与 v1 逐行对等 */
@@ -49,7 +50,7 @@ type BountyFlowTarget = {
  */
 
 export default function AssignmentAdminV2() {
-  const { db, setDb, log, campaign, scopeRows, me, flags } = useStore();
+  const { db, setDb, log, campaign, scopeRows, me, flags, aiScorerReady, pullRemote } = useStore();
   /** V6.0 CR-19：状态机 V2 开关（关闭=不出现 COMPLETED / CONSENSUS 与公示标记位） */
   const flowV2 = flags.submitFlowV2 !== false;
   const [selected, setSelected] = useState<string[]>([]);
@@ -161,7 +162,15 @@ export default function AssignmentAdminV2() {
    * V8.3-10.07：单条「补跑 AI 评分」（FR9）—— 与 v1 `AssignmentAdmin` 逐行对等
    * 旧按钮只改状态不出分，作业带着空的 AI 分进了评委视野；现作为自动流水线的异常兜底入口。
    */
-  const rescore = (r: { id: string; code: string }) => {
+  const rescore = async (r: { id: string; code: string }) => {
+    /** V8.3-10.10：服务端已配真实模型时，补跑走服务端真实模型；否则本地规则引擎 */
+    if (aiScorerReady) {
+      const res = await serverRescore(r.id);
+      if (!res || !res.ok) { message.error(res?.error ?? '补跑失败'); return; }
+      message.success(`已用模型补跑 AI 评分：${res.total} 分${res.degraded ? '（降级：规则引擎）' : ''}。推送评委请勾选后点「推送评委复核」`);
+      void pullRemote();
+      return;
+    }
     const res = aiRescore(db, r.id, me.name, `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`);
     if (!res.ok || !res.patch) { message.error(res.error ?? '补跑失败'); return; }
     setDb((p) => ({ ...p, ...res.patch }));

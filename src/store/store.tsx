@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { fetchState, fetchStateVersion, pushState, resetRemoteState } from '@/service/stateService';
+import { fetchState, fetchStateVersion, pushState, resetRemoteState, fetchAiConfig, autoScorePending } from '@/service/stateService';
 import type { ReactNode } from 'react';
 import * as org from '@/mock/seedOrg';
 import { deptSubtreeUnion } from '@/service/deptTree';
@@ -332,6 +332,11 @@ interface Ctx {
   hasRole: (...roles: Role[]) => boolean;
   flags: FeatureFlags;
   setFlags: React.Dispatch<React.SetStateAction<FeatureFlags>>;
+  /**
+   * V8.3-10.10：服务端是否已配置真实 AI 评分模型（qwen 等）。
+   * true → 自动线把 AI 评分交给服务端真实模型（密钥只在服务端）；false → 本地规则引擎兜底。
+   */
+  aiScorerReady: boolean;
   campaign: Campaign;
   /** V7.1：当前届次 id（个人偏好，存 localStorage）。为空时由 status 派生 */
   currentCampaignId: string;
@@ -448,6 +453,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
     return DEFAULT_FLAGS;
   });
+
+  /**
+   * V8.3-10.10：服务端是否配置了真实 AI 评分模型。
+   * true → 自动线把 AI 评分交给服务端真实模型（密钥只在服务端，浏览器不碰）；
+   * false → 沿用前端本地规则引擎（本地开发 / 服务端未配密钥时的兜底，行为不变）。
+   */
+  const [aiScorerReady, setAiScorerReady] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    fetchAiConfig().then((c) => { if (!cancelled) setAiScorerReady(c.ready); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   // 「我是谁」和「功能开关」仍然留在本地：身份切换是个人操作偏好，不该被别人同步走。
   useEffect(() => {
@@ -597,10 +614,29 @@ const meMissing = me.union_id === '';
    * 所以这里的重复执行不会重复出分、不会重复推送。
    * ------------------------------------------------------------------ */
   useEffect(() => {
-    const r = runSubmitPipeline(db);
+    const r = runSubmitPipeline(db, { aiScorerReady });
     if (!r) return;
     setDb((prev) => ({ ...prev, ...r.patch }));
-  }, [db]);
+  }, [db, aiScorerReady]);
+
+  /* ------------------------------------------------------------------
+   * V8.3-10.10「连上自动打分线」：服务端已配真实模型时，由服务端给「待评分」提报打分。
+   *
+   * 前端本地规则引擎这一步让位给服务端（密钥不出浏览器）。
+   * 用 ref 做并发闸：评分是长请求，避免 8s 轮询反复触发重复打分。
+   * 打分完成后 pullRemote 把 AI_SCORED 拉回，上面的流水线再推进「推评委」。
+   * ------------------------------------------------------------------ */
+  const autoScoringRef = useRef(false);
+  useEffect(() => {
+    if (!aiScorerReady || autoScoringRef.current) return;
+    const pending = (db.submits ?? []).filter((s) => s.status === 'SUBMITTED' && s.ai_score === undefined);
+    if (pending.length === 0) return;
+    autoScoringRef.current = true;
+    autoScorePending().then((r) => {
+      autoScoringRef.current = false;
+      if (r && r.scored > 0) void pullRemote();
+    }).catch(() => { autoScoringRef.current = false; });
+  }, [db, aiScorerReady, pullRemote]);
 
   /* 轮询：只比版本号，变了才拉全量。本地有未落盘改动时跳过，避免吃掉正在编辑的内容 */
   useEffect(() => {
@@ -737,7 +773,7 @@ const meMissing = me.union_id === '';
   );
 
   const value: Ctx = {
-    db, setDb, sync, pullRemote, me, meMissing, authLocked, switchIdentity, switchToRole, hasRole, flags, setFlags,
+    db, setDb, sync, pullRemote, me, meMissing, authLocked, switchIdentity, switchToRole, hasRole, flags, setFlags, aiScorerReady,
     campaign, currentCampaignId, setCurrentCampaignId, hasCampaign,
     resetDemo, visibleUsers, hasTeam, managedDeptIds, scopeRows, log,
   };

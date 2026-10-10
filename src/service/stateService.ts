@@ -170,3 +170,78 @@ export async function resetRemoteState(by: string): Promise<boolean> {
     return false;
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* V8.3-10.10「连上自动打分线」：前端与服务端真实模型的桥                               */
+/* ------------------------------------------------------------------ */
+
+export interface AiConfig {
+  ready: boolean;
+  model: string;
+}
+
+/** 探针：服务端是否配置了真实 AI 评分模型（密钥只留服务端，这里绝不回传密钥） */
+export async function fetchAiConfig(): Promise<AiConfig> {
+  const r = await getJson<{ ok: boolean; ready: boolean; model: string }>('/api/ai/config');
+  if (!r || !r.ok) return { ready: false, model: '' };
+  return { ready: !!r.ready, model: r.model || '' };
+}
+
+/**
+ * 触发服务端批量打分：给所有「SUBMITTED 且无 ai_score」的提报打真实模型分。
+ * 服务端逐条落库，返回实际打出的条数（含降级到规则引擎的条数）。
+ */
+export async function autoScorePending(): Promise<{ ok: boolean; scored: number; degraded?: number } | null> {
+  try {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 300000);
+    const auth = authHeaders();
+    const res = await fetch('/api/ai/auto-score', {
+      method: 'POST',
+      signal: ctl.signal,
+      headers: { 'Content-Type': 'application/json', ...auth.headers },
+      body: '{}',
+    });
+    clearTimeout(timer);
+    if (res.status === 401) {
+      handleUnauthorized(auth.token);
+      return null;
+    }
+    if (!res.ok) return { ok: false, scored: 0 };
+    const body = (await res.json()) as { ok: boolean; scored: number; degraded?: number };
+    return { ok: !!body.ok, scored: Number(body.scored ?? 0), degraded: Number(body.degraded ?? 0) };
+  } catch {
+    return { ok: false, scored: 0 };
+  }
+}
+
+/**
+ * 组织者在后台「补跑 AI 评分」：调用服务端真实模型（与自动线同一份算法），强制重评。
+ * 成功与否由调用方据此决定是 re-pull 还是报错。
+ */
+export async function serverRescore(submitId: string): Promise<{ ok: boolean; total?: number; degraded?: boolean; why?: string; error?: string } | null> {
+  try {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 300000);
+    const auth = authHeaders();
+    const res = await fetch(
+      `/api/ai/score?submit_id=${encodeURIComponent(submitId)}&force=1`,
+      { method: 'POST', signal: ctl.signal, headers: { 'Content-Type': 'application/json', ...auth.headers }, body: '{}' },
+    );
+    clearTimeout(timer);
+    if (res.status === 401) {
+      handleUnauthorized(auth.token);
+      return null;
+    }
+    const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+    if (!res.ok || !body?.ok) return { ok: false, error: String(body?.error ?? `HTTP ${res.status}`) };
+    return {
+      ok: true,
+      total: Number(body.total ?? 0),
+      degraded: !!body.degraded,
+      why: String(body.why ?? ''),
+    };
+  } catch {
+    return { ok: false, error: '网络异常或服务不可达' };
+  }
+}

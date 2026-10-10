@@ -17,6 +17,7 @@ import { statusText, statusOptions, TYPE_STATUS_TEXT } from '@/constants/statusM
 import BatchImport from '@/components/BatchImport';
 /* V8.3-10.07：补跑 AI 评分走与自动流水线同一份算法（避免前后台两个分） */
 import { aiRescore, needsAiScore } from '@/service/submitPipeline';
+import { serverRescore } from '@/service/stateService';
 /* V8.3-10.10：手动 AI 评分闭环（导出待评作业 → 外部 AI 打分 → 导入回写） */
 import AiScoreManual from '@/components/AiScoreManual';
 /* V8.4-10.07：推送改由组织者手动发起（系统默认不自动打扰任何人） */
@@ -31,7 +32,7 @@ import { useSkillAdminConverge } from '@/auth/converge';
 import { ScopeNotice } from '@/components/ScopeNotice';
 
 export default function AssignmentAdmin() {
-  const { db, setDb, log, campaign, scopeRows, me, flags } = useStore();
+  const { db, setDb, log, campaign, scopeRows, me, flags, aiScorerReady, pullRemote } = useStore();
   /** V6.0 CR-19：状态机 V2 开关（关闭=不出现 COMPLETED / CONSENSUS 与公示标记位） */
   const flowV2 = flags.submitFlowV2 !== false;
   const [selected, setSelected] = useState<string[]>([]);
@@ -145,7 +146,15 @@ export default function AssignmentAdmin() {
    * 评委只能对着「—」打分，于是看起来仍然像是「必须人工标记才往下走」。
    * 现在正常链路已由 store 流水线自动推进，这里只作为异常兜底入口。
    */
-  const rescore = (r: { id: string; code: string }) => {
+  const rescore = async (r: { id: string; code: string }) => {
+    /** V8.3-10.10：服务端已配真实模型时，补跑走服务端真实模型（与自动线同一份算法）；否则本地规则引擎 */
+    if (aiScorerReady) {
+      const res = await serverRescore(r.id);
+      if (!res || !res.ok) { message.error(res?.error ?? '补跑失败'); return; }
+      message.success(`已用模型补跑 AI 评分：${res.total} 分${res.degraded ? '（降级：规则引擎）' : ''}。推送评委请在上面勾选后点「推送评委复核」`);
+      void pullRemote();
+      return;
+    }
     const res = aiRescore(db, r.id, me.name, `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`);
     if (!res.ok || !res.patch) { message.error(res.error ?? '补跑失败'); return; }
     setDb((p) => ({ ...p, ...res.patch }));

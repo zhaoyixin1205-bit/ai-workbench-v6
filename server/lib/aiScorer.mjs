@@ -24,6 +24,11 @@ const DEFAULT_MODEL = 'hy3';
 /** 模型名（列表展示用）：区分「AI 规则引擎」与真模型，避免评分来源混淆 */
 export const AI_MODEL_SCORER_NAME = 'AI 评分（workbuddy-hy3）';
 
+/** 打分落库时署名的评分主体：跟随实际模型名，避免界面把 qwen 分写成 hy3 */
+export function modelScorerName() {
+  return `AI 评分（${config().model}）`;
+}
+
 function config() {
   return {
     baseUrl: (process.env.AI_BASE_URL || DEFAULT_BASE).replace(/\/+$/, ''),
@@ -222,7 +227,7 @@ export async function scoreWithModel({ submit, card, force = false }) {
       reasons: v.reasons,
       summary: v.summary,
       reason: buildReason({ ...v }, card, total),
-      scorerName: AI_MODEL_SCORER_NAME,
+      scorerName: modelScorerName(),
       model: cfg.model,
       degraded: false,
     };
