@@ -17,6 +17,8 @@ import { statusText, statusOptions, TYPE_STATUS_TEXT } from '@/constants/statusM
 import BatchImport from '@/components/BatchImport';
 /* V8.3-10.07：补跑 AI 评分走与自动流水线同一份算法（避免前后台两个分） */
 import { aiRescore, needsAiScore } from '@/service/submitPipeline';
+/* V8.3-10.10：手动 AI 评分闭环（导出待评作业 → 外部 AI 打分 → 导入回写） */
+import AiScoreManual from '@/components/AiScoreManual';
 /* V8.4-10.07：推送改由组织者手动发起（系统默认不自动打扰任何人） */
 import { pushStage } from '@/service/submitPipeline';
 import type { PushStage } from '@/service/submitPipeline';
@@ -462,6 +464,7 @@ export default function AssignmentAdmin() {
                       message.success(`已回写 ${items.length} 条（逐维度校验通过，含评分卡版本留痕）`);
                     }}
                   />
+                  <AiScoreManual />
                 </Space>
                 <Table
                   size="small" rowKey="id" dataSource={submits} pagination={{ pageSize: 8 }}

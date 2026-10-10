@@ -20,7 +20,7 @@ import { validateSkillZip } from './lib/zip.mjs';
 import { authorizeUrl, dingtalkConfig, exchangeCodeForUnionId, newState } from './lib/dingtalkAuth.mjs';
 import { issueFileToken, issueToken, readToken, verifyFileToken, verifyToken } from './lib/session.mjs';
 import { mergeProtected, scopeData } from './lib/dataScope.mjs';
-import { aiScorerReady, scoreWithModel } from './lib/aiScorer.mjs';
+import { aiScorerReady, composeTotal, scoreWithModel } from './lib/aiScorer.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST = process.env.DIST_DIR || path.join(__dirname, '..', 'dist');
@@ -499,6 +499,227 @@ async function handle(req, res) {
       ai_summary: r.summary ?? '', scorer_name: r.scorerName,
       degraded: !!r.degraded, why: r.why ?? '',
     });
+  }
+
+  /* ---- AI 评分（手动批量）：导出待评作业 JSON ---- */
+  if (pathname === '/api/ai/export-submissions' && req.method === 'GET') {
+    /**
+     * V8.3-10.10 手动 AI 评分闭环（用户拍板「暂不连上自动评分」）：
+     * 导出当前待评作业，交给外部 AI 打分后，再走 /api/ai/import-scores 写回。
+     * 鉴权：与 /api/ai/score 同一套（免登开启时须有会话，且仅 ORGANIZER/ADMIN/JUDGE）。
+     */
+    if (dingtalkConfig().enabled) {
+      const token = readToken(req);
+      const uid = token ? verifyToken(token) : null;
+      if (!uid) return sendJson(res, 401, { ok: false, error: '会话已过期，请重新通过钉钉登录', code: 'NO_SESSION' });
+      const cur0 = await state.read();
+      const me0 = (cur0?.data?.users ?? []).find((u) => u.union_id === uid);
+      if (!me0) return sendJson(res, 403, { ok: false, error: '该成员已不在名单内', code: 'NOT_IN_WORKBENCH' });
+      const roles = me0.roles ?? [];
+      if (!['ORGANIZER', 'ADMIN', 'JUDGE'].some((r) => roles.includes(r))) {
+        return sendJson(res, 403, { ok: false, error: '仅组织者 / 评委 / 管理员可导出', code: 'NOT_ALLOWED' });
+      }
+    }
+
+    const cur = await state.read();
+    const data = cur?.data ?? {};
+    const all = url.searchParams.get('all') === '1';
+    /** 默认只导出仍在评分链路上的提报；?all=1 导出全部（含已完成的，便于重评） */
+    const PIPELINE = ['SUBMITTED', 'AI_SCORED', 'REVIEWING', 'REVIEWED'];
+    const items = (data.submits ?? [])
+      .filter((s) => (all ? true : PIPELINE.includes(s.status)))
+      .map((s) => {
+        const card = (data.scoreCards ?? []).find(
+          (c) => !c.is_deleted && c.version === s.score_card_version && c.status === '启用',
+        ) ?? (data.scoreCards ?? []).find((c) => !c.is_deleted && c.status === '启用');
+        const dims = (card?.dimensions ?? []).map((d) => ({
+          name: d.name, max_score: d.max_score, weight: d.weight,
+          standard: d.standard ?? d.level_text ?? '',
+        }));
+        return {
+          submit_id: s.id,
+          code: s.code,
+          title: s.title,
+          author: s.name,
+          dept: s.dept_name,
+          status: s.status,
+          card_name: card?.name ?? '',
+          card_version: card?.version ?? '',
+          total_rule: card?.total_rule ?? '',
+          pass_line: card?.pass_line ?? '',
+          dimensions: dims,
+          content: {
+            topic: s.topic_title || s.custom_topic || '',
+            scene_desc: s.scene_desc || '',
+            before_after: s.before_after || '',
+            output_sample: s.output_sample || '',
+            skill_used: s.skill_used || '',
+            attachments: (s.attachments ?? []).map((a) => a.name),
+          },
+          /** 待 AI 填写的三个字段，保持结构不变便于回传 */
+          ai_scores: {},
+          ai_reasons: {},
+          ai_summary: '',
+        };
+      });
+
+    const payload = {
+      meta: {
+        generated_at: new Date().toISOString().slice(0, 19).replace('T', ' '),
+        total: items.length,
+        usage:
+          '① 把本文件交给外部 AI，附上 meta.prompt 作为指令，要求它按每条 submit 的 dimensions 逐维度打分'
+          + '（0~max_score），并在 ai_reasons 写每维度理由、ai_summary 写一句话总评；'
+          + '② 让 AI 只填写 ai_scores / ai_reasons / ai_summary 三个字段，其余字段与整体 JSON 结构保持不变；'
+          + '③ 把填好的文件上传回「导入 AI 得分」。同一 submit_id 重复上传会覆盖上一次 AI 分（幂等）。',
+        prompt:
+          '你是严谨的评委。对 items 中每条 submit，依据其 dimensions（含 max_score 与权重）和 content 里的作品内容，'
+          + '逐维度给出 0~max_score 的分数，并在 ai_reasons 中按维度名写不少于 4 字的理由（引用作品具体内容），'
+          + '在 ai_summary 写一句话总体评价。只修改 ai_scores、ai_reasons、ai_summary 三个字段，'
+          + '保持其它字段与整体 JSON 结构不变，只输出合法的完整 JSON。',
+      },
+      items,
+    };
+
+    const fileName = `ai-submissions-${payload.meta.generated_at.slice(0, 10)}.json`;
+    res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+      'Access-Control-Allow-Origin': '*',
+    });
+    return res.end(JSON.stringify(payload, null, 2));
+  }
+
+  /* ---- AI 评分（手动批量）：导入 AI 得分 JSON ---- */
+  if (pathname === '/api/ai/import-scores' && req.method === 'POST') {
+    /**
+     * 把外部 AI 填好的得分写回：逐 submit 生成一条 source='AI' 的 ScoreResult，
+     * 并把 ai_score 回写到提报（SUBMITTED → AI_SCORED）。
+     * 与 /api/ai/score 同口径：只保留每条提报一条 AI 记录（重评覆盖），写保护走 mergeProtected。
+     */
+    if (dingtalkConfig().enabled) {
+      const token = readToken(req);
+      const uid = token ? verifyToken(token) : null;
+      if (!uid) return sendJson(res, 401, { ok: false, error: '会话已过期，请重新通过钉钉登录', code: 'NO_SESSION' });
+      const cur0 = await state.read();
+      const me0 = (cur0?.data?.users ?? []).find((u) => u.union_id === uid);
+      if (!me0) return sendJson(res, 403, { ok: false, error: '该成员已不在名单内', code: 'NOT_IN_WORKBENCH' });
+      const roles = me0.roles ?? [];
+      if (!['ORGANIZER', 'ADMIN', 'JUDGE'].some((r) => roles.includes(r))) {
+        return sendJson(res, 403, { ok: false, error: '仅组织者 / 评委 / 管理员可导入', code: 'NOT_ALLOWED' });
+      }
+    }
+
+    const rb = await readBody(req);
+    if (rb.overflow) return sendJson(res, 413, { ok: false, error: '请求体过大' });
+    let body;
+    try {
+      body = JSON.parse(rb.buf.toString('utf8') || '{}');
+    } catch {
+      return sendJson(res, 400, { ok: false, error: '请求体不是合法 JSON' });
+    }
+    const arr = Array.isArray(body) ? body : (body?.items ?? body?.data ?? null);
+    if (!Array.isArray(arr) || arr.length === 0) {
+      return sendJson(res, 400, { ok: false, error: '未检测到提交数组（期望 JSON 数组，或 {"items":[...]}）' });
+    }
+
+    const cur = await state.read();
+    const data = cur?.data ?? {};
+    const now = new Date().toISOString().slice(0, 16).replace('T', ' ');
+    const errors = [];
+    const newResults = [];
+    const submitPatches = [];
+
+    for (const it of arr) {
+      const sid = it?.submit_id || it?.submitId || it?.id;
+      if (!sid) { errors.push({ submit_id: '', reason: '缺少 submit_id' }); continue; }
+      const s = (data.submits ?? []).find((x) => x.id === sid);
+      if (!s) { errors.push({ submit_id: String(sid), reason: '提报不存在' }); continue; }
+
+      const card = (data.scoreCards ?? []).find(
+        (c) => !c.is_deleted && c.version === s.score_card_version && c.status === '启用',
+      ) ?? (data.scoreCards ?? []).find((c) => !c.is_deleted && c.status === '启用');
+      if (!card || (card.dimensions ?? []).length === 0) {
+        errors.push({ submit_id: String(sid), reason: '未匹配到可用评分卡' });
+        continue;
+      }
+
+      const scores = it.ai_scores ?? it.scores ?? {};
+      const reasons = it.ai_reasons ?? it.reasons ?? {};
+      const summary = String(it.ai_summary ?? it.summary ?? '');
+      const dimScores = {};
+      let bad = false;
+      for (const d of card.dimensions) {
+        const v = Number(scores[d.name]);
+        if (!Number.isFinite(v)) { errors.push({ submit_id: String(sid), reason: `维度「${d.name}」缺分数` }); bad = true; break; }
+        const max = d.max_score || 100;
+        if (v < 0 || v > max) { errors.push({ submit_id: String(sid), reason: `维度「${d.name}」分数 ${v} 越界（0~${max}）` }); bad = true; break; }
+        const r = String(reasons[d.name] ?? '').trim();
+        if (r.length < 4) { errors.push({ submit_id: String(sid), reason: `维度「${d.name}」理由过短` }); bad = true; break; }
+        dimScores[d.name] = Math.round(v * 10) / 10;
+      }
+      if (bad) continue;
+
+      const total = composeTotal(dimScores, card);
+      const reasonText = [
+        'AI 评分（手动导入）', `总分 ${total}`, '',
+        ...card.dimensions.map((d) => `【${d.name}】${dimScores[d.name]} / ${d.max_score}\n${reasons[d.name]}`),
+        summary ? `总体评价：${summary}` : '',
+      ].join('\n');
+
+      const resultId = `SR-${sid}-AI-IMPORT-${Date.now()}`;
+      newResults.push({
+        id: resultId,
+        target_type: 'submit',
+        target_id: sid,
+        card_id: card.id,
+        card_version: card.version,
+        source: 'AI',
+        dim_scores: dimScores,
+        total,
+        reason: reasonText,
+        scorer_union_id: 'AI',
+        scorer_name: 'AI 评分（手动导入）',
+        created_at: now,
+        ai_reasons: reasons,
+        ai_summary: summary,
+        ai_model: 'manual-import',
+        ai_degraded: false,
+      });
+      submitPatches.push({ id: sid, ai_score: total, status: s.status === 'SUBMITTED' ? 'AI_SCORED' : s.status });
+    }
+
+    if (newResults.length === 0) {
+      return sendJson(res, 200, { ok: true, imported: 0, skipped: errors.length, errors });
+    }
+
+    const keptIds = new Set(newResults.map((r) => r.target_id));
+    const nextResults = [
+      ...newResults,
+      ...(data.scoreResults ?? []).filter(
+        (x) => !(x.target_type === 'submit' && keptIds.has(x.target_id) && x.source === 'AI'),
+      ),
+    ];
+    const nextSubmits = (data.submits ?? []).map((x) => {
+      const p = submitPatches.find((pp) => pp.id === x.id);
+      return p ? { ...x, ai_score: p.ai_score, status: p.status } : x;
+    });
+
+    const writeData = { ...data, scoreResults: nextResults, submits: nextSubmits };
+    if (dingtalkConfig().enabled) {
+      const token = readToken(req);
+      const uid = token ? verifyToken(token) : null;
+      const me = (data.users ?? []).find((u) => u.union_id === uid);
+      if (me) mergeProtected(data, writeData, me);
+    }
+    const wr = await state.write(writeData, cur?.version);
+    if (!wr.ok) {
+      return sendJson(res, 409, {
+        ok: false, conflict: true,
+        error: `数据已被「${wr.current?.updated_by || '他人'}」更新，请刷新后重试`,
+      });
+    }
+    return sendJson(res, 200, { ok: true, imported: newResults.length, skipped: errors.length, errors });
   }
 
   /* ---- 上传：POST /api/files/upload?biz_type=&biz_id=&name= ---- */

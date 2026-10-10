@@ -122,7 +122,7 @@ export function validateAiOutput(parsed, card) {
 }
 
 /** 按卡片的 total_rule 合成总分（与前端 judgeScoring / submitPipeline 同一套口径） */
-function composeTotal(dimScores, card) {
+export function composeTotal(dimScores, card) {
   const dims = card.dimensions ?? [];
   const round1 = (n) => Math.round(n * 10) / 10;
   if (card.total_rule === '去极值平均' && dims.length >= 3) {
