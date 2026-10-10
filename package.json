@@ -28,7 +28,8 @@
     "smoke:decision": "node scripts/decision-lock-smoke.mjs",
     "smoke:resetauth": "node scripts/reset-auth-smoke.mjs",
     "smoke:judgelist": "node scripts/judge-list-smoke.mjs",
-    "smoke:overdue": "node scripts/bounty-overdue-smoke.mjs"
+    "smoke:overdue": "node scripts/bounty-overdue-smoke.mjs",
+    "smoke:ai": "node scripts/ai-score-smoke.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "^5.5.1",

@@ -1,4 +1,4 @@
-import { Button, Checkbox, Form, Input, InputNumber, Radio, Select, Slider, Table, Tabs, App as AntApp } from 'antd';
+import { Button, Checkbox, Form, Input, InputNumber, Radio, Select, Slider, Table, Tabs, App as AntApp } from 'antd';
 import { SafetyCertificateOutlined } from '@ant-design/icons';
 import { useState } from 'react';
 import { useStore } from '@/store/store';
@@ -8,6 +8,7 @@ import { DEMO_TODAY } from '@/mock/seedBiz';
 import { statusText, statusColor } from '@/constants/statusMeta';
 import { Dialog, DialogField, DialogKV, useConfirm } from '@/components/v2/Dialog';
 import { useNoteVisible } from '@/auth/annotation';
+import AiScoreDetail, { aiResultOf, buildAiDetail } from '@/components/AiScoreDetail';
 import { averageJudgeScore, composeFinalScore, effectiveJudgeScores } from '@/service/judgeScoring';
 import { aiScoreOf, periodLabelOf, seqNo, submitterNameOf, typeNameOf } from '@/service/judgeListView';
 import '../../theme/v2/template.css';
@@ -81,6 +82,8 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
   /** V7.0 CR-32：历史评分修订目标（确认项 5：能看到历史评分并进行修改） */
   const [reviseTarget, setReviseTarget] = useState<ScoreResult | null>(null);
   const [cTab, setCTab] = useState<'pending' | 'history'>('pending');
+  /** V8.3-10.10 AI 评分详情弹窗 */
+  const [aiDetailId, setAiDetailId] = useState<string | null>(null);
 
   /** PRD V4.0 §6.2：ADMIN 可进入本页查看（菜单可见），但无业务审批权，操作入口禁用 */
   const canOperate = hasRole('JUDGE', 'ORGANIZER');
@@ -450,6 +453,13 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
           render: (v: string) => <span className={`wb2-tag ${statusTone(v)}`}><i className="d" />{statusText(v)}</span>,
         },
         {
+          /** V8.3-10.10 业务方要求：最后一列「AI评分详情」；只读动作排在改数据的操作左边 */
+          title: 'AI评分详情', width: 110,
+          render: (_: unknown, r: AssignmentSubmit) => (
+            <Button size="small" type="link" onClick={() => setAiDetailId(r.id)}>查看详情</Button>
+          ),
+        },
+        {
           title: '操作', width: confirmMode ? 180 : 140,
           render: (_, r) => (
             <div style={{ display: 'flex', gap: 'var(--wb-space-2)', flexWrap: 'wrap' }}>
@@ -557,6 +567,13 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
             <Button size="small" type="link" disabled={!canOperate} onClick={() => openRevise(r)}>修改评分</Button>
           ),
         },
+        {
+          /** V8.3-10.10 历史评分表最后一列：AI 评分详情（来源是另一条 AI 记录，不能与本行混谈） */
+          title: 'AI评分详情', width: 110,
+          render: (_: unknown, r: ScoreResult) => (
+            <Button size="small" type="link" onClick={() => setAiDetailId(r.target_id)}>查看详情</Button>
+          ),
+        },
       ]}
       expandable={{
         expandedRowRender: (r: ScoreResult) => (
@@ -576,6 +593,9 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
 
   const judgedCount = db.submits.filter((s) => s.judge_score !== undefined).length;
   const progressPct = Math.round((judgedCount / Math.max(1, db.submits.length)) * 100);
+
+  /** V8.3-10.10：详情弹窗标题里显示是哪条提报 */
+  const aiDetailSubmit = aiDetailId ? db.submits.find((s) => s.id === aiDetailId) : undefined;
 
   return (
     <div>
@@ -871,6 +891,17 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
           </Form.Item>
         </Form>
       </Dialog>
+
+      {/* V8.3-10.10 AI 评分详情：逐维度分数 + 引用作品内容的理由 + 总体评价 */}
+      <AiScoreDetail
+        open={!!aiDetailId}
+        onClose={() => setAiDetailId(null)}
+        title={`AI 评分详情${aiDetailSubmit ? ` · ${aiDetailSubmit.code} ${aiDetailSubmit.name}` : ''}`}
+        model={buildAiDetail(
+          db.scoreCards?.find((c) => c.status === '启用'),
+          aiDetailId ? aiResultOf(db.scoreResults, aiDetailId) : null,
+        )}
+      />
     </div>
   );
 }

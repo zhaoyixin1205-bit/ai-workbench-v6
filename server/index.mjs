@@ -20,6 +20,7 @@ import { validateSkillZip } from './lib/zip.mjs';
 import { authorizeUrl, dingtalkConfig, exchangeCodeForUnionId, newState } from './lib/dingtalkAuth.mjs';
 import { issueFileToken, issueToken, readToken, verifyFileToken, verifyToken } from './lib/session.mjs';
 import { mergeProtected, scopeData } from './lib/dataScope.mjs';
+import { aiScorerReady, scoreWithModel } from './lib/aiScorer.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST = process.env.DIST_DIR || path.join(__dirname, '..', 'dist');
@@ -382,6 +383,122 @@ async function handle(req, res) {
     );
     await state.reset(null, by);
     return sendJson(res, 200, { ok: true, message: '已清空服务端数据，刷新后按种子重新初始化' });
+  }
+
+  /* ---- AI 评分：POST /api/ai/score?submit_id=&force=1 ---- */
+  if (pathname === '/api/ai/score' && req.method === 'POST') {
+    const submitId = url.searchParams.get('submit_id') || '';
+    const force = url.searchParams.get('force') === '1';
+
+    /**
+     * 鉴权：与 /api/state/reset 同一套 —— 免登开启时必须有会话，
+     * 且只有组织者/评委/管理员能触发（AI 评分会产生费用，不能让任何人都刷）。
+     */
+    if (dingtalkConfig().enabled) {
+      const token = readToken(req);
+      const uid = token ? verifyToken(token) : null;
+      if (!uid) {
+        return sendJson(res, 401, { ok: false, error: '会话已过期，请重新通过钉钉登录', code: 'NO_SESSION' });
+      }
+      const cur = await state.read();
+      const me = (cur?.data?.users ?? []).find((u) => u.union_id === uid);
+      if (!me) {
+        return sendJson(res, 403, { ok: false, error: '该成员已不在名单内', code: 'NOT_IN_WORKBENCH' });
+      }
+      const roles = me.roles ?? [];
+      const allowed = ['ORGANIZER', 'ADMIN', 'JUDGE'].some((r) => roles.includes(r));
+      if (!allowed) {
+        console.warn(`[ai] 拒绝：${me.name}(${uid}) 角色=${JSON.stringify(roles)}`);
+        return sendJson(res, 403, { ok: false, error: '仅组织者 / 评委 / 管理员可触发 AI 评分', code: 'NOT_ALLOWED' });
+      }
+    }
+
+    const cur = await state.read();
+    const data = cur?.data ?? {};
+    const submit = (data.submits ?? []).find((s) => s.id === submitId);
+    if (!submit) return sendJson(res, 404, { ok: false, error: '提报不存在' });
+
+    // 提报上的 card_version 优先，回退到当前启用卡
+    const card = (data.scoreCards ?? []).find(
+      (c) => !c.is_deleted && c.version === submit.score_card_version && c.status === '启用',
+    ) ?? (data.scoreCards ?? []).find((c) => !c.is_deleted && c.status === '启用');
+    if (!card) return sendJson(res, 400, { ok: false, error: '没有启用中的评分卡' });
+
+    // force=false 且已有 AI 记录 → 直接返回，不重复花钱
+    const existing = (data.scoreResults ?? []).find(
+      (r) => r.target_type === 'submit' && r.target_id === submitId && r.source === 'AI',
+    );
+    if (existing && !force) {
+      return sendJson(res, 200, {
+        ok: true, cached: true, total: existing.total,
+        dim_scores: existing.dim_scores, reason: existing.reason,
+        scorer_name: existing.scorer_name, created_at: existing.created_at,
+      });
+    }
+
+    const r = await scoreWithModel({ submit, card, force });
+    const now = new Date().toISOString();
+    const record = {
+      id: `SR-${submitId}-AI-${force ? Date.now() : now}`,
+      target_type: 'submit',
+      target_id: submitId,
+      card_id: card.id,
+      card_version: card.version,
+      source: 'AI',
+      dim_scores: r.dimScores,
+      total: r.total,
+      reason: r.reason,
+      scorer_union_id: 'AI',
+      scorer_name: r.scorerName,
+      created_at: now.slice(0, 16).replace('T', ' '),
+      /** V8.3-10.10：结构化理由 + summary，供「AI评分详情」弹窗直接渲染 */
+      ai_reasons: r.ok ? (r.reasons ?? null) : null,
+      ai_summary: r.ok ? (r.summary ?? '') : '',
+      ai_model: r.model ?? null,
+      ai_degraded: !!r.degraded,
+    };
+
+    // 同一条提报只保留一条 AI 记录（重评则覆盖），避免详情页出现多份
+    const nextResults = [
+      record,
+      ...(data.scoreResults ?? []).filter(
+        (x) => !(x.target_type === 'submit' && x.target_id === submitId && x.source === 'AI'),
+      ),
+    ];
+    const writeData = {
+      ...data,
+      scoreResults: nextResults,
+      /** AI 分回写到提报上，列表页的「AI 分」列直接读它 */
+      submits: (data.submits ?? []).map((s) => (s.id === submitId ? { ...s, ai_score: r.total } : s)),
+      submits_in: undefined,
+    };
+    delete writeData.submits_in;
+
+    if (dingtalkConfig().enabled) {
+      // 走写保护（评委可能没有 users/depts 的完整档案）
+      const token = readToken(req);
+      const uid = token ? verifyToken(token) : null;
+      const me = (data.users ?? []).find((u) => u.union_id === uid);
+      if (me) writeData = mergeProtected(data, writeData, me);
+    }
+
+    const wr = await state.write(writeData, cur?.version);
+    if (!wr.ok) {
+      return sendJson(res, 409, {
+        ok: false, conflict: true,
+        error: `数据已被「${wr.current?.updated_by || '他人'}」更新，请刷新后重试`,
+      });
+    }
+    console.log(
+      `[ai] 评分完成 submit=${submitId} total=${r.total} scorer=${r.scorerName}` +
+      (r.degraded ? `（降级：${r.why}）` : ` model=${r.model}`),
+    );
+    return sendJson(res, 200, {
+      ok: true, cached: false, total: r.total, dim_scores: r.dimScores,
+      reason: r.reason, ai_reasons: r.ai_reasons ?? r.reasons ?? null,
+      ai_summary: r.summary ?? '', scorer_name: r.scorerName,
+      degraded: !!r.degraded, why: r.why ?? '',
+    });
   }
 
   /* ---- 上传：POST /api/files/upload?biz_type=&biz_id=&name= ---- */

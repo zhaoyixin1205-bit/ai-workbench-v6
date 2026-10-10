@@ -10,6 +10,7 @@ import { statusText, statusColor } from '@/constants/statusMeta';
 import { averageJudgeScore, composeFinalScore, effectiveJudgeScores } from '@/service/judgeScoring';
 import { aiScoreOf, periodLabelOf, seqNo, submitterNameOf, typeNameOf } from '@/service/judgeListView';
 import { useNoteVisible } from '@/auth/annotation';
+import AiScoreDetail, { aiResultOf, buildAiDetail } from '@/components/AiScoreDetail';
 
 /**
  * V7.0 CR-32：兜底空卡。原实现对 SC1 用了非空断言（`!`），一旦没有启用的卡就白屏；
@@ -54,6 +55,8 @@ export default function JudgeReview({ variant = 'admin' }: { variant?: 'admin' |
   /** V7.0 CR-32：历史评分修订目标（确认项 5：能看到历史评分并进行修改） */
   const [reviseTarget, setReviseTarget] = useState<ScoreResult | null>(null);
   const [cTab, setCTab] = useState<'pending' | 'history'>('pending');
+  /** V8.3-10.10 AI 评分详情弹窗：记录当前查看的提报 id */
+  const [aiDetailId, setAiDetailId] = useState<string | null>(null);
 
   /** PRD V4.0 §6.2：ADMIN 可进入本页查看（菜单可见），但无业务审批权，操作入口禁用 */
   const canOperate = hasRole('JUDGE', 'ORGANIZER');
@@ -393,6 +396,17 @@ export default function JudgeReview({ variant = 'admin' }: { variant?: 'admin' |
                   },
                 },
                 {
+                  /**
+                   * V8.3-10.10 业务方要求：最后一列是「AI评分详情」。
+                   * 放在操作列**之前** —— 「查看详情」是只读动作，
+                   * 排在会改数据的「打分/确认」左边更符合阅读顺序。
+                   */
+                  title: 'AI评分详情', width: 110,
+                  render: (_: unknown, r: AssignmentSubmit) => (
+                    <Button size="small" type="link" onClick={() => setAiDetailId(r.id)}>查看详情</Button>
+                  ),
+                },
+                {
                   title: '操作', width: confirmMode ? 180 : 140,
                   render: (_, r) => (
                     <Space size={4}>
@@ -496,6 +510,17 @@ export default function JudgeReview({ variant = 'admin' }: { variant?: 'admin' |
             <Button size="small" type="link" disabled={!canOperate} onClick={() => openRevise(r)}>修改评分</Button>
           ),
         },
+        {
+          /**
+           * V8.3-10.10 业务方要求：历史评分表的**最后一列**是「AI评分详情」。
+           * 从 scoreResult.target_id 拿到提报 id，再反查那条的 AI 评分记录 ——
+           * 历史评分行本身是「评委的评分」，AI 分是另一个来源，不能混为一谈。
+           */
+          title: 'AI评分详情', width: 110,
+          render: (_: unknown, r: ScoreResult) => (
+            <Button size="small" type="link" onClick={() => setAiDetailId(r.target_id)}>查看详情</Button>
+          ),
+        },
       ]}
       expandable={{
         expandedRowRender: (r: ScoreResult) => (
@@ -511,6 +536,9 @@ export default function JudgeReview({ variant = 'admin' }: { variant?: 'admin' |
       }}
     />
   );
+
+  /** V8.3-10.10：详情弹窗标题里显示是哪条提报 */
+  const aiDetailSubmit = aiDetailId ? db.submits.find((s) => s.id === aiDetailId) : undefined;
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
@@ -762,6 +790,17 @@ export default function JudgeReview({ variant = 'admin' }: { variant?: 'admin' |
           </Form.Item>
         </Form>
       </Modal>
+
+      {/* V8.3-10.10 AI 评分详情：逐维度分数 + 引用作品内容的理由 + 总体评价 */}
+      <AiScoreDetail
+        open={!!aiDetailId}
+        onClose={() => setAiDetailId(null)}
+        title={`AI 评分详情${aiDetailSubmit ? ` · ${aiDetailSubmit.code} ${aiDetailSubmit.name}` : ''}`}
+        model={buildAiDetail(
+          db.scoreCards?.find((c) => c.status === '启用'),
+          aiDetailId ? aiResultOf(db.scoreResults, aiDetailId) : null,
+        )}
+      />
     </Space>
   );
 }

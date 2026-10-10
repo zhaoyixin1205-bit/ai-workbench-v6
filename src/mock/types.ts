@@ -640,6 +640,24 @@ export interface ScoreResult {
    * 不参与重复累加，避免「一个人点多次就把平均分拉偏」。
    */
   superseded?: boolean;
+
+  /* ---- V8.3-10.10：AI 评分改为真模型（workbuddy-hy3）后新增 ---- */
+  /**
+   * 逐维度评分理由（**结构化**，供「AI评分详情」弹窗直接渲染）。
+   * 规则引擎时代只有一个拼接后的 reason 字符串，现在按维度分开存，
+   * 否则详情页只能把长文本硬拆。
+   */
+  ai_reasons?: Record<string, string> | null;
+  /** 总体评价（一句话） */
+  ai_summary?: string;
+  /** 实际使用的模型名（如 hy3），用于追溯「这个分是哪个模型打的」 */
+  ai_model?: string | null;
+  /**
+   * 是否降级到规则引擎。
+   * true = 模型未配置 / 超时 / 输出不合格，此时 ai_reasons 为 null，
+   * 详情页要**如实展示降级原因**，不能让组织者以为这是真模型的评分。
+   */
+  ai_degraded?: boolean;
 }
 
 /* ---------- M4 专家门诊 ---------- */
