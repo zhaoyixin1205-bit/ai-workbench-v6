@@ -9,6 +9,7 @@ import { statusText, statusColor } from '@/constants/statusMeta';
 import { Dialog, DialogField, DialogKV, useConfirm } from '@/components/v2/Dialog';
 import { useNoteVisible } from '@/auth/annotation';
 import { averageJudgeScore, composeFinalScore, effectiveJudgeScores } from '@/service/judgeScoring';
+import { aiScoreOf, periodLabelOf, scoreCardLabelOf, seqNo, submitterNameOf, typeNameOf } from '@/service/judgeListView';
 import '../../theme/v2/template.css';
 
 /**
@@ -414,10 +415,30 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
         ),
       }}
       columns={[
-        { title: '编号', dataIndex: 'code', width: 140 },
-        { title: '姓名', dataIndex: 'name', width: 80 },
-        { title: '作业', dataIndex: 'title', ellipsis: true },
-        { title: 'AI 分', dataIndex: 'ai_score', width: 70, render: (v?: number) => <span className="num">{v ?? '—'}</span> },
+        /** V8.3-10.10 运营方口径：序号（1/2/3）+ 业务语言字段，去掉内部编号 code */
+        {
+          title: '序号', width: 60, align: 'center',
+          render: (_: unknown, __: unknown, index: number) => <span className="wb2-num">{seqNo(index)}</span>,
+        },
+        {
+          title: '作业类型', ellipsis: true,
+          render: (_: unknown, r: AssignmentSubmit) => typeNameOf(r, db.assignmentTypes),
+        },
+        {
+          title: '期数', width: 80,
+          render: (_: unknown, r: AssignmentSubmit) => periodLabelOf(r, db.periods),
+        },
+        {
+          title: '提报人', width: 90,
+          render: (_: unknown, r: AssignmentSubmit) => submitterNameOf(r),
+        },
+        {
+          title: 'AI 分', width: 80,
+          render: (_: unknown, r: AssignmentSubmit) => {
+            const v = aiScoreOf(r, db.scoreResults);
+            return <span className="wb2-num">{v ?? '—'}</span>;
+          },
+        },
         /* V7.0 CR-33：状态列走唯一真源，不再显示裸英文 */
         {
           title: '状态', dataIndex: 'status',
@@ -490,16 +511,31 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
         ),
       }}
       columns={[
+        /** V8.3-10.10 运营方口径：序号 + 业务语言字段；第一列不再显示内部 code */
         {
-          title: '提报', width: 140,
-          render: (_, r: ScoreResult) => db.submits.find((s) => s.id === r.target_id)?.code ?? r.target_id,
+          title: '序号', width: 60, align: 'center',
+          render: (_: unknown, __: ScoreResult, index: number) => <span className="wb2-num">{seqNo(index)}</span>,
         },
         {
-          title: '作业', ellipsis: true,
-          render: (_, r: ScoreResult) => db.submits.find((s) => s.id === r.target_id)?.title ?? '—',
+          title: '作业类型', ellipsis: true,
+          render: (_: unknown, r: ScoreResult) =>
+            typeNameOf(db.submits.find((s) => s.id === r.target_id), db.assignmentTypes),
         },
-        { title: '我的评分', dataIndex: 'total', width: 90, render: (v: number) => <span className="num">{v}</span> },
-        { title: '评分卡', width: 120, render: (_, r: ScoreResult) => `${r.card_id} ${r.card_version}` },
+        {
+          title: '期数', width: 80,
+          render: (_: unknown, r: ScoreResult) =>
+            periodLabelOf(db.submits.find((s) => s.id === r.target_id), db.periods),
+        },
+        {
+          title: '提报人', width: 90,
+          render: (_: unknown, r: ScoreResult) =>
+            submitterNameOf(db.submits.find((s) => s.id === r.target_id)),
+        },
+        { title: '我的评分', dataIndex: 'total', width: 90, render: (v: number) => <span className="wb2-num">{v}</span> },
+        {
+          title: '评分卡',
+          render: (_: unknown, r: ScoreResult) => scoreCardLabelOf(r, db.scoreCards),
+        },
         { title: '评分时间', dataIndex: 'created_at', width: 150 },
         {
           title: '操作', width: 100,
@@ -572,6 +608,20 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
         <div>
           {isC ? (
             <div className="wb2-tabs">
+              {/**
+               * V8.3-10.10 运营方口径：复核进度**单独一行，显示在待评分列表上一行**
+               * （原来它在页面下方右侧卡片，要滚动到底才看得到）。
+               * 与 v1 同位置、同口径。
+               */}
+              <div className="wb2-judge-progress">
+                <span className="wb2-judge-progress__label">复核进度</span>
+                <div className="wb2-judge-progress__bar">
+                  <i style={{ width: `${progressPct}%`, background: COLOR.primary }} />
+                </div>
+                <span className="wb2-judge-progress__num">
+                  {judgedCount}/{db.submits.length}
+                </span>
+              </div>
               <Tabs
                 activeKey={cTab}
                 onChange={(k) => setCTab(k as 'pending' | 'history')}

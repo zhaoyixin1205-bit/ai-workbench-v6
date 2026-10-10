@@ -79,13 +79,38 @@ export default function HomeV2() {
       action: '去提报', to: '/work',
     }));
 
+  /** CR-15：评委复核入口仅 JUDGE 渲染，非 JUDGE 身份 DOM 中不存在 */
+  const judgeEntryOn = flags.homeJudgeEntry !== false && hasRole('JUDGE');
+  const judgePendingCount = db.submits.filter(
+    (s) => (s.status === 'AI_SCORED' || s.status === 'REVIEWING')
+      && !db.scoreResults.some(
+        (r) => r.target_type === 'submit' && r.target_id === s.id
+          && r.source === 'JUDGE' && r.scorer_union_id === me.union_id
+      )
+  ).length;
+
   const myTodos = [
     ...myRequiredTodos,
     { key: 'topic', done: mySubmits.length > 0, text: '还没选定场景', action: '去挑一个', to: '/cases' },
     /* 已有必修提醒时不再重复展示通用「作业还没交」 */
     ...(myRequiredTodos.length ? [] : [{ key: 'submit', done: mySubmitDone > 0, text: `作业还没交（${deadline.date ?? '日期待定'} 截止）`, action: '去提报', to: '/work' }]),
     { key: 'asset', done: db.assetApplies.some((a) => a.applicant_union_id === me.union_id), text: '作品还没申请入库', action: '去申请', to: '/assets' },
-  ].filter((t) => !t.done).slice(0, 3);
+    /**
+     * V8.3-10.10 运营方口径：评委的待复核也要进「我的待办」。
+     * ⚠️ 放在 `asset` 之后且 judgeEntryOn 才加 —— 前端 slice(0,3) 只留 3 条，
+     *    评委专属提醒排前面会把全员共性的「作品还没申请入库」挤掉。
+     */
+    ...(judgeEntryOn && judgePendingCount > 0
+      ? [{ key: 'judge', done: false, text: `有 ${judgePendingCount} 条作业等你复核`, action: '去复核', to: '/admin/judge' }]
+      : []),
+  ].filter((t) => !t.done)
+    /**
+     * V8.3-10.10 运营方拍板：**普通员工维持 3 条，只有评委角色上限提到 4 条**。
+     * 原因：评委除了共性待办（必修/选题/入库）还可能有「待复核」，
+     * 按 3 条截断会把评委专属提醒挤掉；而给所有人提到 4 又会让普通员工多出一条。
+     * 故按角色区分上限—— 这不是一个「顺手优化」，是口径决定，不能后来人改回去。
+     */
+    .slice(0, judgeEntryOn ? 4 : 3);
 
   /** V8-10.07：案例精选改「最新发布优先」—— 新案例（如远程数据分析报告）能在首页露出 */
   const hotCases = [...db.cases].sort((a, b) => (b.created_at > a.created_at ? 1 : -1)).slice(0, 5);
@@ -122,15 +147,6 @@ export default function HomeV2() {
   /** CR-14：社区关闭时悬赏榜独占整行 */
   const rightColOn = flags.community || !tickerOn;
 
-  /** CR-15：评委复核入口仅 JUDGE 渲染，非 JUDGE 身份 DOM 中不存在 */
-  const judgeEntryOn = flags.homeJudgeEntry !== false && hasRole('JUDGE');
-  const judgePendingCount = db.submits.filter(
-    (s) => (s.status === 'AI_SCORED' || s.status === 'REVIEWING')
-      && !db.scoreResults.some(
-        (r) => r.target_type === 'submit' && r.target_id === s.id
-          && r.source === 'JUDGE' && r.scorer_union_id === me.union_id
-      )
-  ).length;
 
   const TRACK_COLOR: Record<string, string> = {
     '效率提升': 'var(--wb-track-1)',
@@ -202,6 +218,34 @@ export default function HomeV2() {
         )}
       </section>
 
+      {/* CR-15：评委复核入口 */}
+      {judgeEntryOn && (
+        <section className="wb2-card">
+          <div className="wb2-sechd">
+            <div className="t">
+              <CheckCircleOutlined style={{ color: 'var(--wb-primary)' }} /> 评委复核
+              <span className="s">待你复核 {judgePendingCount} 条</span>
+            </div>
+            <Link className="more" to="/admin/judge">去复核 <ArrowRightOutlined /></Link>
+          </div>
+          {judgePendingCount === 0 ? (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="暂无待复核作业，新的作业送出后会在这里出现"
+            />
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ fontSize: 'var(--wb-fs-label)', color: 'var(--wb-ink-2)' }}>
+                有 <b>{judgePendingCount}</b> 条作业已出 AI 分，等待你完成复核与真实性确认。
+              </div>
+              <Link to="/admin/judge">
+                <Button type="primary" size="small">开始复核（{judgePendingCount}）</Button>
+              </Link>
+            </div>
+          )}
+        </section>
+      )}
+
       {/* 数据条 */}
       <div className="wb2-metrics">
         <div className="wb2-metric">
@@ -263,33 +307,6 @@ export default function HomeV2() {
         </div>
       </section>
 
-      {/* CR-15：评委复核入口 */}
-      {judgeEntryOn && (
-        <section className="wb2-card">
-          <div className="wb2-sechd">
-            <div className="t">
-              <CheckCircleOutlined style={{ color: 'var(--wb-primary)' }} /> 评委复核
-              <span className="s">待你复核 {judgePendingCount} 条</span>
-            </div>
-            <Link className="more" to="/admin/judge">去复核 <ArrowRightOutlined /></Link>
-          </div>
-          {judgePendingCount === 0 ? (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description="暂无待复核作业，新的作业送出后会在这里出现"
-            />
-          ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <div style={{ fontSize: 'var(--wb-fs-label)', color: 'var(--wb-ink-2)' }}>
-                有 <b>{judgePendingCount}</b> 条作业已出 AI 分，等待你完成复核与真实性确认。
-              </div>
-              <Link to="/admin/judge">
-                <Button type="primary" size="small">开始复核（{judgePendingCount}）</Button>
-              </Link>
-            </div>
-          )}
-        </section>
-      )}
 
       {/* CR-14：场景卡 —— V8.5-10.08 由 chip 组升级为文件夹页签卡九宫格 */}
       <section className="wb2-card">

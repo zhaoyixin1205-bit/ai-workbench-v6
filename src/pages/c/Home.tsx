@@ -51,13 +51,50 @@ export default function Home() {
       action: '去提报', to: '/work',
     }));
 
+  /**
+   * V6.0 CR-15：评委复核入口（仅 JUDGE 角色）。
+   * 非 JUDGE 身份下该区块在 DOM 中完全不存在（不是置灰）。
+   * 待复核数 = status ∈ {AI_SCORED, REVIEWING} 且当前评委未复核的条数；
+   * 为 0 时展示空态而不隐藏卡片，避免评委以为入口消失。
+   */
+  const judgeEntryOn = flags.homeJudgeEntry !== false && hasRole('JUDGE');
+  const judgePendingCount = db.submits.filter(
+    (s) => (s.status === 'AI_SCORED' || s.status === 'REVIEWING')
+      && !db.scoreResults.some(
+        (r) => r.target_type === 'submit' && r.target_id === s.id
+          && r.source === 'JUDGE' && r.scorer_union_id === me.union_id
+      )
+  ).length;
+
   const myTodos = [
     ...myRequiredTodos,
     { key: 'topic', done: mySubmits.length > 0, text: '还没选定场景', action: '去挑一个', to: '/cases' },
     /* 已有必修提醒时不再重复展示通用「作业还没交」 */
     ...(myRequiredTodos.length ? [] : [{ key: 'submit', done: mySubmitDone > 0, text: `作业还没交（${deadline.date ?? '日期待定'} 截止）`, action: '去提报', to: '/work' }]),
     { key: 'asset', done: db.assetApplies.some((a) => a.applicant_union_id === me.union_id), text: '作品还没申请入库', action: '去申请', to: '/assets' },
-  ].filter((t) => !t.done).slice(0, 3);
+    /**
+     * V8.3-10.10 运营方口径：评委的待复核也要进「我的待办」。
+     * ⚠️ 放在 `asset` **之后**且 judgeEntryOn 才加 ——
+     *    前端 slice(0,3) 只留 3 条，评委复核若排前面会把「作品还没申请入库」挤掉
+     *    （那是全员共性提醒，比评委专属更该占位）。真要提到前面得先提 limit。
+     */
+    ...(judgeEntryOn && judgePendingCount > 0
+      ? [{
+          key: 'judge',
+          done: false,
+          text: `有${judgePendingCount} 条作业等你复核`,
+          action: '去复核',
+          to: '/admin/judge',
+        }]
+      : []),
+  ].filter((t) => !t.done)
+    /**
+     * V8.3-10.10 运营方拍板：**普通员工维持 3 条，只有评委角色上限提到 4 条**。
+     * 原因：评委除了共性待办（必修/选题/入库）还可能有「待复核」，
+     * 按 3 条截断会把评委专属提醒挤掉；而给所有人提到 4 又会让普通员工多出一条。
+     * 故按角色区分上限—— 这不是一个「顺手优化」，是口径决定，不能后来人改回去。
+     */
+    .slice(0, judgeEntryOn ? 4 : 3);
 
   /** V4.1 P4：趋势为演示用固定序列（确定性，便于截图核验与复现） */
   const SPARK = {
@@ -110,20 +147,6 @@ export default function Home() {
   /** CR-14：社区关闭时悬赏榜独占整行，不得出现半边空白 */
   const rightColOn = flags.community || !tickerOn;
 
-  /**
-   * V6.0 CR-15：评委复核入口（仅 JUDGE 角色）。
-   * 非 JUDGE 身份下该区块在 DOM 中完全不存在（不是置灰）。
-   * 待复核数 = status ∈ {AI_SCORED, REVIEWING} 且当前评委未复核的条数；
-   * 为 0 时展示空态而不隐藏卡片，避免评委以为入口消失。
-   */
-  const judgeEntryOn = flags.homeJudgeEntry !== false && hasRole('JUDGE');
-  const judgePendingCount = db.submits.filter(
-    (s) => (s.status === 'AI_SCORED' || s.status === 'REVIEWING')
-      && !db.scoreResults.some(
-        (r) => r.target_type === 'submit' && r.target_id === s.id
-          && r.source === 'JUDGE' && r.scorer_union_id === me.union_id
-      )
-  ).length;
 
   return (
     <Space direction="vertical" size={20} style={{ width: '100%' }} className="wb-fade-in">
@@ -217,6 +240,40 @@ export default function Home() {
           </Space>
         )}
       </Card>
+
+      {/* V6.0 CR-15：评委复核入口（仅 JUDGE 渲染；非 JUDGE 身份 DOM 中不存在） */}
+      {judgeEntryOn && (
+        <Card
+          styles={{ body: { padding: 16 } }}
+          title={
+            <Space size={8}>
+              <CheckCircleOutlined style={{ color: COLOR.primary }} />
+              <span style={{ fontWeight: 700 }}>评委复核</span>
+              <span style={{ fontSize: 13, fontWeight: 400, color: COLOR.textMuted }}>
+                待你复核 {judgePendingCount} 条
+              </span>
+            </Space>
+          }
+          extra={<Link to="/admin/judge" style={{ color: COLOR.primary, fontSize: 13 }}>去复核 <ArrowRightOutlined /></Link>}
+        >
+          {judgePendingCount === 0 ? (
+            /* 规则③：为 0 时展示空态而不隐藏卡片，避免评委以为入口消失 */
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="暂无待复核作业，新的作业送出后会在这里出现"
+            />
+          ) : (
+            <Space direction="vertical" size={8} style={{ width: '100%' }}>
+              <div style={{ fontSize: 13, color: COLOR.textSub }}>
+                有 <b className="num">{judgePendingCount}</b> 条作业已出 AI 分，等待你完成复核与真实性确认。
+              </div>
+              <Link to="/admin/judge">
+                <Button type="primary" size="small">开始复核（{judgePendingCount}）</Button>
+              </Link>
+            </Space>
+          )}
+        </Card>
+      )}
 
       {/* 数据条 · V4.1 Moka P4：大数字 + 环比 + 迷你趋势 + 口径说明 */}
       <Row gutter={[16, 16]}>
@@ -317,39 +374,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* V6.0 CR-15：评委复核入口（仅 JUDGE 渲染；非 JUDGE 身份 DOM 中不存在） */}
-      {judgeEntryOn && (
-        <Card
-          styles={{ body: { padding: 16 } }}
-          title={
-            <Space size={8}>
-              <CheckCircleOutlined style={{ color: COLOR.primary }} />
-              <span style={{ fontWeight: 700 }}>评委复核</span>
-              <span style={{ fontSize: 13, fontWeight: 400, color: COLOR.textMuted }}>
-                待你复核 {judgePendingCount} 条
-              </span>
-            </Space>
-          }
-          extra={<Link to="/admin/judge" style={{ color: COLOR.primary, fontSize: 13 }}>去复核 <ArrowRightOutlined /></Link>}
-        >
-          {judgePendingCount === 0 ? (
-            /* 规则③：为 0 时展示空态而不隐藏卡片，避免评委以为入口消失 */
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description="暂无待复核作业，新的作业送出后会在这里出现"
-            />
-          ) : (
-            <Space direction="vertical" size={8} style={{ width: '100%' }}>
-              <div style={{ fontSize: 13, color: COLOR.textSub }}>
-                有 <b className="num">{judgePendingCount}</b> 条作业已出 AI 分，等待你完成复核与真实性确认。
-              </div>
-              <Link to="/admin/judge">
-                <Button type="primary" size="small">开始复核（{judgePendingCount}）</Button>
-              </Link>
-            </Space>
-          )}
-        </Card>
-      )}
 
       {/* V6.0 CR-14：场景卡上移至「案例精选」正下方；V8.5-10.08 改文件夹页签卡九宫格 */}
       <Card

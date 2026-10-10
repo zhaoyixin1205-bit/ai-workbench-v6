@@ -8,6 +8,7 @@ import type { AssignmentSubmit, ScoreCard, ScoreResult } from '@/mock/types';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import { statusText, statusColor } from '@/constants/statusMeta';
 import { averageJudgeScore, composeFinalScore, effectiveJudgeScores } from '@/service/judgeScoring';
+import { aiScoreOf, periodLabelOf, scoreCardLabelOf, seqNo, submitterNameOf, typeNameOf } from '@/service/judgeListView';
 import { useNoteVisible } from '@/auth/annotation';
 
 /**
@@ -356,12 +357,35 @@ export default function JudgeReview({ variant = 'admin' }: { variant?: 'admin' |
             <Table
               size="small" rowKey="id" pagination={{ pageSize: 6 }} dataSource={queue}
               columns={[
-                { title: '编号', dataIndex: 'code', width: 140 },
-                { title: '姓名', dataIndex: 'name', width: 80 },
-                { title: '作业', dataIndex: 'title', ellipsis: true },
-                { title: 'AI 分', dataIndex: 'ai_score', width: 70, render: (v?: number) => <span className="num">{v ?? '—'}</span> },
-                /* V7.0 CR-33：状态列走唯一真源，不再显示裸英文 */
-                { title: '状态', dataIndex: 'status', render: (v: string) => <Tag color={statusColor(v)}>{statusText(v)}</Tag> },
+                /**
+                 * V8.3-10.10 运营方口径：编号改为**序号**（1/2/3）。
+                 * 原来的 `code`（WB-A1-P1-0001）是内部编号，业务方看不懂；
+                 * 分页时序号要用 AntD 的 index，跨页会从1 重新开始 —— 如需全局连续
+                 * 可改成`(index + 1) + (current - 1) * pageSize`。
+                 */
+                {
+                  title: '序号', width: 60, align: 'center',
+                  render: (_: unknown, __: unknown, index: number) => <span className="num">{seqNo(index)}</span>,
+                },
+                {
+                  title: '作业类型', ellipsis: true,
+                  render: (_: unknown, r: AssignmentSubmit) => typeNameOf(r, db.assignmentTypes),
+                },
+                {
+                  title: '期数', width: 80,
+                  render: (_: unknown, r: AssignmentSubmit) => periodLabelOf(r, db.periods),
+                },
+                {
+                  title: '提报人', width: 90,
+                  render: (_: unknown, r: AssignmentSubmit) => submitterNameOf(r),
+                },
+                {
+                  title: 'AI 分', dataIndex: 'ai_score', width: 80,
+                  render: (_: unknown, r: AssignmentSubmit) => {
+                    const v = aiScoreOf(r, db.scoreResults);
+                    return <span className="num">{v ?? '—'}</span>;
+                  },
+                },
                 {
                   title: '操作', width: confirmMode ? 180 : 140,
                   render: (_, r) => (
@@ -422,16 +446,34 @@ export default function JudgeReview({ variant = 'admin' }: { variant?: 'admin' |
       size="small" rowKey="id" pagination={{ pageSize: 6 }} dataSource={myHistory}
       locale={{ emptyText: <Empty description="还没有评分记录" /> }}
       columns={[
+        /**
+         * V8.3-10.10 运营方口径：序号（1/2/3）。
+         * 原来第一列是「提报」显示 code（WB-A1-P1-0001）—— 内部编号，业务方看不懂。
+         */
         {
-          title: '提报', width: 140,
-          render: (_, r: ScoreResult) => db.submits.find((s) => s.id === r.target_id)?.code ?? r.target_id,
+          title: '序号', width: 60, align: 'center',
+          render: (_: unknown, __: ScoreResult, index: number) => <span className="num">{seqNo(index)}</span>,
         },
         {
-          title: '作业', ellipsis: true,
-          render: (_, r: ScoreResult) => db.submits.find((s) => s.id === r.target_id)?.title ?? '—',
+          title: '作业类型', ellipsis: true,
+          render: (_: unknown, r: ScoreResult) =>
+            typeNameOf(db.submits.find((s) => s.id === r.target_id), db.assignmentTypes),
+        },
+        {
+          title: '期数', width: 80,
+          render: (_: unknown, r: ScoreResult) =>
+            periodLabelOf(db.submits.find((s) => s.id === r.target_id), db.periods),
+        },
+        {
+          title: '提报人', width: 90,
+          render: (_: unknown, r: ScoreResult) =>
+            submitterNameOf(db.submits.find((s) => s.id === r.target_id)),
         },
         { title: '我的评分', dataIndex: 'total', width: 90, render: (v: number) => <span className="num">{v}</span> },
-        { title: '评分卡', width: 120, render: (_, r: ScoreResult) => `${r.card_id} ${r.card_version}` },
+        {
+          title: '评分卡',
+          render: (_: unknown, r: ScoreResult) => scoreCardLabelOf(r, db.scoreCards),
+        },
         { title: '评分时间', dataIndex: 'created_at', width: 150 },
         {
           title: '操作', width: 100,
@@ -476,6 +518,30 @@ export default function JudgeReview({ variant = 'admin' }: { variant?: 'admin' |
         <Col xs={24} lg={14}>
           {isC ? (
             <Card size="small">
+              {/**
+               * V8.3-10.10 运营方口径：复核进度**单独一行，显示在待评分列表上一行**
+               * （原来它在页面右侧面板底部，要滚动到底才看得到）。
+               */}
+              <div
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  marginBottom: 10, paddingBottom: 10,
+                  borderBottom: '1px solid #F2EBDD',
+                }}
+              >
+                <Typography.Text strong style={{ fontSize: 13 }}>复核进度</Typography.Text>
+                <Progress
+                  percent={Math.round(
+                    (db.submits.filter((s) => s.judge_score !== undefined).length / Math.max(1, db.submits.length)) * 100,
+                  )}
+                  strokeColor={COLOR.primary}
+                  size="small"
+                  style={{ flex: 1, margin: 0 }}
+                />
+                <Typography.Text type="secondary" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+                  {db.submits.filter((s) => s.judge_score !== undefined).length}/{db.submits.length}
+                </Typography.Text>
+              </div>
               <Tabs
                 activeKey={cTab}
                 onChange={(k) => setCTab(k as 'pending' | 'history')}
