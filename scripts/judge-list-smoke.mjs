@@ -55,22 +55,29 @@ check('A5 🔴 AI 分有回退链（submit.ai_score 为空时取 scoreResults �
     : '无 scoreResults 回退 —— 线上有条作业 ai_score 是 undefined 但 scoreResults 里有 AI 记录，会显示「—」';
 });
 
-check('A6 🔴 评分卡显示名称（不是 card_id 内部编号）', () => {
+check('A6 评分卡字段已从历史列表移除（运营方 10-10 要求），翻译函数保留', () => {
+  // ⚠️ 这条断言有过一次「假通过」：python 批量替换时 `\s` 转义被shell 吃掉，
+  // 脚本没真改到A6，于是「加回评分卡列」也照样22/22 通过。
+  // 现在用 Edit 直接改文件，且下面 E3 会做真实反向验证。
   const seg = /export function scoreCardLabelOf[\s\S]{0,500}?\n}/.exec(view);
-  if (!seg) return '未找到 scoreCardLabelOf';
-  return /cards\?\.find/.test(seg[0]) && /\$\{name\}/.test(seg[0])
-    ? true
-    : "未用卡片 name —— 会显示成 'SC1 v2' 这种内部编号";
+  if (!seg) return 'scoreCardLabelOf 被删了 —— 将来要展示需重写，且丢了「用 name 不用 id」的约定';
+  if (!/cards\?\.find/.test(seg[0]) || !/\$\{name\}/.test(seg[0])) {
+    return 'scoreCardLabelOf 未用卡片 name —— 会显示成 SC1 v2 这种内部编号';
+  }
+  // 关键：两张历史表里都不能再有「评分卡」列
+  const inV1 = /title: '评分卡'/.test(v1q);
+  const inV2 = /title: '评分卡'/.test(v2q);
+  return !inV1 && !inV2 ? true : '历史评分表里「评分卡」列还在 —— 运营方要求已去掉';
 });
 
 /* ---------- B组：两张表列结构 ---------- */
 for (const [label, src, wantCols] of [
   ['v1 待评分', v1q, ['序号', '作业类型', '期数', '提报人', 'AI 分', '操作']],
-  ['v1 历史评分', v1q, ['序号', '作业类型', '期数', '提报人', '我的评分', '评分卡', '评分时间']],
+  ['v1 历史评分', v1q, ['序号', '作业类型', '期数', '提报人', '我的评分', '评分时间']],
   ['v2 待评分', v2q, ['序号', '作业类型', '期数', '提报人', 'AI 分', '操作']],
-  ['v2 历史评分', v2q, ['序号', '作业类型', '期数', '提报人', '我的评分', '评分卡', '评分时间']],
+  ['v2 历史评分', v2q, ['序号', '作业类型', '期数', '提报人', '我的评分', '评分时间']],
 ]) {
-  check(`B ${label} 六个/七个字段齐全`, () => {
+  check(`B ${label} 字段齐全`, () => {
     const miss = wantCols.filter((c) => !src.includes(`title: '${c}'`));
     return miss.length ? `缺字段: ${miss.join(', ')}` : true;
   });
@@ -164,6 +171,21 @@ check('E2 反向：把 judge 项挪到 asset 之前，D3 必须失败', () => {
   const iA = broken.indexOf("key: 'asset'");
   const iJ = broken.indexOf('key: "judge"\n    /* moved */');
   return (iJ > 0 && iJ < iA) ? false : true;
+});
+check('E3 反向：A6 在「评分卡列加回」时必须失败（验证 A6 不是假断言）', () => {
+  // 判据逻辑：把评分卡列注入 v1q 后，A6 的判据函数应返回「失败」。
+  // ⚠️ 上一版我写反了（注入后返回 false=失败，却当成 E3 失败），
+  // 结果 E3 恒红、掩盖了 A6 的真实状态 —— **反向断言自己红，等于没断言**。
+  const injected = v1q.replace(
+    /(\{ title: '评分时间')/,
+    "{ title: '评分卡', render: () => 'x' }, $1",
+  );
+  if (injected === v1q) return '注入锚点没匹配上（先确认历史表里还有「评分时间」列）';
+  // 复刻 A6 的判据：注入后应当「检测到评分卡列」→ 判为失败
+  const a6WouldFail = /title: '评分卡'/.test(injected);
+  return a6WouldFail === true
+    ? true
+    : '注入后 A6 仍判通过 → A6 是假断言';
 });
 
 const failed = results.filter((r) => !r.ok);

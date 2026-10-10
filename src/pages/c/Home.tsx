@@ -14,6 +14,7 @@ import SceneBoard from '@/components/SceneBoard';
 import { buildSceneBoard } from '@/service/sceneBoard';
 import AnnounceTicker, { type TickerItem } from '@/components/AnnounceTicker';
 import { DEMO_TODAY } from '@/mock/seedBiz';
+import { overdueBountiesOf, overdueTodoText } from '@/service/bountyOverdue';
 import { currentStageOf, stageLabel, submitDeadlineOf } from '@/utils/campaignTime';
 /* V8.2-10.07：必修作业 To Do */
 import { myPendingRequired } from '@/utils/assignmentParticipants';
@@ -66,6 +67,16 @@ export default function Home() {
       )
   ).length;
 
+  /**
+   * V8.3-10.10 超期悬赏（运营方口径 A：只提醒组织者，不做自动流转）。
+   * 仅组织者/管理员可见 —— 与 /admin/bounty 的审核动作权限一致（见 auth/access.ts）。
+   * ⚠️ 必须声明在 myTodos 之前，否则 TDZ（TS2448会直接报出来）。
+   */
+  const organizerOn = hasRole('ORGANIZER') || hasRole('ADMIN');
+  const overdueBounties = organizerOn
+    ? overdueBountiesOf(db.bounties, dayjs().format('YYYY-MM-DD'))
+    : [];
+
   const myTodos = [
     ...myRequiredTodos,
     { key: 'topic', done: mySubmits.length > 0, text: '还没选定场景', action: '去挑一个', to: '/cases' },
@@ -85,6 +96,20 @@ export default function Home() {
           text: `有${judgePendingCount} 条作业等你复核`,
           action: '去复核',
           to: '/admin/judge',
+        }]
+      : []),
+    /**
+     * V8.3-10.10 超期悬赏提醒（运营方拍板口径 A：**只提醒，不自动流转**）。
+     * 排在所有个人提醒之后 —— 它是运营事项，不该占员工/评委的个人待办位。
+     * 判据与决策记录见 service/bountyOverdue.ts。
+     */
+    ...(organizerOn && overdueBounties.length > 0
+      ? [{
+          key: 'overdue',
+          done: false,
+          text: overdueTodoText(overdueBounties),
+          action: '去处理',
+          to: '/admin/bounty',
         }]
       : []),
   ].filter((t) => !t.done)

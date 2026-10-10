@@ -9,7 +9,7 @@ import { statusText, statusColor } from '@/constants/statusMeta';
 import { Dialog, DialogField, DialogKV, useConfirm } from '@/components/v2/Dialog';
 import { useNoteVisible } from '@/auth/annotation';
 import { averageJudgeScore, composeFinalScore, effectiveJudgeScores } from '@/service/judgeScoring';
-import { aiScoreOf, periodLabelOf, scoreCardLabelOf, seqNo, submitterNameOf, typeNameOf } from '@/service/judgeListView';
+import { aiScoreOf, periodLabelOf, seqNo, submitterNameOf, typeNameOf } from '@/service/judgeListView';
 import '../../theme/v2/template.css';
 
 /**
@@ -543,10 +543,13 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
             submitterNameOf(db.submits.find((s) => s.id === r.target_id)),
         },
         { title: '我的评分', dataIndex: 'total', width: 90, render: (v: number) => <span className="wb2-num">{v}</span> },
-        {
-          title: '评分卡',
-          render: (_: unknown, r: ScoreResult) => scoreCardLabelOf(r, db.scoreCards),
-        },
+        /**
+         * V8.3-10.10运营方要求**去掉「评分卡」字段**。
+         * 之前给的是名称「应用实践作业思维评分卡 v3」，在 1.5fr 左栏里被压成竖排单字，
+         * 反而看不清。评分卡本身是配置项（评分时用的那一版），
+         * 评委自己知道即可，历史列表里占位不划算。
+         * 字段仍在 `scoreResults.card_id/card_version` 里保留，只是不展示。
+         */
         { title: '评分时间', dataIndex: 'created_at', width: 150 },
         {
           title: '操作', width: 100,
