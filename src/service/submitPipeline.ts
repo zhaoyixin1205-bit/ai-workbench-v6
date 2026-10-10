@@ -478,7 +478,7 @@ export function runSubmitPipeline(db: DB, opts?: PipelineOptions): PipelineResul
        * 只把提报留作「待服务端打分」；服务端打分后状态转为 AI_SCORED，再走下面推评委。
        * 这样既不让密钥进浏览器，也不会出现「本地规则分 + 服务端模型分」两份打架。
        */
-      if (opts?.aiScorerReady) continue;
+      if (opts?.aiScorerReady === true) continue;
       const card = resolveScoreCard(db, s);
       if (!card) {
         detail.push(`${s.code} 未匹配到评分卡，跳过 AI 评分`);

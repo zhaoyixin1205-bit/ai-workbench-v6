@@ -462,7 +462,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [aiScorerReady, setAiScorerReady] = useState(false);
   useEffect(() => {
     let cancelled = false;
-    fetchAiConfig().then((c) => { if (!cancelled) setAiScorerReady(c.ready); }).catch(() => {});
+    fetchAiConfig().then((c) => { if (!cancelled) setAiScorerReady(c.ready); }).catch(() => { if (!cancelled) setAiScorerReady(false); });
     return () => { cancelled = true; };
   }, []);
 

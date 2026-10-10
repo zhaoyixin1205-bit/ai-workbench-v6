@@ -465,7 +465,7 @@ async function handle(req, res) {
         (x) => !(x.target_type === 'submit' && x.target_id === submitId && x.source === 'AI'),
       ),
     ];
-    const writeData = {
+    let writeData = {
       ...data,
       scoreResults: nextResults,
       /** AI 分回写到提报上，列表页的「AI 分」列直接读它 */
