@@ -200,7 +200,7 @@ export default function WorkSubmitV2() {
           <Form.Item
             label="附件"
             extra={<span className="wb2-fhint">
-              白名单 {ALLOW_EXT.join(' / ')}，单文件 ≤50MB，最多 5 个；zip 由服务端解包校验是否含 SKILL.md + manifest.yaml
+              白名单 {ALLOW_EXT.join(' / ')}，单文件 ≤50MB，最多 5 个；zip 由服务端解包校验是否含 SKILL.md
               {uploading > 0 ? ` · 上传中 ${uploading}` : ''}
             </span>}
           >

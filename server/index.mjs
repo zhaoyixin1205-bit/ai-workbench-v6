@@ -892,7 +892,7 @@ async function handle(req, res) {
       bizType, bizId, name, ext, size: buf.length, driver: repo.name, objectKey: key, uploadedBy,
     });
 
-    // zip 真实校验：解包确认含 SKILL.md 与 manifest.yaml（CR-20 / 6.3.7 共同约束）
+    // zip 真实校验：解包确认含 SKILL.md（2026-10-10 放宽：manifest.yaml 不再强制）
     if (ext === 'zip') {
       try {
         const r = validateSkillZip(buf);

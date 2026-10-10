@@ -90,13 +90,15 @@ export function readZipText(buf, want) {
 
 /**
  * Skill 包结构校验（CR-31 的真实校验，取代此前的「模拟校验通过」）。
- * 规则：包内必须同时存在 SKILL.md 与 manifest.yaml（允许位于包内任意层级）。
+ * 规则（2026-10-10 运营方拍板放宽）：包内只需含 SKILL.md（允许位于包内任意层级，
+ * 大小写不敏感）—— manifest.yaml 不再强制。裸 .md 文件（非 zip）不经过本校验，
+ * 天然满足「.md 文档本身也可以」的口径。
  */
-export const SKILL_REQUIRED = ['SKILL.md', 'manifest.yaml'];
+export const SKILL_REQUIRED = ['SKILL.md'];
 
 export function validateSkillZip(buf) {
   const names = listZipEntries(buf);
-  const bases = new Set(names.map((n) => n.split('/').pop()));
-  const missing = SKILL_REQUIRED.filter((f) => !bases.has(f));
+  const bases = new Set(names.map((n) => n.split('/').pop().toLowerCase()));
+  const missing = SKILL_REQUIRED.filter((f) => !bases.has(f.toLowerCase()));
   return { ok: missing.length === 0, missing, entries: names };
 }

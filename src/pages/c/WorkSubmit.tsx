@@ -83,7 +83,7 @@ export default function WorkSubmit() {
   /**
    * V6.0 CR-31：附件改走真实文件服务（此前只登记文件名，无法下载 —— A-39 遗留项结案）。
    * 校验口径（白名单 / 50MB / 最多 5 个）与服务端一致；zip 由服务端解包真实校验
-   * 是否含 SKILL.md 与 manifest.yaml，不再是「模拟校验通过」。
+   * 是否含 SKILL.md，不再是「模拟校验通过」。
    */
   const { beforeUpload, uploading } = useFileUpload('SUBMIT', `SUBMIT-${me.union_id}`, {
     count: atts.length,
@@ -335,7 +335,7 @@ export default function WorkSubmit() {
 
             <Form.Item
               label="附件"
-              extra={`白名单 ${ALLOW_EXT.join(' / ')}，单文件 ≤50MB，最多 5 个；zip 由服务端解包校验是否含 SKILL.md + manifest.yaml${uploading > 0 ? ` · 上传中 ${uploading}` : ''}`}
+              extra={`白名单 ${ALLOW_EXT.join(' / ')}，单文件 ≤50MB，最多 5 个；zip 由服务端解包校验是否含 SKILL.md${uploading > 0 ? ` · 上传中 ${uploading}` : ''}`}
             >
               <Upload.Dragger
                 multiple

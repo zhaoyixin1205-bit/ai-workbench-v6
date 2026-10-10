@@ -200,7 +200,7 @@ export interface AttachmentFile {
   uploaded_by: string;
   uploaded_at: string;
   is_deleted: boolean;
-  /** zip 包结构校验结论（仅 zip 有值）：服务端解包后校验是否含 SKILL.md 与 manifest.yaml */
+  /** zip 包结构校验结论（仅 zip 有值）：服务端解包后校验是否含 SKILL.md（manifest.yaml 已放宽为不强制） */
   zip_checked?: boolean;
   zip_valid?: boolean;
   /** 缺失的必含文件清单，用于给出明确提示而非笼统报错 */

@@ -180,7 +180,7 @@ export default function ContentAdmin() {
 
   /**
    * V6.0 CR-31：Skill 包与案例附件改走真实文件服务（此前「只登记文件名与体积」—— A-39 结案）。
-   * zip 由服务端解包真实校验是否含 SKILL.md + manifest.yaml，不再是模拟通过。
+   * zip 由服务端解包真实校验是否含 SKILL.md，不再是模拟通过。
    */
   const { beforeUpload: beforeSkillUpload, uploading: skillUploading } = useFileUpload(
     'CASE_SKILL', editingId || 'NEW-CASE',

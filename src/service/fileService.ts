@@ -12,6 +12,19 @@
  */
 
 import type { AttachmentFile } from '@/mock/types';
+import { getSessionToken } from '@/auth/dingtalk';
+
+/**
+ * V8.3-10.10 修复：上传/删除请求补带会话 token。
+ *
+ * 此前 uploadFile/deleteFile 都**不带 X-WB-Token** —— 本地开发（免登未启用）
+ * 一切正常，生产（钉钉免登 enabled）服务端 readToken 拿到空 → 一律 401
+ * 「会话已过期」，被误判成文件大小/存储问题。与 stateService.authHeaders 同一口径。
+ */
+function authHeaders(): Record<string, string> {
+  const t = getSessionToken();
+  return t ? { 'X-WB-Token': t } : {};
+}
 
 /** 类型白名单：与服务端 ALLOW_EXT 保持一致（服务端为准） */
 export const FILE_ALLOW_EXT = [
@@ -96,7 +109,7 @@ function demoRecord(
 /**
  * 上传文件。
  * 后端可用 → 真实上传并拿回 file_id；不可用或开关关闭 → 降级为演示态记录（不抛错，业务流不中断）。
- * zip：服务端解包校验包内必须含 SKILL.md 与 manifest.yaml，不通过时以 Error 抛出并带缺失清单。
+ * zip：服务端解包校验包内必须含 SKILL.md（manifest.yaml 已于 2026-10-10 放宽为不强制），不通过时以 Error 抛出并带缺失清单。
  */
 export async function uploadFile(
   file: File,
@@ -119,14 +132,14 @@ export async function uploadFile(
   });
   const res = await fetch(`/api/files/upload?${qs.toString()}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/octet-stream' },
+    headers: { 'Content-Type': 'application/octet-stream', ...authHeaders() },
     body: file,
   });
   const body = (await res.json().catch(() => ({}))) as UploadResp;
   if (!res.ok || !body.ok || !body.file) {
-    if (body.missing?.length) {
-      throw new Error(`压缩包缺少必含文件：${body.missing.join('、')}（Skill 包必须含 SKILL.md 与 manifest.yaml）`);
-    }
+      if (body.missing?.length) {
+        throw new Error(`压缩包缺少必含文件：${body.missing.join('、')}（Skill 包必须含 SKILL.md，允许位于包内任意层级）`);
+      }
     throw new Error(body.error || `上传失败（HTTP ${res.status}）`);
   }
   return body.file;
@@ -142,7 +155,10 @@ export function downloadUrl(f: AttachmentFile): string {
 export async function deleteFile(id: string): Promise<boolean> {
   if (!(await probeFileBackend())) return false;
   try {
-    const res = await fetch(`/api/files/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    const res = await fetch(`/api/files/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
     return res.ok;
   } catch {
     return false;

@@ -110,7 +110,7 @@ export function useBountyBoard() {
 
   /**
    * V6.0 CR-31：附件改走真实文件服务（此前「只登记元数据，未接入文件服务」—— A-39 结案）。
-   * 校验口径与作业提报一致；zip 由服务端解包真实校验 SKILL.md + manifest.yaml。
+   * 校验口径与作业提报一致；zip 由服务端解包真实校验 SKILL.md。
    */
   const { beforeUpload, uploading } = useFileUpload('BOUNTY_SOLUTION', `BOUNTY-${me.union_id}`, {
     count: solAtts.length,

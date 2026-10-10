@@ -141,7 +141,7 @@ export default function BountyListV2() {
     <>
       <Form.Item
         label="附件"
-        extra={`白名单 ${BOUNTY_ALLOW_EXT.join(' / ')}，单文件 ≤50MB，最多 5 个；zip 由服务端解包校验 SKILL.md + manifest.yaml${b.uploading > 0 ? ` · 上传中 ${b.uploading}` : ''}`}
+        extra={`白名单 ${BOUNTY_ALLOW_EXT.join(' / ')}，单文件 ≤50MB，最多 5 个；zip 由服务端解包校验 SKILL.md${b.uploading > 0 ? ` · 上传中 ${b.uploading}` : ''}`}
       >
         <Upload.Dragger
           multiple maxCount={5} beforeUpload={b.beforeUpload}

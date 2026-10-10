@@ -576,7 +576,7 @@ export default function BountyList() {
             <Form.Item name="skill_used" label="所用 Skill" rules={[{ required: true, message: '请填写所用 Skill' }]}>
               <Input placeholder="内置 Skill 名称，或自建 Skill 包名称" />
             </Form.Item>
-            <Form.Item label="附件" extra={`白名单 ${ALLOW_EXT.join(' / ')}，单文件 ≤50MB，最多 5 个；zip 由服务端解包校验 SKILL.md + manifest.yaml${uploading > 0 ? ` · 上传中 ${uploading}` : ''}`}>
+            <Form.Item label="附件" extra={`白名单 ${ALLOW_EXT.join(' / ')}，单文件 ≤50MB，最多 5 个；zip 由服务端解包校验 SKILL.md${uploading > 0 ? ` · 上传中 ${uploading}` : ''}`}>
               <Upload.Dragger
                 multiple maxCount={5} beforeUpload={beforeUpload}
                 fileList={solFiles} onChange={({ fileList }) => setSolFiles(fileList)}
