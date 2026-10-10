@@ -289,6 +289,28 @@
   outline: 2px solid var(--wb-primary);
   outline-offset: 2px;
 }
+/* V8.3-10.10：拖拽排序态 */
+.wb2-li[data-dragging='true'] {
+  opacity: 0.4;
+  box-shadow: none;
+}
+.wb2-li[data-dragover='true'] {
+  border-color: var(--wb-primary);
+  border-style: dashed;
+  transform: translateY(0);
+}
+.wb2-drag-handle {
+  flex: 0 0 auto;
+  cursor: grab;
+  color: var(--wb-ink-4);
+  font-size: 16px;
+  line-height: 1;
+  user-select: none;
+  touch-action: none;
+}
+.wb2-drag-handle:active {
+  cursor: grabbing;
+}
 .wb2-li-dot {
   width: 6px;
   height: 6px;

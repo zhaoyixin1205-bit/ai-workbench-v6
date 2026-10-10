@@ -15,6 +15,7 @@ import type {
   Announcement, Attachment, CaseItem, Level, SceneCard, ScopeSubject, SkillPackage, Topic, Track,
 } from '@/mock/types';
 import { useFileUpload } from '@/service/useFileUpload';
+import { useDragSort } from '@/hooks/useDragSort';
 /* V7.0 裸编码治理：公告/场景卡状态显示中文（DRAFT→草稿 等） */
 import { contentStatusText } from '@/constants/statusMeta';
 import { Dialog, useConfirm } from '@/components/v2/Dialog';
@@ -315,20 +316,24 @@ export default function ContentAdminV2() {
       resetForm();
       return;
     }
-    const ok = commitScope(visibleSubjects, (p) => ({
-      ...p,
-      cases: [{
-        id: `CS${Date.now()}`, track: vals.track ?? '客户赋能', title: vals.title ?? '未命名案例',
-        summary: '', pain_point: '', input: '', prompt: vals.prompt ?? '', output: '',
-        acceptance: [], level: vals.level ?? '骨干层', tags: vals.tags ?? [],
-        author_union_id: me.union_id, author_name: me.name,
-        like_count: 0, view_count: 0, reuse_count: 0, duration: '—', cover: '📘',
-        status: '草稿', visible_subjects: visibleSubjects, created_at: DEMO_TODAY,
-        /** V4.1：附加资源随案例一起落库，未配置即空数组（详情页不渲染空壳区块） */
-        skill_packages: skills,
-        attachments: atts,
-      } as CaseItem, ...p.cases],
-    }), '已创建草稿（四件套齐全后方可发布）');
+    const ok = commitScope(visibleSubjects, (p) => {
+      const maxSort = p.cases.reduce((m, c) => Math.max(m, typeof c.sort === 'number' ? c.sort : -1), -1);
+      return {
+        ...p,
+        cases: [{
+          id: `CS${Date.now()}`, track: vals.track ?? '客户赋能', title: vals.title ?? '未命名案例',
+          summary: '', pain_point: '', input: '', prompt: vals.prompt ?? '', output: '',
+          acceptance: [], level: vals.level ?? '骨干层', tags: vals.tags ?? [],
+          author_union_id: me.union_id, author_name: me.name,
+          like_count: 0, view_count: 0, reuse_count: 0, duration: '—', cover: '📘',
+          status: '草稿', visible_subjects: visibleSubjects, created_at: DEMO_TODAY,
+          /** V4.1：附加资源随案例一起落库，未配置即空数组（详情页不渲染空壳区块） */
+          skill_packages: skills,
+          attachments: atts,
+          sort: maxSort + 1,
+        } as CaseItem, ...p.cases],
+      };
+    }, '已创建草稿（四件套齐全后方可发布）');
     if (ok) {
       log('新建案例', vals.title ?? '',
         `可见范围 ${visibleSubjects.map((s) => s.name).join('、')} · Skill ${skills.length} 个 · 附件 ${atts.length} 个`);
@@ -394,6 +399,19 @@ export default function ContentAdminV2() {
         message.success('已删除并留痕');
       },
     });
+  };
+
+  /* ---------- V8.3-10.10：案例拖拽排序（落盘 sort 字段） ---------- */
+  const caseIds = db.cases.filter((c) => !c.is_deleted).map((c) => c.id);
+  const caseDrag = useDragSort(caseIds, (ids) => {
+    const rank = new Map(ids.map((id, i) => [id, i]));
+    setDb((p) => ({ ...p, cases: p.cases.map((c) => (rank.has(c.id) ? { ...c, sort: rank.get(c.id)! } : c)) }));
+    log('调整案例顺序', `${ids.length} 条`, '拖拽排序');
+  });
+  /** antd Table 行级拖拽：从 rowKey 取 id 后套用通用拖拽属性 */
+  const CaseDragRow = (props: Record<string, unknown>) => {
+    const id = props['data-row-key'] as string;
+    return <tr {...props} {...(fullCrudOn ? caseDrag.rowAttrs(id) : {})} />;
   };
 
   /* ---------- V6.0 CR-28：选题池 CRUD ---------- */
@@ -580,25 +598,29 @@ export default function ContentAdminV2() {
       log('编辑场景卡', vals.title ?? editing.title, `状态 ${contentStatusText(vals.status)}`);
       message.success('场景卡已保存');
     } else {
-      setDb((p) => ({
-        ...p,
-        sceneCards: [{
-          id: `SC${Date.now()}`,
-          title: vals.title ?? '',
-          summary: vals.summary ?? '',
-          content: vals.content ?? '',
-          track: vals.track ?? '客户赋能',
-          emoji: vals.emoji || '💡',
-          status: vals.status ?? 'DRAFT',
-          tags: vals.tags ?? [],
-          week: vals.week || '',
-          view_count: 0,
-          published_at: vals.status === 'PUBLISHED' ? at : '',
-          created_by: me.name,
-          created_at: at,
-          source_case_id: vals.source_case_id || undefined,
-        }, ...p.sceneCards],
-      }));
+      setDb((p) => {
+        const maxSort = p.sceneCards.reduce((m, s) => Math.max(m, typeof s.sort === 'number' ? s.sort : -1), -1);
+        return {
+          ...p,
+          sceneCards: [{
+            id: `SC${Date.now()}`,
+            title: vals.title ?? '',
+            summary: vals.summary ?? '',
+            content: vals.content ?? '',
+            track: vals.track ?? '客户赋能',
+            emoji: vals.emoji || '💡',
+            status: vals.status ?? 'DRAFT',
+            tags: vals.tags ?? [],
+            week: vals.week || '',
+            view_count: 0,
+            published_at: vals.status === 'PUBLISHED' ? at : '',
+            created_by: me.name,
+            created_at: at,
+            source_case_id: vals.source_case_id || undefined,
+            sort: maxSort + 1,
+          }, ...p.sceneCards],
+        };
+      });
       log('新建场景卡', vals.title ?? '', `状态 ${contentStatusText(vals.status)} · 创建人 ${me.name}`);
       message.success('场景卡已创建');
     }
@@ -671,6 +693,14 @@ export default function ContentAdminV2() {
 
   const visibleScenes = db.sceneCards.filter((s) => !s.is_deleted);
 
+  /* ---------- V8.3-10.10：场景卡拖拽排序（落盘 sort 字段） ---------- */
+  const sceneIds = visibleScenes.map((s) => s.id);
+  const sceneDrag = useDragSort(sceneIds, (ids) => {
+    const rank = new Map(ids.map((id, i) => [id, i]));
+    setDb((p) => ({ ...p, sceneCards: p.sceneCards.map((s) => (rank.has(s.id) ? { ...s, sort: rank.get(s.id)! } : s)) }));
+    log('调整场景卡顺序', `${ids.length} 条`, '拖拽排序');
+  });
+
   return (
     <div>
       <div className="wb2-ph">
@@ -699,8 +729,13 @@ export default function ContentAdminV2() {
                   </div>
                   <Table
                     size="small" rowKey="id" pagination={{ pageSize: 8 }}
+                    components={fullCrudOn ? { body: { row: CaseDragRow } } : undefined}
                     dataSource={db.cases.filter((c) => !c.is_deleted)}
                     columns={[
+                      ...(fullCrudOn ? [{
+                        title: '', width: 36, align: 'center' as const,
+                        render: () => <span className="wb2-drag-handle" title="拖拽调整顺序">⠿</span>,
+                      }] : []),
                       { title: '标题', dataIndex: 'title' },
                       {
                         title: '赛道', dataIndex: 'track',
@@ -875,7 +910,10 @@ export default function ContentAdminV2() {
                   ) : (
                     <div className="wb2-list">
                       {visibleScenes.map((c) => (
-                        <div className="wb2-li" key={c.id}>
+                        <div className="wb2-li" key={c.id} {...(fullCrudOn ? sceneDrag.rowAttrs(c.id) : {})}>
+                          {fullCrudOn && (
+                            <span className="wb2-drag-handle" title="拖拽调整顺序" style={{ flex: '0 0 auto' }}>⠿</span>
+                          )}
                           <div style={{ minWidth: 0, flex: 1 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--wb-space-3)', flexWrap: 'wrap' }}>
                               <span style={{ fontSize: 20 }}>{c.emoji}</span>
@@ -898,7 +936,7 @@ export default function ContentAdminV2() {
                               {c.pushed_at && ` · 已登记推送 ${c.pushed_at}`}
                             </div>
                           </div>
-                          <div style={{ flex: '0 0 auto' }}>
+                          <div style={{ flex: '0 0 auto' }} onDragStart={(e) => e.stopPropagation()}>
                             {fullCrudOn ? acts(
                               linkBtn(c.status === 'PUBLISHED' ? '下线' : '发布', () => setSceneStatus(c, c.status === 'PUBLISHED' ? 'OFFLINE' : 'PUBLISHED')),
                               linkBtn('编辑', () => openScene(c)),

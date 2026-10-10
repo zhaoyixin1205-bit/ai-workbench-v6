@@ -242,6 +242,8 @@ export interface CaseItem {
   skill_packages?: SkillPackage[];
   /** V4.1：补充信息 / 附件（非必填，各类型文件） */
   attachments?: Attachment[];
+  /** V8.3-10.10：后台拖拽排序用；数值越小越靠前；缺省在已赋序数据之后按原序 */
+  sort?: number;
   /** V6.0 CR-28：软删标记（删除一律软删并留痕，实体不物理移除） */
   is_deleted?: boolean;
   deleted_at?: string;
@@ -274,6 +276,8 @@ export interface SceneCard {
   created_at?: string;
   /** 由历史案例迁移而来的场景卡保留原案例 id，点击仍可进案例详情 */
   source_case_id?: string;
+  /** V8.3-10.10：后台拖拽排序用；数值越小越靠前；缺省在已赋序数据之后按原序 */
+  sort?: number;
   /** V6.0 CR-28：软删标记 */
   is_deleted?: boolean;
   deleted_at?: string;

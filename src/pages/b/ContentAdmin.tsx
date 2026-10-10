@@ -16,6 +16,7 @@ import type {
 } from '@/mock/types';
 import { formatSize } from '@/mock/types';
 import { useFileUpload } from '@/service/useFileUpload';
+import { useDragSort } from '@/hooks/useDragSort';
 
 export default function ContentAdmin() {
   const { db, setDb, me, log, flags } = useStore();
@@ -281,20 +282,24 @@ export default function ContentAdmin() {
       resetForm();
       return;
     }
-    const ok = commitScope(visibleSubjects, (p) => ({
-      ...p,
-      cases: [{
-        id: `CS${Date.now()}`, track: vals.track ?? '客户赋能', title: vals.title ?? '未命名案例',
-        summary: '', pain_point: '', input: '', prompt: vals.prompt ?? '', output: '',
-        acceptance: [], level: vals.level ?? '骨干层', tags: vals.tags ?? [],
-        author_union_id: me.union_id, author_name: me.name,
-        like_count: 0, view_count: 0, reuse_count: 0, duration: '—', cover: '📘',
-        status: '草稿', visible_subjects: visibleSubjects, created_at: DEMO_TODAY,
-        /** V4.1：附加资源随案例一起落库，未配置即空数组（详情页不渲染空壳区块） */
-        skill_packages: skills,
-        attachments: atts,
-      } as CaseItem, ...p.cases],
-    }), '已创建草稿（四件套齐全后方可发布）');
+    const ok = commitScope(visibleSubjects, (p) => {
+      const maxSort = p.cases.reduce((m, c) => Math.max(m, typeof c.sort === 'number' ? c.sort : -1), -1);
+      return {
+        ...p,
+        cases: [{
+          id: `CS${Date.now()}`, track: vals.track ?? '客户赋能', title: vals.title ?? '未命名案例',
+          summary: '', pain_point: '', input: '', prompt: vals.prompt ?? '', output: '',
+          acceptance: [], level: vals.level ?? '骨干层', tags: vals.tags ?? [],
+          author_union_id: me.union_id, author_name: me.name,
+          like_count: 0, view_count: 0, reuse_count: 0, duration: '—', cover: '📘',
+          status: '草稿', visible_subjects: visibleSubjects, created_at: DEMO_TODAY,
+          /** V4.1：附加资源随案例一起落库，未配置即空数组（详情页不渲染空壳区块） */
+          skill_packages: skills,
+          attachments: atts,
+          sort: maxSort + 1,
+        } as CaseItem, ...p.cases],
+      };
+    }, '已创建草稿（四件套齐全后方可发布）');
     if (ok) {
       log('新建案例', vals.title ?? '',
         `可见范围 ${visibleSubjects.map((s) => s.name).join('、')} · Skill ${skills.length} 个 · 附件 ${atts.length} 个`);
@@ -360,6 +365,19 @@ export default function ContentAdmin() {
         message.success('已删除并留痕');
       },
     });
+  };
+
+  /* ---------- V8.3-10.10：案例拖拽排序（落盘 sort 字段） ---------- */
+  const caseIds = db.cases.filter((c) => !c.is_deleted).map((c) => c.id);
+  const caseDrag = useDragSort(caseIds, (ids) => {
+    const rank = new Map(ids.map((id, i) => [id, i]));
+    setDb((p) => ({ ...p, cases: p.cases.map((c) => (rank.has(c.id) ? { ...c, sort: rank.get(c.id)! } : c)) }));
+    log('调整案例顺序', `${ids.length} 条`, '拖拽排序');
+  });
+  /** antd Table 行级拖拽 */
+  const CaseDragRow = (props: Record<string, unknown>) => {
+    const id = props['data-row-key'] as string;
+    return <tr {...props} {...(fullCrudOn ? caseDrag.rowAttrs(id) : {})} />;
   };
 
   /* ---------- V6.0 CR-28：选题池 CRUD ---------- */
@@ -546,25 +564,29 @@ export default function ContentAdmin() {
       log('编辑场景卡', vals.title ?? editing.title, `状态 ${vals.status}`);
       message.success('场景卡已保存');
     } else {
-      setDb((p) => ({
-        ...p,
-        sceneCards: [{
-          id: `SC${Date.now()}`,
-          title: vals.title ?? '',
-          summary: vals.summary ?? '',
-          content: vals.content ?? '',
-          track: vals.track ?? '客户赋能',
-          emoji: vals.emoji || '💡',
-          status: vals.status ?? 'DRAFT',
-          tags: vals.tags ?? [],
-          week: vals.week || '',
-          view_count: 0,
-          published_at: vals.status === 'PUBLISHED' ? at : '',
-          created_by: me.name,
-          created_at: at,
-          source_case_id: vals.source_case_id || undefined,
-        }, ...p.sceneCards],
-      }));
+      setDb((p) => {
+        const maxSort = p.sceneCards.reduce((m, s) => Math.max(m, typeof s.sort === 'number' ? s.sort : -1), -1);
+        return {
+          ...p,
+          sceneCards: [{
+            id: `SC${Date.now()}`,
+            title: vals.title ?? '',
+            summary: vals.summary ?? '',
+            content: vals.content ?? '',
+            track: vals.track ?? '客户赋能',
+            emoji: vals.emoji || '💡',
+            status: vals.status ?? 'DRAFT',
+            tags: vals.tags ?? [],
+            week: vals.week || '',
+            view_count: 0,
+            published_at: vals.status === 'PUBLISHED' ? at : '',
+            created_by: me.name,
+            created_at: at,
+            source_case_id: vals.source_case_id || undefined,
+            sort: maxSort + 1,
+          }, ...p.sceneCards],
+        };
+      });
       log('新建场景卡', vals.title ?? '', `状态 ${vals.status} · 创建人 ${me.name}`);
       message.success('场景卡已创建');
     }
@@ -608,6 +630,15 @@ export default function ContentAdmin() {
     message.success(next === 'PUBLISHED' ? '已发布，首页场景卡即时生效' : '已下线，首页不再展示');
   };
 
+  /* ---------- V8.3-10.10：场景卡拖拽排序（落盘 sort 字段） ---------- */
+  const visibleScenesV1 = db.sceneCards.filter((s) => !s.is_deleted);
+  const sceneIdsV1 = visibleScenesV1.map((s) => s.id);
+  const sceneDrag = useDragSort(sceneIdsV1, (ids) => {
+    const rank = new Map(ids.map((id, i) => [id, i]));
+    setDb((p) => ({ ...p, sceneCards: p.sceneCards.map((s) => (rank.has(s.id) ? { ...s, sort: rank.get(s.id)! } : s)) }));
+    log('调整场景卡顺序', `${ids.length} 条`, '拖拽排序');
+  });
+
   const deleteScene = (s: SceneCard) => {
     if (s.status === 'PUBLISHED') { message.warning('该场景卡处于「已发布」状态，请先下线再删除'); return; }
     modal.confirm({
@@ -645,8 +676,13 @@ export default function ContentAdmin() {
                   </Space>
                   <Table
                     size="small" rowKey="id" pagination={{ pageSize: 8 }}
+                    components={fullCrudOn ? { body: { row: CaseDragRow } } : undefined}
                     dataSource={db.cases.filter((c) => !c.is_deleted)}
                     columns={[
+                      ...(fullCrudOn ? [{
+                        title: '', width: 36, align: 'center' as const,
+                        render: () => <span className="wb2-drag-handle" title="拖拽调整顺序">⠿</span>,
+                      }] : []),
                       { title: '标题', dataIndex: 'title' },
                       { title: '赛道', dataIndex: 'track', render: (v: string) => <Tag color={TRACK_COLOR[v]} style={{ border: 'none' }}>{v}</Tag> },
                       {
@@ -813,22 +849,28 @@ export default function ContentAdmin() {
                     </Typography.Text>
                   </Space>
                   {db.sceneCards.filter((s) => !s.is_deleted).map((c) => (
-                    <Card key={c.id} size="small">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                        <Space wrap>
-                          <span style={{ fontSize: 20 }}>{c.emoji}</span>
-                          <b>{c.title}</b>
-                          <Tag color={TRACK_COLOR[c.track]} style={{ border: 'none' }}>{c.track}</Tag>
-                          <Tag color={c.status === 'PUBLISHED' ? 'green' : c.status === 'DRAFT' ? 'gold' : 'default'}>{c.status}</Tag>
-                          {c.week && <Tag>{c.week}</Tag>}
-                          {c.source_case_id && (
-                            <Link to={`/cases/${c.source_case_id}`} style={{ fontSize: 12 }}>
-                              <LinkOutlined /> 案例：{(db.cases ?? []).find((x) => x.id === c.source_case_id)?.title ?? c.source_case_id}
-                            </Link>
-                          )}
-                          <Typography.Text type="secondary" style={{ fontSize: 12 }}>{c.summary}</Typography.Text>
-                        </Space>
-                        <Space wrap size={4}>
+                    <div
+                      key={c.id}
+                      {...(fullCrudOn ? sceneDrag.rowAttrs(c.id) : {})}
+                      style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+                    >
+                      {fullCrudOn && <span className="wb2-drag-handle" title="拖拽调整顺序">⠿</span>}
+                      <Card key={c.id} size="small" style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                          <Space wrap>
+                            <span style={{ fontSize: 20 }}>{c.emoji}</span>
+                            <b>{c.title}</b>
+                            <Tag color={TRACK_COLOR[c.track]} style={{ border: 'none' }}>{c.track}</Tag>
+                            <Tag color={c.status === 'PUBLISHED' ? 'green' : c.status === 'DRAFT' ? 'gold' : 'default'}>{c.status}</Tag>
+                            {c.week && <Tag>{c.week}</Tag>}
+                            {c.source_case_id && (
+                              <Link to={`/cases/${c.source_case_id}`} style={{ fontSize: 12 }}>
+                                <LinkOutlined /> 案例：{(db.cases ?? []).find((x) => x.id === c.source_case_id)?.title ?? c.source_case_id}
+                              </Link>
+                            )}
+                            <Typography.Text type="secondary" style={{ fontSize: 12 }}>{c.summary}</Typography.Text>
+                          </Space>
+                          <Space wrap size={4} onDragStart={(e) => e.stopPropagation()}>
                           <Tag>阅读 {c.view_count}</Tag>
                           {c.pushed_at && <Tag color="blue">已登记推送 {c.pushed_at}</Tag>}
                           {fullCrudOn ? (
@@ -846,6 +888,7 @@ export default function ContentAdmin() {
                         </Space>
                       </div>
                     </Card>
+                    </div>
                   ))}
                   {db.sceneCards.filter((s) => !s.is_deleted).length === 0 && (
                     <Empty description="还没有场景卡" />

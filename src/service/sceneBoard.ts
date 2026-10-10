@@ -98,6 +98,26 @@ function byTimeDesc(a: SceneCard, b: SceneCard): number {
   return a.id < b.id ? -1 : 1;
 }
 
+/**
+ * V8.3-10.10：手动排序优先。后台拖拽写入的 `sort` 越小越靠前；
+ * 没有 `sort` 的卡（存量数据 / 未手动排过）视作无穷大，自动排在已排过序的卡之后，
+ * 但彼此之间仍用发布时间保持稳定序，不会乱跳。
+ */
+function sortRank(c: SceneCard): number {
+  return typeof c.sort === 'number' ? c.sort : Number.POSITIVE_INFINITY;
+}
+function bySortThenTime(a: SceneCard, b: SceneCard): number {
+  const sa = sortRank(a);
+  const sb = sortRank(b);
+  if (sa !== sb) return sa < sb ? -1 : 1;
+  return byTimeDesc(a, b);
+}
+/** 一条 band 的排序基准 = 组内最小 sort；全组都没排过时返回 undefined（走时间倒序兜底） */
+function bandSort(band: SceneCard[]): number | undefined {
+  const ranks = band.map(sortRank).filter((r) => Number.isFinite(r));
+  return ranks.length ? Math.min(...ranks) : undefined;
+}
+
 /** 一行的时间基准 = 组内最新一张的时间（用于行倒序） */
 function latestAt(cards: SceneCard[]): string {
   return cards.reduce((acc, c) => {
@@ -155,7 +175,7 @@ export function groupSceneByCase(cards: SceneCard[], cases: CaseItem[] = []): Sc
 
   const bands: SceneBandVM[] = [];
   for (const [key, list] of buckets) {
-    const sorted = [...list].sort(byTimeDesc);
+    const sorted = [...list].sort(bySortThenTime);
     const cs = idx.get(key);
     const isNoCase = key === NO_CASE_KEY;
     const track = trackOfRow(sorted, cs?.track);
@@ -180,11 +200,17 @@ export function groupSceneByCase(cards: SceneCard[], cases: CaseItem[] = []): Sc
     });
   }
 
-  /* 未关联案例的一行排最后：它只是兜底容器，不该抢在真实案例前面 */
+  /* 排序优先级：① 未关联案例行永远最后；② 有手动排序的 band 排前面，按最小 sort 升序；
+     ③ 都没排过序的 band 退回发布时间倒序；④ 仍相同则按 key 稳定序 */
   bands.sort((a, b) => {
     const aNo = a.key === NO_CASE_KEY;
     const bNo = b.key === NO_CASE_KEY;
     if (aNo !== bNo) return aNo ? 1 : -1;
+    const sa = bandSort(a.cards);
+    const sb = bandSort(b.cards);
+    if (sa !== undefined && sb !== undefined) return sa - sb;
+    if (sa !== undefined) return -1;
+    if (sb !== undefined) return 1;
     const ta = latestAt(a.cards);
     const tb = latestAt(b.cards);
     if (ta !== tb) return ta < tb ? 1 : -1;

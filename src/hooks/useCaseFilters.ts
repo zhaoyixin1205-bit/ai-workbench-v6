@@ -46,15 +46,22 @@ export function useCaseFilters() {
   };
 
   const list = useMemo(
-    () =>
-      db.cases.filter((c) => {
+    () => {
+      const filtered = db.cases.filter((c) => {
         if (track !== '全部' && c.track !== track) return false;
         if (kw && !`${c.title}${c.summary}${c.tags.join()}`.includes(kw)) return false;
         if (!matchTags(c.tags)) return false;
         if (resFilter === 'SKILL' && !(skillOn && (c.skill_packages?.length ?? 0) > 0)) return false;
         if (resFilter === 'ATTACH' && !(attachOn && (c.attachments?.length ?? 0) > 0)) return false;
         return true;
-      }),
+      });
+      /** V8.3-10.10：后台拖拽写入的 sort 越小越靠前；无 sort 的存量数据视为无穷大，保持原序排在已排过序之后 */
+      return [...filtered].sort((a, b) => {
+        const sa = typeof a.sort === 'number' ? a.sort : Number.POSITIVE_INFINITY;
+        const sb = typeof b.sort === 'number' ? b.sort : Number.POSITIVE_INFINITY;
+        return sa - sb;
+      });
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [db.cases, track, kw, tagFilter, tagMode, resFilter, skillOn, attachOn]
   );
