@@ -418,11 +418,12 @@ export interface PipelineOptions {
   /** 时间戳字符串（留空前自动取当前时间） */
   at?: string;
   /**
-   * V8.3-10.10：服务端是否已配置真实 AI 评分模型。
-   * true → 本地不再用规则引擎打分（交给服务端 /api/ai/auto-score，密钥不出浏览器）；
-   * 缺省 false → 沿用本地规则引擎（本地开发 / 服务端未配密钥时行为不变）。
+   * V8.3-10.10：服务端 AI 评分模型配置态（三态）。
+   * true（已配模型）/ null（配置未拉回，未知）→ 本地规则引擎一律让位，
+   * 待评分提报交给服务端 /api/ai/auto-score（密钥不出浏览器）；
+   * false（服务端明确未配模型，或本地开发拉取失败兜底）→ 沿用本地规则引擎。
    */
-  aiScorerReady?: boolean;
+  aiScorerReady?: boolean | null;
 }
 
 export interface PipelineResult {
@@ -478,7 +479,13 @@ export function runSubmitPipeline(db: DB, opts?: PipelineOptions): PipelineResul
        * 只把提报留作「待服务端打分」；服务端打分后状态转为 AI_SCORED，再走下面推评委。
        * 这样既不让密钥进浏览器，也不会出现「本地规则分 + 服务端模型分」两份打架。
        */
-      if (opts?.aiScorerReady === true) continue;
+      /**
+       * V8.3-10.10（晚修）：只有服务端**明确未配模型**（false）时才用本地规则引擎兜底。
+       * `null` = 配置尚未拉回（未知态），必须同样跳过——否则首屏流水线会抢在
+       * /api/ai/config 返回前用规则引擎打分并回写，覆盖服务端真模型分（16:43 徐铭瑞案例）。
+       * 本地开发 / 服务端未配密钥：fetchAiConfig 失败 → 兜底回 false → 规则引擎照常，零回归。
+       */
+      if (opts?.aiScorerReady !== false) continue;
       const card = resolveScoreCard(db, s);
       if (!card) {
         detail.push(`${s.code} 未匹配到评分卡，跳过 AI 评分`);

@@ -20,7 +20,13 @@ import { join } from 'node:path';
 const require = createRequire(import.meta.url);
 const out = join(mkdtempSync(join(tmpdir(), 'wbpl-')), 'pipeline.cjs');
 buildSync({ entryPoints: ['src/service/submitPipeline.ts'], bundle: true, format: 'cjs', platform: 'node', outfile: out, logLevel: 'silent' });
-const P = require(out);
+const rawPipeline = require(out);
+/* V8.3-10.10（晚修）：本地冒烟全部跑在「服务端未配模型」档——显式 aiScorerReady:false。
+ * 生产语义是「null(未知)/true(已配模型) 都不让本地规则引擎抢打」，冒烟必须显式声明走兜底档。 */
+const P = {
+  ...rawPipeline,
+  runSubmitPipeline: (db, opts) => rawPipeline.runSubmitPipeline(db, { aiScorerReady: false, ...opts }),
+};
 
 const results = [];
 const check = (name, fn) => {
