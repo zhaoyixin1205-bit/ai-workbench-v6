@@ -19,6 +19,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useState } from 'react';
 import { useStore } from '@/store/store';
 import { DEMO_TODAY } from '@/mock/seedBiz';
+import { isSchedulePast } from '@/service/scheduleUtils';
 import '../../theme/v2/template.css';
 
 export default function ExpertDetailV2() {
@@ -54,7 +55,7 @@ export default function ExpertDetailV2() {
   }
 
   const reviews = db.reviews.filter((r) => r.expert_id === e.id && !r.hidden);
-  const schedules = db.schedules.filter((s) => s.expert_id === e.id && s.status === 'OPEN').slice(0, 8);
+  const schedules = db.schedules.filter((s) => s.expert_id === e.id && s.status === 'OPEN' && !isSchedulePast(s)).slice(0, 8);
   /**
    * V8.3-10.07：答疑纪要改读真实实体 expertMinutes（原先为写死的三条演示数据）。
    * 没有真实接诊提炼 → 空态，不显示任何虚拟内容。

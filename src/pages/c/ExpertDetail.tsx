@@ -6,6 +6,7 @@ import { useStore } from '@/store/store';
 import { COLOR, GRADIENT, SHADOW } from '@/theme';
 import { SoftTag, StatCard } from '@/components/ui';
 import { DEMO_TODAY } from '@/mock/seedBiz';
+import { isSchedulePast } from '@/service/scheduleUtils';
 
 export default function ExpertDetail() {
   const { id } = useParams();
@@ -20,7 +21,7 @@ export default function ExpertDetail() {
   if (!e) return <Card>专家不存在</Card>;
 
   const reviews = db.reviews.filter((r) => r.expert_id === e.id && !r.hidden);
-  const schedules = db.schedules.filter((s) => s.expert_id === e.id && s.status === 'OPEN').slice(0, 8);
+  const schedules = db.schedules.filter((s) => s.expert_id === e.id && s.status === 'OPEN' && !isSchedulePast(s)).slice(0, 8);
   /**
    * V8.3-10.07：答疑纪要改从真实实体 expertMinutes 读取（原先是页面里写死的三条演示数据）。
    * 口径：本专家 + 未软删 + 已公开；按提炼日期倒序。没有真实接诊提炼 → 走空态，

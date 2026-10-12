@@ -1,5 +1,5 @@
 import { noticeStopToStudents } from '@/service/bookingNotice';
-import { Alert, AutoComplete, Avatar, Button, Card, Col, DatePicker, Empty, Form, Input, InputNumber, List, Modal, Row, Select, Space, Statistic, Switch, Table, Tabs, Tag, Typography, App as AntApp } from 'antd';
+import { Alert, Avatar, Button, Card, Col, DatePicker, Empty, Form, Input, InputNumber, List, Modal, Row, Select, Space, Statistic, Switch, Table, Tabs, Tag, TimePicker, Typography, App as AntApp } from 'antd';
 import { StarFilled } from '@ant-design/icons';
 import { useState } from 'react';
 import { useStore } from '@/store/store';
@@ -11,6 +11,7 @@ import BatchImport from '@/components/BatchImport';
 import dayjs from 'dayjs';
 /* V7.0 CR-36：排班字段契约 + 时段预置枚举（拍板 8-C：预置优先、允许自定义） */
 import { scheduleSchema, SCHEDULE_SLOTS, SCHEDULE_TYPES } from '@/constants/importSchemas';
+import { rangeToSlot, slotToRange } from '@/service/scheduleUtils';
 
 /** V7.0 CR-36：排班导入行（显式泛型，避免 TS 从三态联合里推断成 {}） */
 interface ScheduleRow {
@@ -84,14 +85,16 @@ export default function ExpertAdmin() {
    */
   const submitSlot = async () => {
     const v = await slotForm.validateFields();
+    const slot = rangeToSlot(v.slot) ?? '';
+    if (!slot) { message.error('请选择开始与结束时间'); return; }
     const expert = db.experts.find((e) => e.id === v.expert_id && !e.is_deleted);
     if (!expert) { message.error('请选择在册专家'); return; }
     /** 同专家同日同时段撞车 → 直接拦，避免两个号源打架 */
     const dup = db.schedules.find((x) =>
-      x.expert_id === expert.id && x.date === v.date && x.slot === v.slot && x.status !== 'CLOSED'
+      x.expert_id === expert.id && x.date === v.date && x.slot === slot && x.status !== 'CLOSED'
     );
     if (dup) {
-      message.error(`${expert.name} 在 ${v.date} ${v.slot} 已有号源，请改时段或先删除原有排班`);
+      message.error(`${expert.name} 在 ${v.date} ${slot} 已有号源，请改时段或先删除原有排班`);
       return;
     }
     setDb((p) => ({
@@ -100,7 +103,7 @@ export default function ExpertAdmin() {
         id: `SC${Date.now()}`,
         expert_id: expert.id,
         date: v.date,
-        slot: v.slot,
+        slot,
         capacity: v.capacity ?? 1,
         booked: 0,
         type: (v.type ?? '1v1') as ExpertSchedule['type'],
@@ -111,8 +114,8 @@ export default function ExpertAdmin() {
         updated_at: `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`,
       }, ...p.schedules],
     }));
-    log('管理员代排期', `${expert.name} ${v.date} ${v.slot}`, `容量 ${v.capacity ?? 1} · ${v.type ?? '1v1'} · 来源 MANUAL`);
-    message.success(`已为 ${expert.name} 添加 ${v.date} ${v.slot} 的号源`);
+    log('管理员代排期', `${expert.name} ${v.date} ${slot}`, `容量 ${v.capacity ?? 1} · ${v.type ?? '1v1'} · 来源 MANUAL`);
+    message.success(`已为 ${expert.name} 添加 ${v.date} ${slot} 的号源`);
     setSlotOpen(false);
     slotForm.resetFields();
   };
@@ -141,7 +144,7 @@ export default function ExpertAdmin() {
     setEditTarget(s);
     editForm.resetFields();
     editForm.setFieldsValue({
-      date: dayjs(s.date), slot: s.slot, capacity: s.capacity,
+      date: dayjs(s.date), slot: slotToRange(s.slot), capacity: s.capacity,
       type: s.type, place_or_link: s.place_or_link, status: s.status,
     });
   };
@@ -162,7 +165,7 @@ export default function ExpertAdmin() {
     const at = `${DEMO_TODAY} ${new Date().toTimeString().slice(0, 5)}`;
     const next = {
       date: vals.date?.format('YYYY-MM-DD') ?? s.date,
-      slot: vals.slot ?? s.slot,
+      slot: rangeToSlot(vals.slot) ?? s.slot,
       capacity: Number(vals.capacity ?? s.capacity),
       type: vals.type ?? s.type,
       place_or_link: vals.place_or_link ?? s.place_or_link,
@@ -573,13 +576,9 @@ export default function ExpertAdmin() {
           <Form.Item name="date" label="日期" rules={[{ required: true }]}>
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
-          {/* 拍板 8-C：时段预置枚举优先，同时允许手工输入 */}
+          {/* 2026-10-12：时段改为时间区间选择器 */}
           <Form.Item name="slot" label="时段" rules={[{ required: true }]}>
-            <AutoComplete
-              options={SCHEDULE_SLOTS.map((v) => ({ value: v }))}
-              placeholder="选择预置时段，或手工输入"
-              filterOption={(input, option) => String(option?.value ?? '').includes(input)}
-            />
+            <TimePicker.RangePicker format="HH:mm" minuteStep={5} style={{ width: '100%' }} placeholder={['开始时间', '结束时间']} />
           </Form.Item>
           <Form.Item name="capacity" label="容量" rules={[{ required: true }]}>
             <InputNumber min={1} max={20} style={{ width: '100%' }} />
@@ -619,10 +618,11 @@ export default function ExpertAdmin() {
             />
           </Form.Item>
           <Form.Item name="date" label="日期" rules={[{ required: true, message: '请选择日期' }]}>
-            <DatePicker style={{ width: '100%' }} disabledDate={(d) => d && d.isBefore(dayjs().startOf('day'))} />
+            <DatePicker style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item name="slot" label="时段" rules={[{ required: true, message: '请选择时段' }]}>
-            <Select placeholder="选择时段" options={SCHEDULE_SLOTS.map((x) => ({ value: x, label: x }))} />
+          {/* 2026-10-12：时段改为时间区间选择器，支持 0:00-24:00 任意起止、任意时长（不再限制 1 小时）；组织者也可录入已过去的日期 */}
+          <Form.Item name="slot" label="时段" rules={[{ required: true, message: '请选择开始与结束时间' }]}>
+            <TimePicker.RangePicker format="HH:mm" minuteStep={5} style={{ width: '100%' }} placeholder={['开始时间', '结束时间']} />
           </Form.Item>
           <Form.Item name="type" label="形式" initialValue="1v1">
             <Select options={SCHEDULE_TYPES.map((x) => ({ value: x, label: x }))} />

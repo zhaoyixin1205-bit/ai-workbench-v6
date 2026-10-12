@@ -3,6 +3,7 @@ import { App as AntApp } from 'antd';
 import { useStore } from '@/store/store';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import { noticeBookedToExpert } from '@/service/bookingNotice';
+import { isSchedulePast } from '@/service/scheduleUtils';
 import type { ExpertSchedule } from '@/mock/types';
 
 /**
@@ -42,18 +43,20 @@ export function useClinicBoard() {
 
   const expert = db.experts.find((e) => e.id === expertId) ?? db.experts.filter((e) => !e.is_deleted)[0];
   const schedules = useMemo(
-    () => db.schedules.filter((s) => s.expert_id === expertId).slice(0, 14),
+    () => db.schedules.filter((s) => s.expert_id === expertId && !isSchedulePast(s)).slice(0, 14),
     [db.schedules, expertId]
   );
   const dates = useMemo(() => [...new Set(schedules.map((s) => s.date))].sort(), [schedules]);
 
-  /** 某专家的近期可约号数（列表卡上展示） */
-  const openCount = (id: string) => db.schedules.filter((s) => s.expert_id === id && s.status === 'OPEN').length;
+  /** 某专家的近期可约号数（列表卡上展示；过期号源不计入，避免误导员工） */
+  const openCount = (id: string) =>
+    db.schedules.filter((s) => s.expert_id === id && s.status === 'OPEN' && !isSchedulePast(s)).length;
 
   /** 预约：号源原子扣减 + 生成预约单 + 专家接诊积分入账 */
   const book = () => {
     if (question.trim().length < 5) { message.warning('请填写卡点描述（≥5 字），禁止空预约'); return; }
     const sc = booking!;
+    if (isSchedulePast(sc)) { message.warning('该号源时间已过，不可预约'); setBooking(null); setQuestion(''); return; }
     if (!expert) { message.warning('未选择专家'); return; }
     setDb((p) => ({
       ...p,

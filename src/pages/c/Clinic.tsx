@@ -7,6 +7,7 @@ import { COLOR, GRADIENT, SHADOW } from '@/theme';
 import { PageHeader, SoftTag } from '@/components/ui';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import type { ExpertSchedule } from '@/mock/types';
+import { isSchedulePast } from '@/service/scheduleUtils';
 import dayjs from 'dayjs';
 
 const SLOT_STATUS: Record<ExpertSchedule['status'], { text: string; color: string; bg: string }> = {
@@ -38,12 +39,13 @@ export default function Clinic() {
   }, [db.experts, kw, sort]);
 
   const expert = db.experts.find((e) => e.id === expertId)!;
-  const schedules = db.schedules.filter((s) => s.expert_id === expertId).slice(0, 14);
+  const schedules = db.schedules.filter((s) => s.expert_id === expertId && !isSchedulePast(s)).slice(0, 14);
   const dates = [...new Set(schedules.map((s) => s.date))].sort();
 
   const book = () => {
     if (question.trim().length < 5) { message.warning('请填写卡点描述（≥5 字），禁止空预约'); return; }
     const sc = booking!;
+    if (isSchedulePast(sc)) { message.warning('该号源时间已过，不可预约'); setBooking(null); setQuestion(''); return; }
     setDb((p) => ({
       ...p,
       schedules: p.schedules.map((x) => (x.id === sc.id ? { ...x, booked: x.booked + 1, status: x.booked + 1 >= x.capacity ? 'FULL' : 'OPEN' } : x)),
@@ -89,7 +91,7 @@ export default function Clinic() {
           {experts.length === 0 ? <Empty description="没有匹配的专家" /> : (
             <Space direction="vertical" size={12} style={{ width: '100%' }}>
               {experts.map((e) => {
-                const open = db.schedules.filter((s) => s.expert_id === e.id && s.status === 'OPEN').length;
+                const open = db.schedules.filter((s) => s.expert_id === e.id && s.status === 'OPEN' && !isSchedulePast(s)).length;
                 return (
                   <div
                     key={e.id}

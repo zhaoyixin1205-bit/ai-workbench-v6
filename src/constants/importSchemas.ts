@@ -45,12 +45,12 @@ export interface ImportSchema {
 /** 多主体分隔符（确认项 2：采纳 `;` 分隔的建议） */
 export const SUBJECT_SEP = ';';
 
-/** 拍板 8-C：排班时段预置枚举（允许自定义，见 allowCustom） */
-export const SCHEDULE_SLOTS = [
-  '09:00-10:00', '10:00-11:00', '11:00-12:00',
-  '14:00-15:00', '15:00-16:00', '16:00-17:00',
-  '19:00-20:00', '20:00-21:00',
-];
+/** 拍板 8-C：排班时段预置枚举（仅作批量导入提示用，允许自定义，见 allowCustom）。
+ *  2026-10-12 起放开为「0:00-24:00 任意时间段」，这里给出整点档提示，录入时仍可手工填任意起止。 */
+export const SCHEDULE_SLOTS: string[] = Array.from({ length: 24 }, (_, h) => {
+  const s = String(h).padStart(2, '0');
+  return `${s}:00-${String((h + 1) % 24).padStart(2, '0')}:00`;
+});
 
 /** 确认项 4：排班形式仅保留 3 种，不新增枚举 */
 export const SCHEDULE_TYPES: ExpertSchedule['type'][] = ['1v1', '直播', '线下'];
