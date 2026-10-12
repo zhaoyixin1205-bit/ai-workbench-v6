@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { useStore } from '@/store/store';
 import { SoftTag } from '@/components/ui';
 import { DEMO_TODAY } from '@/mock/seedBiz';
+import { scheduleLocalDate } from '@/service/scheduleUtils';
 import type { Booking } from '@/mock/types';
 import '../../theme/v2/template.css';
 
@@ -121,7 +122,7 @@ export default function MyBookingV2() {
                       display: 'flex', gap: 'var(--wb-space-4)', marginTop: 'var(--wb-space-2)',
                       fontSize: 'var(--wb-fs-label)', color: 'var(--wb-ink-2)', flexWrap: 'wrap',
                     }}>
-                      <span><CalendarOutlined /> {bk.date}</span>
+                      <span><CalendarOutlined /> {scheduleLocalDate(bk.date) ?? bk.date}</span>
                       <span><ClockCircleOutlined /> {bk.slot}</span>
                     </div>
                   </div>

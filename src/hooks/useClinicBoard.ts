@@ -3,7 +3,7 @@ import { App as AntApp } from 'antd';
 import { useStore } from '@/store/store';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import { noticeBookedToExpert } from '@/service/bookingNotice';
-import { isSchedulePast } from '@/service/scheduleUtils';
+import { isSchedulePast, scheduleLocalDate } from '@/service/scheduleUtils';
 import type { ExpertSchedule } from '@/mock/types';
 
 /**
@@ -79,7 +79,7 @@ export function useClinicBoard() {
           union_id: me.union_id,
           name: me.name,
           question,
-          date: sc.date,
+          date: scheduleLocalDate(sc.date) ?? sc.date,
           slot: sc.slot,
           type: sc.capacity > 1 ? '直播' : '1v1',
           status: '待就诊',

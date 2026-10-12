@@ -8,6 +8,7 @@ import { COLOR } from '@/theme';
 import { PageHeader, SoftTag } from '@/components/ui';
 import type { Booking } from '@/mock/types';
 import { DEMO_TODAY } from '@/mock/seedBiz';
+import { scheduleLocalDate } from '@/service/scheduleUtils';
 
 const STATUS: Record<Booking['status'], { tone: 'primary' | 'green' | 'gray' | 'red'; text: string }> = {
   待就诊: { tone: 'primary', text: '待就诊' },
@@ -95,7 +96,7 @@ export default function MyBooking() {
                     <SoftTag text={b.type} tone="blue" />
                   </Space>
                   <div style={{ display: 'flex', gap: 14, marginTop: 8, fontSize: 12, color: COLOR.textSub, flexWrap: 'wrap' }}>
-                    <span><CalendarOutlined style={{ marginRight: 4 }} />{b.date}</span>
+                    <span><CalendarOutlined style={{ marginRight: 4 }} />{scheduleLocalDate(b.date) ?? b.date}</span>
                     <span><ClockCircleOutlined style={{ marginRight: 4 }} />{b.slot}</span>
                   </div>
                 </div>

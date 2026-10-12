@@ -14,12 +14,13 @@
  *          三维评分字段名、评价的匿名判定 —— 均照搬 v1。
  */
 import { Button, Input, Modal, Rate, App as AntApp } from 'antd';
-import { MedicineBoxOutlined, StarFilled, TrophyOutlined } from '@ant-design/icons';
+import { ClockCircleOutlined, MedicineBoxOutlined, StarFilled, TrophyOutlined } from '@ant-design/icons';
 import { Link, useParams } from 'react-router-dom';
 import { useState } from 'react';
+import dayjs from 'dayjs';
 import { useStore } from '@/store/store';
 import { DEMO_TODAY } from '@/mock/seedBiz';
-import { isSchedulePast } from '@/service/scheduleUtils';
+import { formatScheduleDay, isSchedulePast, scheduleLocalDate } from '@/service/scheduleUtils';
 import '../../theme/v2/template.css';
 
 export default function ExpertDetailV2() {
@@ -64,6 +65,18 @@ export default function ExpertDetailV2() {
     .filter((m) => m.expert_id === e.id && !m.is_deleted && m.visible)
     .sort((a, b) => b.date.localeCompare(a.date));
   const goodRate = Math.round((reviews.filter((r) => r.rating >= 4).length / Math.max(1, reviews.length)) * 100);
+
+  /**
+   * 2026-10-12：号源按「归一化本地日期」分组展示，与门诊页「未来两周排班」同口径。
+   * 历史 ISO 串日期（如 2026-10-12T16:00:00.000Z）必须过 scheduleLocalDate，禁止 slice(5)。
+   */
+  const scheduleGroups = [...new Set(schedules.map((s) => scheduleLocalDate(s.date) ?? s.date))]
+    .sort()
+    .map((day) => ({
+      day,
+      items: schedules.filter((s) => (scheduleLocalDate(s.date) ?? s.date) === day),
+    }));
+  const todayKey = dayjs().format('YYYY-MM-DD');
 
   const book = () => {
     if (question.trim().length < 5) { message.warning('请填写卡点描述'); return; }
@@ -205,21 +218,35 @@ export default function ExpertDetailV2() {
             </div>
           </div>
 
-          {/* ⑤ 近期可约号源 */}
+          {/* ⑤ 近期可约号源 —— 2026-10-12 重排：按日期分组（MM-DD · 周X），与门诊页排班卡同布局 */}
           <div className="wb2-card">
             <div className="wb2-card-pad">
               <div className="wb2-card-t">近期可约号源</div>
-              {schedules.length === 0 ? (
+              {scheduleGroups.length === 0 ? (
                 <div className="d">暂无号源</div>
               ) : (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--wb-space-2)' }}>
-                  {schedules.map((s) => (
-                    <span key={s.id} className="wb2-slot open">
-                      <span className="sl">{s.date.slice(5)} {s.slot}</span>
-                      <span className="sm">{s.capacity > 1 ? '直播' : '1v1'}</span>
-                    </span>
-                  ))}
-                </div>
+                scheduleGroups.map((g) => (
+                  <div key={g.day} style={{ marginBottom: 'var(--wb-space-3)' }}>
+                    <div style={{ fontSize: 'var(--wb-fs-label)', fontWeight: 600, marginBottom: 6, color: 'var(--wb-ink-1)' }}>
+                      {formatScheduleDay(g.day)}
+                      {g.day === todayKey && (
+                        <span className="wb2-tag wa" style={{ marginLeft: 6 }}><i className="d" />今天</span>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--wb-space-2)' }}>
+                      {g.items.map((s) => (
+                        <div
+                          key={s.id}
+                          className="wb2-slot open"
+                          title={`${s.type} · 已约 ${s.booked}/${s.capacity}`}
+                        >
+                          <div className="sl"><ClockCircleOutlined /> {s.slot}</div>
+                          <div className="sm">{s.capacity > 1 ? `可约 (${s.booked}/${s.capacity})` : '可约'}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))
               )}
             </div>
           </div>
@@ -236,7 +263,7 @@ export default function ExpertDetailV2() {
       {/* ⑦ 预约弹窗 */}
       <Modal open={open} title={`预约挂号 · ${e.name}`} onCancel={() => setOpen(false)} onOk={book} okText="确认预约">
         <div className="wb2-note">
-          将为你分配最近的可用号源：{schedules[0] ? `${schedules[0].date} ${schedules[0].slot}` : '暂无'}
+          将为你分配最近的可用号源：{schedules[0] ? `${formatScheduleDay(schedules[0].date)} ${schedules[0].slot}` : '暂无'}
         </div>
         <Input.TextArea rows={4} value={question} onChange={(ev) => setQuestion(ev.target.value)}
           placeholder="卡点描述（必填，≤200 字）" maxLength={200} showCount />

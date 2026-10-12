@@ -6,7 +6,8 @@ import { useStore } from '@/store/store';
 import { COLOR, GRADIENT, SHADOW } from '@/theme';
 import { SoftTag, StatCard } from '@/components/ui';
 import { DEMO_TODAY } from '@/mock/seedBiz';
-import { isSchedulePast } from '@/service/scheduleUtils';
+import dayjs from 'dayjs';
+import { formatScheduleDay, isSchedulePast, scheduleLocalDate } from '@/service/scheduleUtils';
 
 export default function ExpertDetail() {
   const { id } = useParams();
@@ -22,6 +23,18 @@ export default function ExpertDetail() {
 
   const reviews = db.reviews.filter((r) => r.expert_id === e.id && !r.hidden);
   const schedules = db.schedules.filter((s) => s.expert_id === e.id && s.status === 'OPEN' && !isSchedulePast(s)).slice(0, 8);
+
+  /**
+   * 2026-10-12：号源按「归一化本地日期」分组展示，与门诊页「未来两周排班」同口径。
+   * 历史 ISO 串日期（如 2026-10-12T16:00:00.000Z）必须过 scheduleLocalDate，禁止 slice(5)。
+   */
+  const scheduleGroups = [...new Set(schedules.map((s) => scheduleLocalDate(s.date) ?? s.date))]
+    .sort()
+    .map((day) => ({
+      day,
+      items: schedules.filter((s) => (scheduleLocalDate(s.date) ?? s.date) === day),
+    }));
+  const todayKey = dayjs().format('YYYY-MM-DD');
   /**
    * V8.3-10.07：答疑纪要改从真实实体 expertMinutes 读取（原先是页面里写死的三条演示数据）。
    * 口径：本专家 + 未软删 + 已公开；按提炼日期倒序。没有真实接诊提炼 → 走空态，
@@ -37,9 +50,10 @@ export default function ExpertDetail() {
     if (!sc) { message.warning('暂无可约号源'); return; }
     setDb((p) => ({
       ...p,
-      bookings: [{
-        id: `BK${Date.now()}`, schedule_id: sc.id, expert_id: e.id, expert_name: e.name,
-        union_id: me.union_id, name: me.name, question, date: sc.date, slot: sc.slot,
+        bookings: [{
+          id: `BK${Date.now()}`, schedule_id: sc.id, expert_id: e.id, expert_name: e.name,
+          union_id: me.union_id, name: me.name, question,
+          date: scheduleLocalDate(sc.date) ?? sc.date, slot: sc.slot,
         type: sc.capacity > 1 ? '直播' : '1v1', status: '待就诊', reviewed: false,
       }, ...p.bookings],
       schedules: p.schedules.map((x) => (x.id === sc.id ? { ...x, booked: x.booked + 1 } : x)),
@@ -183,17 +197,28 @@ export default function ExpertDetail() {
               ))}
             </Card>
             <Card title="近期可约号源" style={{ marginTop: 16 }}>
-              <Space wrap>
-                {schedules.map((s) => (
-                  <span key={s.id} style={{
-                    background: COLOR.primaryLight, color: '#C2410C', fontSize: 12, fontWeight: 600,
-                    padding: '5px 10px', borderRadius: 8, display: 'inline-block',
-                  }}>
-                    {s.date.slice(5)} {s.slot}（{s.capacity > 1 ? '直播' : '1v1'}）
-                  </span>
-                ))}
-                {schedules.length === 0 && <Typography.Text type="secondary">暂无号源</Typography.Text>}
-              </Space>
+              {scheduleGroups.length === 0 ? (
+                <Typography.Text type="secondary">暂无号源</Typography.Text>
+              ) : (
+                scheduleGroups.map((g) => (
+                  <div key={g.day} style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: COLOR.text, marginBottom: 6 }}>
+                      {formatScheduleDay(g.day)}
+                      {g.day === todayKey && <Tag color="orange" style={{ marginLeft: 6 }}>今天</Tag>}
+                    </div>
+                    <Space wrap>
+                      {g.items.map((s) => (
+                        <span key={s.id} style={{
+                          background: '#FFF1EB', color: '#FF6B35', fontSize: 12, fontWeight: 600,
+                          padding: '5px 10px', borderRadius: 8, display: 'inline-block',
+                        }}>
+                          {s.slot}（可约{s.capacity > 1 ? ` ${s.booked}/${s.capacity}` : ''}）
+                        </span>
+                      ))}
+                    </Space>
+                  </div>
+                ))
+              )}
             </Card>
           </Col>
         </Row>
@@ -212,7 +237,7 @@ export default function ExpertDetail() {
 
       <Modal open={open} title={`预约挂号 · ${e.name}`} onCancel={() => setOpen(false)} onOk={book} okText="确认预约">
         <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
-          将为你分配最近的可用号源：{schedules[0] ? `${schedules[0].date} ${schedules[0].slot}` : '暂无'}
+          将为你分配最近的可用号源：{schedules[0] ? `${formatScheduleDay(schedules[0].date)} ${schedules[0].slot}` : '暂无'}
         </Typography.Paragraph>
         <Input.TextArea rows={4} value={question} onChange={(ev) => setQuestion(ev.target.value)}
           placeholder="卡点描述（必填，≤200 字）" maxLength={200} showCount />
