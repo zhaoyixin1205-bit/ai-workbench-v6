@@ -9,6 +9,8 @@ import { statusText, statusColor } from '@/constants/statusMeta';
 import { Dialog, DialogField, DialogKV, useConfirm } from '@/components/v2/Dialog';
 import { useNoteVisible } from '@/auth/annotation';
 import AiScoreDetail, { aiResultOf, buildAiDetail } from '@/components/AiScoreDetail';
+/* V10.10：作业详情弹窗（评委 / 组织者查看员工作业的只读入口） */
+import SubmitDetailModal from '@/components/SubmitDetailModal';
 import { averageJudgeScore, composeFinalScore, effectiveJudgeScores } from '@/service/judgeScoring';
 import { aiScoreOf, periodLabelOf, seqNo, submitterNameOf, typeNameOf } from '@/service/judgeListView';
 import '../../theme/v2/template.css';
@@ -84,6 +86,8 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
   const [cTab, setCTab] = useState<'pending' | 'history'>('pending');
   /** V8.3-10.10 AI 评分详情弹窗 */
   const [aiDetailId, setAiDetailId] = useState<string | null>(null);
+  /** V10.10：作业详情弹窗当前查看的提报 id */
+  const [detailId, setDetailId] = useState<string | null>(null);
 
   /** PRD V4.0 §6.2：ADMIN 可进入本页查看（菜单可见），但无业务审批权，操作入口禁用 */
   const canOperate = hasRole('JUDGE', 'ORGANIZER');
@@ -463,6 +467,8 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
           title: '操作', width: confirmMode ? 180 : 140,
           render: (_, r) => (
             <div style={{ display: 'flex', gap: 'var(--wb-space-2)', flexWrap: 'wrap' }}>
+              {/* V10.10：作业详情（只读入口，ADMIN 等只读身份也可查看作业内容） */}
+              <Button size="small" type="link" onClick={() => setDetailId(r.id)}>作业详情</Button>
               <Button size="small" type="link" disabled={!canOperate} onClick={() => { setReviseTarget(null); setScores({}); setOpinion(''); setCurrent(r); }}>打分</Button>
               {confirmMode ? (
                 r.confirmed ? (
@@ -902,6 +908,9 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
           aiDetailId ? aiResultOf(db.scoreResults, aiDetailId) : null,
         )}
       />
+
+      {/* V10.10：作业详情（只读，评委 / 组织者查看员工作业的入口） */}
+      <SubmitDetailModal open={!!detailId} submitId={detailId} onClose={() => setDetailId(null)} />
     </div>
   );
 }

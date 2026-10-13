@@ -30,6 +30,8 @@ type BountyFlowTarget = {
 } | null;
 import { useSkillAdminConverge } from '@/auth/converge';
 import { ScopeNotice } from '@/components/ScopeNotice';
+/* V10.10：作业详情弹窗（评委 / 组织者查看员工作业的只读入口） */
+import SubmitDetailModal from '@/components/SubmitDetailModal';
 
 export default function AssignmentAdmin() {
   const { db, setDb, log, campaign, scopeRows, me, flags, aiScorerReady, pullRemote } = useStore();
@@ -42,6 +44,8 @@ export default function AssignmentAdmin() {
   const [kw, setKw] = useState('');
   const [status, setStatus] = useState('全部');
   const [open, setOpen] = useState(false);
+  /** V10.10：作业详情弹窗当前查看的提报 id */
+  const [detailId, setDetailId] = useState<string | null>(null);
   const [form] = Form.useForm();
   /** V4.0 CR-08：真正落库的提报对象主体（旧实现只存了文案，导致「配了但不生效」） */
   const [targetSubjects, setTargetSubjects] = useState<ScopeSubject[]>([]);
@@ -492,9 +496,13 @@ export default function AssignmentAdmin() {
                     { title: '状态', dataIndex: 'status', render: (v, r) => <SubmitStatusTag status={v} published={isPublished(r)} /> },
                     {
                       title: '操作', width: 150,
-                      render: (_, r) => (readOnly
-                        ? <Typography.Text type="secondary" style={{ fontSize: 12 }}>只读</Typography.Text>
-                        : (
+                      render: (_, r) => (
+                        <Space size={4} wrap>
+                          {/* V10.10：作业详情（只读入口，readOnly 也可见，便于评委 / 组织者查看作业内容） */}
+                          <Button size="small" type="link" onClick={() => setDetailId(r.id)}>作业详情</Button>
+                          {readOnly
+                            ? <Typography.Text type="secondary" style={{ fontSize: 12 }}>只读</Typography.Text>
+                            : (
                           <Space size={4}>
                             {/* V8.3-10.07：「标记已跑分」→ 真正出分的「补跑 AI 评分」（正常链路已自动，此处为兜底） */}
                             {needsAiScore(r) && <Button size="small" type="link" onClick={() => rescore(r)}>补跑 AI 评分</Button>}
@@ -517,7 +525,9 @@ export default function AssignmentAdmin() {
                               <Button size="small" type="link" onClick={() => openFlow(r)}>流转</Button>
                             )}
                           </Space>
-                        )),
+                          )}
+                        </Space>
+                      ),
                     },
                   ]}
                 />
@@ -609,6 +619,9 @@ export default function AssignmentAdmin() {
         </Form>
         <Typography.Text type="secondary" style={{ fontSize: 11 }}>演示日期 {DEMO_TODAY} · 组织者可为单人临时放开次数上限</Typography.Text>
       </Modal>
+
+      {/* V10.10：作业详情（只读，评委 / 组织者查看员工作业的入口） */}
+      <SubmitDetailModal open={!!detailId} submitId={detailId} onClose={() => setDetailId(null)} />
     </Space>
   );
 }

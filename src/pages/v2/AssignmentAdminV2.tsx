@@ -18,6 +18,8 @@ import { Dialog, useConfirm } from '@/components/v2/Dialog';
 import PeriodAdmin from '@/components/PeriodAdmin';
 /* V8.2-10.07：作业参加人员（必修 / 选修） */
 import AssignmentParticipants from '@/components/AssignmentParticipants';
+/* V10.10：作业详情弹窗（评委 / 组织者查看员工作业的只读入口） */
+import SubmitDetailModal from '@/components/SubmitDetailModal';
 /* V8.3-10.07：补跑 AI 评分走与自动流水线同一份算法（避免前后台两个分） */
 import { aiRescore, needsAiScore } from '@/service/submitPipeline';
 import { serverRescore } from '@/service/stateService';
@@ -54,6 +56,8 @@ export default function AssignmentAdminV2() {
   /** V6.0 CR-19：状态机 V2 开关（关闭=不出现 COMPLETED / CONSENSUS 与公示标记位） */
   const flowV2 = flags.submitFlowV2 !== false;
   const [selected, setSelected] = useState<string[]>([]);
+  /** V10.10：作业详情弹窗当前查看的提报 id */
+  const [detailId, setDetailId] = useState<string | null>(null);
   const { message } = AntApp.useApp();
   const confirm = useConfirm();
   /** V4.0 CR-09：技能管理员在本页为只读浏览者（§6.2 矩阵 ◐） */
@@ -516,11 +520,14 @@ export default function AssignmentAdminV2() {
                       },
                       {
                         title: '操作', width: 220,
-                        render: (_, r) => (readOnly
-                          ? <span className="wb2-tag id"><i className="d" />只读</span>
-                          : (
-                            <div style={{ display: 'flex', gap: 'var(--wb-space-1)', flexWrap: 'wrap' }}>
-                              {/* V8.3-10.07：「标记已跑分」→ 真正出分的「补跑 AI 评分」（正常链路已自动，此处为兜底） */}
+                        render: (_, r) => (
+                          <div style={{ display: 'flex', gap: 'var(--wb-space-1)', flexWrap: 'wrap' }}>
+                            {/* V10.10：作业详情（只读入口，readOnly 也可见，便于评委 / 组织者查看作业内容） */}
+                            <Button size="small" type="link" onClick={() => setDetailId(r.id)}>作业详情</Button>
+                            {readOnly
+                              ? <span className="wb2-tag id"><i className="d" />只读</span>
+                              : <>
+                            {/* V8.3-10.07：「标记已跑分」→ 真正出分的「补跑 AI 评分」（正常链路已自动，此处为兜底） */}
                               {needsAiScore(r) && <Button size="small" type="link" onClick={() => rescore(r)}>补跑 AI 评分</Button>}
                               {r.status === 'AI_SCORED' && <Button size="small" type="link" onClick={() => toStatus(r.id, 'REVIEWING')}>送复核</Button>}
                               {/* V6.0 CR-19：复核完 → 已完成（公示不再是前置条件）→ 可选标记已共识 */}
@@ -537,8 +544,10 @@ export default function AssignmentAdminV2() {
                               {flowControlOn && allowedTargets(r.status).length > 0 && (
                                 <Button size="small" type="link" onClick={() => openFlow(r)}>流转</Button>
                               )}
-                            </div>
-                          )),
+                            </>
+                            }
+                          </div>
+                        ),
                       },
                     ]}
                   />
@@ -632,6 +641,9 @@ export default function AssignmentAdminV2() {
         </Form>
         <div className="hint">演示日期 {DEMO_TODAY} · 组织者可为单人临时放开次数上限</div>
       </Dialog>
+
+      {/* V10.10：作业详情（只读，评委 / 组织者查看员工作业的入口） */}
+      <SubmitDetailModal open={!!detailId} submitId={detailId} onClose={() => setDetailId(null)} />
     </div>
   );
 }
