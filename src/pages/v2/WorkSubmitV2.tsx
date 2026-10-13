@@ -1,4 +1,4 @@
-import { Alert, Button, Checkbox, Form, Input, Radio, Select, Steps, Upload } from 'antd';
+import { Alert, App as AntApp, Button, Checkbox, Form, Input, Radio, Select, Steps, Upload } from 'antd';
 import {
   ArrowLeftOutlined, DownloadOutlined, InboxOutlined, SaveOutlined, SafetyCertificateOutlined,
 } from '@ant-design/icons';
@@ -6,6 +6,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useStore } from '@/store/store';
 import { TRACKS } from '@/mock/types';
 import { ALLOW_EXT, useWorkSubmitForm } from '@/hooks/useWorkSubmitForm';
+import { downloadAttachment } from '@/service/fileService';
 import '../../theme/v2/template.css';
 
 /**
@@ -26,6 +27,7 @@ import '../../theme/v2/template.css';
  */
 
 export default function WorkSubmitV2() {
+  const { message } = AntApp.useApp();
   const { typeId } = useParams();
   const [qs] = useSearchParams();
   const { me } = useStore();
@@ -223,10 +225,22 @@ export default function WorkSubmitV2() {
                     <div className="wb2-li-t" style={{ overflowWrap: 'anywhere', wordBreak: 'break-all' }}>{a.name}</div>
                     <div className="wb2-li-m">
                       <span style={{ fontSize: 'var(--wb-fs-label)', color: 'var(--wb-ink-3)' }}>{a.size}</span>
+                      {/* V10.13：走带会话凭证的下载（存库 url 的 5 分钟短签名早已过期，直接 href 会 401） */}
                       {a.url ? (
-                        <a href={a.url} target="_blank" rel="noreferrer">
-                          <Button size="small" type="link" icon={<DownloadOutlined />}>下载</Button>
-                        </a>
+                        <Button
+                          size="small"
+                          type="link"
+                          icon={<DownloadOutlined />}
+                          onClick={async () => {
+                            try {
+                              await downloadAttachment({ id: a.id, name: a.name });
+                            } catch (e) {
+                              message.error(e instanceof Error ? e.message : '下载失败，请稍后重试');
+                            }
+                          }}
+                        >
+                          下载
+                        </Button>
                       ) : (
                         <span className="wb2-tag id">演示态·未落真实文件</span>
                       )}

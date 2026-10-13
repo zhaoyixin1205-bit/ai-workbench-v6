@@ -82,7 +82,7 @@ function readBody(req, limit = MAX_BYTES + 1024) {
 
 /**
  * 可见范围校验（口径不变，改的是「身份从哪来」）：
- * SUBMIT / BOUNTY_SOLUTION 属于个人交付物，仅上传者本人与组织者 / 管理员可下载；
+ * SUBMIT / BOUNTY_SOLUTION 属于个人交付物，仅上传者本人与组织者 / 管理员 / 评委可下载；
  * CASE_* 属于公开内容，登录态即可下载。
  * 目的：避免「拿到链接就能下别人的作业」。
  *
@@ -92,6 +92,12 @@ function readBody(req, limit = MAX_BYTES + 1024) {
  * —— 完全是客户端自称：任何人加 `?roles=ORGANIZER` 就能下任意文件。
  * 现在 actor 由 verifyToken + 身份库解析得到，客户端无从伪造。
  *
+ * V10.13 新增 JUDGE：与 dataScope.mjs `canReadAll` 对齐（2026-10-09 运营方拍板
+ * 「评委看全部，多个评委均可评价」——数据面 GET /api/state 已给评委全量 submits）。
+ * 此前下载侧漏了 JUDGE：评委在待复核队列里能看到作业正文，却下不到作业附件，
+ * 等于「看得见评不了」。附件是提报的一部分，读权限给了下载就必须给，否则前端
+ * 放开后端还卡着，等于没放开。
+ *
  * @param actor 服务端解析出的 { name, roles }；**不可**来自 query
  */
 function canDownload(meta, actor) {
@@ -99,7 +105,7 @@ function canDownload(meta, actor) {
   if (meta.biz_type === 'CASE_SKILL' || meta.biz_type === 'CASE_ATTACH' || meta.biz_type === 'POST_ATTACH') return true;
   if (!actor) return false;
   const roles = actor.roles ?? [];
-  return meta.uploaded_by === actor.name || roles.includes('ORGANIZER') || roles.includes('ADMIN');
+  return meta.uploaded_by === actor.name || roles.includes('ORGANIZER') || roles.includes('ADMIN') || roles.includes('JUDGE');
 }
 
 /**

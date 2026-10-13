@@ -1,4 +1,4 @@
-import { Alert, Button, Form, Input, Modal, Segmented, Tabs, Upload } from 'antd';
+import { Alert, App as AntApp, Button, Form, Input, Modal, Segmented, Tabs, Upload } from 'antd';
 import { useState } from 'react';
 import {
   PlusOutlined, ClockCircleOutlined, DownloadOutlined, InboxOutlined, EditOutlined, FileAddOutlined,
@@ -12,6 +12,7 @@ import { TrackTag } from '@/components/ui';
 import { trackVar } from '@/theme/v2/track';
 import type { Bounty, BountyStatus } from '@/mock/types';
 import { claimHint } from '@/constants/bounty';
+import { downloadAttachment } from '@/service/fileService';
 import { useSolutionReview } from '@/hooks/useSolutionReview';
 import '../../theme/v2/template.css';
 
@@ -41,6 +42,7 @@ const STATUS_TONE: Partial<Record<BountyStatus, string>> = {
 
 export default function BountyListV2() {
   const { db, me } = useStore();
+  const { message } = AntApp.useApp();
   const nav = useNavigate();
   /**
    * V8.3-10.08 需求④：悬赏卡片可点进详情。
@@ -158,8 +160,22 @@ export default function BountyListV2() {
               <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--wb-fs-label)' }}>
                 <span>{a.name}</span>
                 <span className="wb2-note">{a.size}</span>
+                {/* V10.13：带会话凭证下载（存库 url 的短签名早已过期，直接 href 会 401） */}
                 {a.url
-                  ? <a href={a.url} target="_blank" rel="noreferrer"><Button size="small" type="link" icon={<DownloadOutlined />}>下载</Button></a>
+                  ? <Button
+                      size="small"
+                      type="link"
+                      icon={<DownloadOutlined />}
+                      onClick={async () => {
+                        try {
+                          await downloadAttachment({ id: a.id, name: a.name });
+                        } catch (e) {
+                          message.error(e instanceof Error ? e.message : '下载失败，请稍后重试');
+                        }
+                      }}
+                    >
+                      下载
+                    </Button>
                   : <span className="wb2-note">演示态·未落真实文件</span>}
                 <Button size="small" type="link" danger onClick={() => b.removeAtt(a.id, a.name)}>移除</Button>
               </div>

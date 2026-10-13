@@ -10,6 +10,7 @@ import type { UploadFile } from 'antd';
 import { useFileUpload } from '@/service/useFileUpload';
 import { claimHint } from '@/constants/bounty';
 import { useSolutionReview } from '@/hooks/useSolutionReview';
+import { downloadAttachment } from '@/service/fileService';
 
 /** V6.0 CR-20：附件白名单与作业提报一致 */
 const ALLOW_EXT = ['zip', 'md', 'yaml', 'pdf', 'docx', 'xlsx', 'png', 'jpg'];
@@ -592,8 +593,22 @@ export default function BountyList() {
                     <Space key={a.id} size={6}>
                       <span style={{ fontSize: 13 }}>{a.name}</span>
                       <Typography.Text type="secondary" style={{ fontSize: 12 }}>{a.size}</Typography.Text>
+                      {/* V10.13：带会话凭证下载（存库 url 的短签名早已过期，直接 href 会 401） */}
                       {a.url
-                        ? <a href={a.url} target="_blank" rel="noreferrer"><Button size="small" type="link" icon={<DownloadOutlined />}>下载</Button></a>
+                        ? <Button
+                            size="small"
+                            type="link"
+                            icon={<DownloadOutlined />}
+                            onClick={async () => {
+                              try {
+                                await downloadAttachment({ id: a.id, name: a.name });
+                              } catch (e) {
+                                message.error(e instanceof Error ? e.message : '下载失败，请稍后重试');
+                              }
+                            }}
+                          >
+                            下载
+                          </Button>
                         : <SoftTag text="演示态·未落真实文件" />}
                       <Button size="small" type="link" danger onClick={() => {
                         setSolAtts((p) => p.filter((x) => x.id !== a.id));
@@ -646,8 +661,22 @@ export default function BountyList() {
                   <Space key={a.id} size={6}>
                     <span style={{ fontSize: 13 }}>{a.name}</span>
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>{a.size}</Typography.Text>
+                    {/* V10.13：带会话凭证下载（存库 url 的短签名早已过期，直接 href 会 401） */}
                     {a.url
-                      ? <a href={a.url} target="_blank" rel="noreferrer"><Button size="small" type="link" icon={<DownloadOutlined />}>下载</Button></a>
+                      ? <Button
+                          size="small"
+                          type="link"
+                          icon={<DownloadOutlined />}
+                          onClick={async () => {
+                            try {
+                              await downloadAttachment({ id: a.id, name: a.name });
+                            } catch (e) {
+                              message.error(e instanceof Error ? e.message : '下载失败，请稍后重试');
+                            }
+                          }}
+                        >
+                          下载
+                        </Button>
                       : <SoftTag text="演示态·未落真实文件" />}
                     <Button size="small" type="link" danger onClick={() => {
                       setSolAtts((p) => p.filter((x) => x.id !== a.id));
@@ -694,8 +723,22 @@ export default function BountyList() {
                   <Space key={a.id} size={6}>
                     <span style={{ fontSize: 13 }}>{a.name}</span>
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>{a.size}</Typography.Text>
+                    {/* V10.13：带会话凭证下载（存库 url 的短签名早已过期，直接 href 会 401） */}
                     {a.url
-                      ? <a href={a.url} target="_blank" rel="noreferrer"><Button size="small" type="link" icon={<DownloadOutlined />}>下载</Button></a>
+                      ? <Button
+                          size="small"
+                          type="link"
+                          icon={<DownloadOutlined />}
+                          onClick={async () => {
+                            try {
+                              await downloadAttachment({ id: a.id, name: a.name });
+                            } catch (e) {
+                              message.error(e instanceof Error ? e.message : '下载失败，请稍后重试');
+                            }
+                          }}
+                        >
+                          下载
+                        </Button>
                       : <SoftTag text="演示态·未落真实文件" />}
                     <Button size="small" type="link" danger onClick={() => {
                       setSolAtts((p) => p.filter((x) => x.id !== a.id));

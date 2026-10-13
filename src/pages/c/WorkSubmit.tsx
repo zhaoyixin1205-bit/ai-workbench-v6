@@ -9,6 +9,7 @@ import type { Attachment, Topic } from '@/mock/types';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import type { UploadFile } from 'antd';
 import { useFileUpload } from '@/service/useFileUpload';
+import { downloadAttachment } from '@/service/fileService';
 
 const ALLOW_EXT = ['zip', 'md', 'yaml', 'pdf', 'docx', 'xlsx', 'png', 'jpg'];
 
@@ -357,10 +358,22 @@ export default function WorkSubmit() {
                       {/* V8.3-10.09：文件名可能是长 URL / 长中文标题，需断词防撑破 */}
                       <span style={{ fontSize: 13, overflowWrap: 'anywhere', wordBreak: 'break-all', minWidth: 0 }}>{a.name}</span>
                       <Typography.Text type="secondary" style={{ fontSize: 12 }}>{a.size}</Typography.Text>
+                      {/* V10.13：走带会话凭证的下载（存库 url 的 5 分钟短签名早已过期，直接 href 会 401） */}
                       {a.url ? (
-                        <a href={a.url} target="_blank" rel="noreferrer">
-                          <Button size="small" type="link" icon={<DownloadOutlined />}>下载</Button>
-                        </a>
+                        <Button
+                          size="small"
+                          type="link"
+                          icon={<DownloadOutlined />}
+                          onClick={async () => {
+                            try {
+                              await downloadAttachment({ id: a.id, name: a.name });
+                            } catch (e) {
+                              message.error(e instanceof Error ? e.message : '下载失败，请稍后重试');
+                            }
+                          }}
+                        >
+                          下载
+                        </Button>
                       ) : (
                         <Tag>演示态·未落真实文件</Tag>
                       )}

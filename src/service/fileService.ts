@@ -151,6 +151,43 @@ export function downloadUrl(f: AttachmentFile): string {
   return f.url;
 }
 
+/**
+ * V10.13 修复：带会话凭证下载附件（原来点「下载」报 NO_SESSION 的根因）。
+ *
+ * 为什么不能直接 `<a href={a.url}>`：
+ *   附件 url 里的 `?sig=` 是**上传那一刻**签发的短时签名（服务端 FILE_SIG_TTL_MS=5分钟），
+ *   这个 url 被持久化进了数据库。几小时后再点下载，签名早已过期；而浏览器打开
+ *   `<a href>` / `window.open` **不会带 X-WB-Token 自定义头** → 服务端解析不到身份
+ *   → 401 NO_SESSION「会话已过期」。上传当天能下、隔天必挂，就是这个原因。
+ *
+ * 现在改成 fetch 带 `X-WB-Token`（会话 token 12 小时有效，登录即续期）→ blob → 本地落盘，
+ * 与 uploadFile / deleteFile 同一口径；URL 只认 `/api/files/:id` 路径，不依赖存库的死签名。
+ * 403 = 有会话但不在可见范围（服务端 canDownload 判定），401 = 会话真过期，分别给出可执行提示。
+ */
+export async function downloadAttachment(
+  f: Pick<AttachmentFile, 'id' | 'name'>,
+): Promise<void> {
+  const res = await fetch(`/api/files/${encodeURIComponent(f.id)}`, { headers: authHeaders() });
+  if (!res.ok) {
+    let msg = `下载失败（HTTP ${res.status}）`;
+    try {
+      const body = (await res.json()) as { error?: string; code?: string };
+      if (body.code === 'NO_SESSION') msg = '登录会话已过期，请刷新页面重新通过钉钉登录后再下载';
+      else if (body.error) msg = body.error;
+    } catch { /* 非 JSON 响应（如 nginx 错误页）保留默认文案 */ }
+    throw new Error(msg);
+  }
+  const blob = await res.blob();
+  const href = URL.createObjectURL(blob);
+  const el = document.createElement('a');
+  el.href = href;
+  el.download = f.name || '附件';
+  document.body.appendChild(el);
+  el.click();
+  el.remove();
+  URL.revokeObjectURL(href);
+}
+
 /** 软删：仅上传者本人 / 组织者 / 管理员可执行（服务端校验为准） */
 export async function deleteFile(id: string): Promise<boolean> {
   if (!(await probeFileBackend())) return false;
