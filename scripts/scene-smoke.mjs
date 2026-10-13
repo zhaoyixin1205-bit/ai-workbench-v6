@@ -330,6 +330,34 @@ check('G10 员工端案例库比较器换共用 bySortAsc（NaN 安全）', () =
 });
 
 /* ------------------------------------------------------------------ */
+/* H. 首页案例精选 / 员工端案例顺序与后台同源（V10.13 补齐）              */
+/*    锁的是这次用户反馈的根因：后台排完序，首页案例精选仍按发布时间倒序，   */
+/*    两个顺序对不上；v1 案例库页甚至完全没排序（靠数组序碰运气）。         */
+/* ------------------------------------------------------------------ */
+check('H1 v1/v2 首页案例精选都用 bySortAsc（与后台 sortedCases 同尺子）', () => {
+  const v1ok = /const hotCases = \[\.\.\.db\.cases\]\.sort\(bySortAsc\)/.test(homeV1);
+  const v2ok = /const hotCases = \[\.\.\.db\.cases\]\.sort\(bySortAsc\)/.test(homeV2);
+  return v1ok && v2ok ? true : `v1=${v1ok} v2=${v2ok}`;
+});
+check('H2 首页案例精选不再用 created_at 倒序（防回退到旧口径）', () => {
+  const stale = /sort\(\(a, b\) => \(b\.created_at > a\.created_at \? 1 : -1\)\)/;
+  return !stale.test(homeV1) && !stale.test(homeV2) ? true : '某一版首页仍是「最新发布优先」';
+});
+check('H3 v1 案例库列表也按 sort 渲染（v2 走 useCaseFilters，v1 曾漏排序）', () => {
+  const src = readSrc('src/pages/c/CaseList.tsx');
+  return /\[\.\.\.filtered\]\.sort\(bySortAsc\)/.test(src) ? true : 'v1 CaseList 仍未按 sort 排序';
+});
+check('H4 首页前 5 与后台案例表前 5 顺序一致（同输入同比较器）', () => {
+  const cases = [
+    { id: 'c1', sort: 3 }, { id: 'c2' }, { id: 'c3', sort: 1 }, { id: 'c4', sort: 0 },
+    { id: 'c5', sort: 2 }, { id: 'c6' }, { id: 'c7', sort: 5 },
+  ];
+  const home = [...cases].sort(SO.bySortAsc).slice(0, 5).map((x) => x.id).join(',');
+  const admin = cases.filter((c) => !c.is_deleted).sort(SO.bySortAsc).slice(0, 5).map((x) => x.id).join(',');
+  return home === admin ? true : `home=${home} admin=${admin}`;
+});
+
+/* ------------------------------------------------------------------ */
 const failed = results.filter((r) => !r.ok);
 results.forEach((r) => console.log(`${r.ok ? '✅' : '❌'} ${r.name}${r.detail ? ' — ' + r.detail : ''}`));
 console.log(`\n场景卡口径冒烟：${results.length - failed.length}/${results.length} 通过`);

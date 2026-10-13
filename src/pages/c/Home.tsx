@@ -16,6 +16,8 @@ import AnnounceTicker, { type TickerItem } from '@/components/AnnounceTicker';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import { overdueBountiesOf, overdueTodoText } from '@/service/bountyOverdue';
 import { currentStageOf, stageLabel, submitDeadlineOf } from '@/utils/campaignTime';
+/* V10.13：案例排序与后台 ContentAdmin / 员工案例库同用一把尺子 */
+import { bySortAsc } from '@/utils/sortOrder';
 /* V8.2-10.07：必修作业 To Do */
 import { myPendingRequired } from '@/utils/assignmentParticipants';
 import dayjs from 'dayjs';
@@ -129,8 +131,13 @@ export default function Home() {
     activate: [41, 48, 52, 57, 61, 64, 68, 72],
   };
 
-  /** V8-10.07：案例精选改「最新发布优先」—— 新案例（如远程数据分析报告）能在首页露出，而非被 0 热度埋没 */
-  const hotCases = [...db.cases].sort((a, b) => (b.created_at > a.created_at ? 1 : -1)).slice(0, 5);
+  /**
+   * V10.13：案例精选排序与后台「案例管理」/ 员工案例库同源 —— 手动排序（sort）优先，
+   * 缺省垫底、同键稳定（Array.sort 规范保证稳定），全部缺省时保持 db.cases 原序，
+   * 与 ContentAdmin 的 sortedCases 是同一把尺子：后台拖拽 / 排序号一改，首页即时跟随。
+   * 此前是「最新发布优先」（created_at 倒序），后台排完序首页不跟随，用户看到两个顺序。
+   */
+  const hotCases = [...db.cases].sort(bySortAsc).slice(0, 5);
   const bounties = db.bounties.filter((b) => b.status === 'PUBLISHED').slice(0, 4);
   const hotPosts = [...db.posts].filter((p) => p.status === '正常').sort((a, b) => b.like_count + b.comment_count * 3 - (a.like_count + a.comment_count * 3)).slice(0, 3);
   /**

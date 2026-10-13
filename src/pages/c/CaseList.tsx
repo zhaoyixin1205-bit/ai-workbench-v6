@@ -7,6 +7,8 @@ import { COLOR } from '@/theme';
 import { TRACKS } from '@/mock/types';
 import type { Topic, Track } from '@/mock/types';
 import { CoverBlock, PageHeader, TrackTag, HoverCard } from '@/components/ui';
+/* V10.13：案例排序与 v2 useCaseFilters / 后台 ContentAdmin 同用一把尺子 */
+import { bySortAsc } from '@/utils/sortOrder';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import { useNoteVisible } from '@/auth/annotation';
 
@@ -59,8 +61,8 @@ export default function CaseList() {
 
   /** V4.0 CR-03：去掉「干部层 / 骨干层」受众分层，分类改由发布者自选标签承载 */
   const list = useMemo(
-    () =>
-      db.cases.filter((c) => {
+    () => {
+      const filtered = db.cases.filter((c) => {
         if (track !== '全部' && c.track !== track) return false;
         if (kw && !`${c.title}${c.summary}${c.tags.join()}`.includes(kw)) return false;
         if (!matchTags(c.tags)) return false;
@@ -68,7 +70,11 @@ export default function CaseList() {
         if (resFilter === 'SKILL' && !(skillOn && (c.skill_packages?.length ?? 0) > 0)) return false;
         if (resFilter === 'ATTACH' && !(attachOn && (c.attachments?.length ?? 0) > 0)) return false;
         return true;
-      }),
+      });
+      /** V10.13：与 v2 useCaseFilters 同源 —— 后台拖拽写入的 sort 越小越靠前，
+          缺省垫底、NaN 安全（老写法 Infinity-Infinity 是未定义行为）。 */
+      return [...filtered].sort(bySortAsc);
+    },
     [db.cases, track, kw, tagFilter, tagMode, resFilter, skillOn, attachOn]
   );
 
