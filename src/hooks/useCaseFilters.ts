@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '@/store/store';
 import type { Topic } from '@/mock/types';
+import { bySortAsc } from '@/utils/sortOrder';
 
 /**
  * 「案例与选题」筛选逻辑（P3-3 从 `pages/c/CaseList.tsx` 原样抽出）
@@ -55,12 +56,10 @@ export function useCaseFilters() {
         if (resFilter === 'ATTACH' && !(attachOn && (c.attachments?.length ?? 0) > 0)) return false;
         return true;
       });
-      /** V8.3-10.10：后台拖拽写入的 sort 越小越靠前；无 sort 的存量数据视为无穷大，保持原序排在已排过序之后 */
-      return [...filtered].sort((a, b) => {
-        const sa = typeof a.sort === 'number' ? a.sort : Number.POSITIVE_INFINITY;
-        const sb = typeof b.sort === 'number' ? b.sort : Number.POSITIVE_INFINITY;
-        return sa - sb;
-      });
+      /** V8.3-10.10：后台拖拽写入的 sort 越小越靠前；无 sort 的存量数据视为无穷大，保持原序排在已排过序之后。
+          V10.13：比较器改共用 bySortAsc —— 老写法 `sa - sb` 在两边都缺省时是
+          Infinity - Infinity = NaN，传给 Array.sort 是未定义行为（当前依赖引擎巧合）。 */
+      return [...filtered].sort(bySortAsc);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [db.cases, track, kw, tagFilter, tagMode, resFilter, skillOn, attachOn]

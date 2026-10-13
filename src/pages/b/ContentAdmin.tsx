@@ -17,6 +17,8 @@ import type {
 import { formatSize } from '@/mock/types';
 import { useFileUpload } from '@/service/useFileUpload';
 import { useDragSort } from '@/hooks/useDragSort';
+import { bySortAsc, moveIdTo, reorderWithSort } from '@/utils/sortOrder';
+import SortNumberInput from '@/components/SortNumberInput';
 
 export default function ContentAdmin() {
   const { db, setDb, me, log, flags } = useStore();
@@ -235,6 +237,8 @@ export default function ContentAdmin() {
       setEditingId(c.id);
       form.setFieldsValue({
         title: c.title, track: c.track, level: c.level, prompt: c.prompt, tags: c.tags,
+        /** V10.13：排序号按 1-based 展示（与行内输入、员工端所见一致） */
+        sort: typeof c.sort === 'number' ? c.sort + 1 : undefined,
       });
       setVisibleSubjects(c.visible_subjects ?? []);
       setSkills(c.skill_packages ?? []);
@@ -253,7 +257,7 @@ export default function ContentAdmin() {
 
   /** V4.0 CR-08 + V4.1：新建/编辑案例并落库可见范围与附加资源（保存前回读校验） */
   const createCase = async () => {
-    let vals: { title?: string; track?: Track; level?: Level; prompt?: string; tags?: string[] };
+    let vals: { title?: string; track?: Track; level?: Level; prompt?: string; tags?: string[]; sort?: number };
     try {
       vals = await form.validateFields();
     } catch {
@@ -261,22 +265,35 @@ export default function ContentAdmin() {
       return;
     }
     if (editingId) {
+      /**
+       * V10.13：排序号在弹窗里改。语义 = 「把这个案例放到第 N 位」，
+       * 与行内输入 / 拖拽共用 reorderWithSort（重排数组 + sort 重写 0..n-1）。
+       * 字段更新与调位放在同一个 setDb 里，避免两次更新互相覆盖。
+       */
+      const from = caseIds.indexOf(editingId);
+      const nextIds = typeof vals.sort === 'number'
+        ? moveIdTo(caseIds, editingId, vals.sort)
+        : caseIds;
       setDb((p) => ({
         ...p,
-        cases: p.cases.map((c) => (c.id === editingId ? {
-          ...c,
-          title: vals.title ?? c.title,
-          track: vals.track ?? c.track,
-          level: vals.level ?? c.level,
-          prompt: vals.prompt ?? c.prompt,
-          tags: vals.tags ?? c.tags,
-          visible_subjects: visibleSubjects,
-          skill_packages: skills,
-          attachments: atts,
-        } : c)),
+        cases: reorderWithSort(
+          p.cases.map((c) => (c.id === editingId ? {
+            ...c,
+            title: vals.title ?? c.title,
+            track: vals.track ?? c.track,
+            level: vals.level ?? c.level,
+            prompt: vals.prompt ?? c.prompt,
+            tags: vals.tags ?? c.tags,
+            visible_subjects: visibleSubjects,
+            skill_packages: skills,
+            attachments: atts,
+          } : c)),
+          nextIds,
+        ),
       }));
       log('编辑案例', vals.title ?? editingId,
-        `Skill ${skills.length} 个 / 附件 ${atts.length} 个 / 可见范围 ${visibleSubjects.map((s) => s.name).join('、')}`);
+        `Skill ${skills.length} 个 / 附件 ${atts.length} 个 / 可见范围 ${visibleSubjects.map((s) => s.name).join('、')}`
+        + (from >= 0 && nextIds[from] !== editingId ? ` / 顺序移到第 ${nextIds.indexOf(editingId) + 1} 位` : ''));
       message.success(`已保存「${vals.title ?? ''}」`);
       setOpen(false);
       resetForm();
@@ -367,11 +384,20 @@ export default function ContentAdmin() {
     });
   };
 
-  /* ---------- V8.3-10.10：案例拖拽排序（落盘 sort 字段） ---------- */
-  const caseIds = db.cases.filter((c) => !c.is_deleted).map((c) => c.id);
+  /* ---------- V8.3-10.10：案例拖拽排序（落盘 sort 字段） ----------
+     V10.13 修：老版 onReorder 只写 sort 不重排数组，而后台表格按数组原序渲染
+     → 拖完松手一动不动（用户报「拖了没反应」）。现在三处同源：
+       ① 表格 dataSource / caseIds 一律取**按 sort 排过**的列表（后台所见 = 员工端所得）；
+       ② 拖拽与数字调位都走 reorderWithSort：重排数组 + sort 重写 0..n-1；
+       ③ 员工端 useCaseFilters 仍按 sort 排，口径零变化。 */
+  const sortedCases = db.cases.filter((c) => !c.is_deleted).sort(bySortAsc);
+  const caseIds = sortedCases.map((c) => c.id);
+  /** 拖拽 / 数字调位共用的落库动作：入参是「新的 id 顺序」 */
+  const applyCaseOrder = (ids: string[]) => {
+    setDb((p) => ({ ...p, cases: reorderWithSort(p.cases, ids) }));
+  };
   const caseDrag = useDragSort(caseIds, (ids) => {
-    const rank = new Map(ids.map((id, i) => [id, i]));
-    setDb((p) => ({ ...p, cases: p.cases.map((c) => (rank.has(c.id) ? { ...c, sort: rank.get(c.id)! } : c)) }));
+    applyCaseOrder(ids);
     log('调整案例顺序', `${ids.length} 条`, '拖拽排序');
   });
   /** antd Table 行级拖拽 */
@@ -524,6 +550,8 @@ export default function ContentAdmin() {
         emoji: s.emoji, tags: s.tags ?? [], week: s.week, status: s.status,
         /** V8.2-10.07：场景卡可关联案例，首页胶囊点击直达案例详情 */
         source_case_id: s.source_case_id ?? undefined,
+        /** V10.13：排序号按 1-based 展示（与行内输入、员工端所见一致） */
+        sort: typeof s.sort === 'number' ? s.sort + 1 : undefined,
       }
       : {
         title: '', summary: '', content: '', track: '客户赋能', emoji: '💡',
@@ -534,7 +562,7 @@ export default function ContentAdmin() {
   const saveScene = async () => {
     let vals: {
       title?: string; summary?: string; content?: string; track?: Track; emoji?: string;
-      tags?: string[]; week?: string; status?: SceneCard['status']; source_case_id?: string;
+      tags?: string[]; week?: string; status?: SceneCard['status']; source_case_id?: string; sort?: number;
     };
     try {
       vals = await sceneForm.validateFields();
@@ -545,23 +573,36 @@ export default function ContentAdmin() {
     const at = now();
     const editing = sceneEditing;
     if (editing) {
+      /**
+       * V10.13：排序号在弹窗里改。语义 = 「把这张卡放到第 N 位」，
+       * 与行内输入 / 拖拽共用 reorderWithSort（重排数组 + sort 重写 0..n-1）。
+       * 字段更新与调位放进同一个 setDb，避免两次更新互相覆盖。
+       */
+      const nextIds = typeof vals.sort === 'number'
+        ? moveIdTo(sceneIdsV1, editing.id, vals.sort)
+        : sceneIdsV1;
       setDb((p) => ({
         ...p,
-        sceneCards: p.sceneCards.map((s) => (s.id === editing.id ? {
-          ...s,
-          title: vals.title ?? s.title,
-          summary: vals.summary ?? s.summary,
-          content: vals.content ?? s.content,
-          track: vals.track ?? s.track,
-          emoji: vals.emoji ?? s.emoji,
-          tags: vals.tags ?? s.tags,
-          week: vals.week ?? s.week,
-          status: vals.status ?? s.status,
-          published_at: vals.status === 'PUBLISHED' && !s.published_at ? at : s.published_at,
-          source_case_id: vals.source_case_id || undefined,
-        } : s)),
+        sceneCards: reorderWithSort(
+          p.sceneCards.map((s) => (s.id === editing.id ? {
+            ...s,
+            title: vals.title ?? s.title,
+            summary: vals.summary ?? s.summary,
+            content: vals.content ?? s.content,
+            track: vals.track ?? s.track,
+            emoji: vals.emoji ?? s.emoji,
+            tags: vals.tags ?? s.tags,
+            week: vals.week ?? s.week,
+            status: vals.status ?? s.status,
+            published_at: vals.status === 'PUBLISHED' && !s.published_at ? at : s.published_at,
+            source_case_id: vals.source_case_id || undefined,
+          } : s)),
+          nextIds,
+        ),
       }));
-      log('编辑场景卡', vals.title ?? editing.title, `状态 ${vals.status}`);
+      const movedTo = nextIds.indexOf(editing.id) + 1;
+      log('编辑场景卡', vals.title ?? editing.title,
+        `状态 ${vals.status}` + (movedTo !== sceneIdsV1.indexOf(editing.id) + 1 ? ` / 顺序移到第 ${movedTo} 位` : ''));
       message.success('场景卡已保存');
     } else {
       setDb((p) => {
@@ -630,12 +671,18 @@ export default function ContentAdmin() {
     message.success(next === 'PUBLISHED' ? '已发布，首页场景卡即时生效' : '已下线，首页不再展示');
   };
 
-  /* ---------- V8.3-10.10：场景卡拖拽排序（落盘 sort 字段） ---------- */
-  const visibleScenesV1 = db.sceneCards.filter((s) => !s.is_deleted);
+  /* ---------- V8.3-10.10：场景卡拖拽排序（落盘 sort 字段） ----------
+     V10.13 修：与案例同源的老 bug —— onReorder 只写 sort 不重排数组，后台按数组
+     原序渲染 → 拖了没反应。现在渲染取按 sort 排过的列表，落库统一走
+     reorderWithSort（重排数组 + sort 重写 0..n-1），员工端口径零变化。 */
+  const visibleScenesV1 = db.sceneCards.filter((s) => !s.is_deleted).sort(bySortAsc);
   const sceneIdsV1 = visibleScenesV1.map((s) => s.id);
+  /** 拖拽 / 数字调位共用的落库动作：入参是「新的 id 顺序」 */
+  const applySceneOrder = (ids: string[]) => {
+    setDb((p) => ({ ...p, sceneCards: reorderWithSort(p.sceneCards, ids) }));
+  };
   const sceneDrag = useDragSort(sceneIdsV1, (ids) => {
-    const rank = new Map(ids.map((id, i) => [id, i]));
-    setDb((p) => ({ ...p, sceneCards: p.sceneCards.map((s) => (rank.has(s.id) ? { ...s, sort: rank.get(s.id)! } : s)) }));
+    applySceneOrder(ids);
     log('调整场景卡顺序', `${ids.length} 条`, '拖拽排序');
   });
 
@@ -677,11 +724,25 @@ export default function ContentAdmin() {
                   <Table
                     size="small" rowKey="id" pagination={{ pageSize: 8 }}
                     components={fullCrudOn ? { body: { row: CaseDragRow } } : undefined}
-                    dataSource={db.cases.filter((c) => !c.is_deleted)}
+                    dataSource={sortedCases}
                     columns={[
                       ...(fullCrudOn ? [{
                         title: '', width: 36, align: 'center' as const,
                         render: () => <span className="wb2-drag-handle" title="拖拽调整顺序">⠿</span>,
+                      }] : []),
+                      /* V10.13：数字调位通道（触屏 / 键盘 / 精细调整用；与拖拽同一落库口径） */
+                      ...(fullCrudOn ? [{
+                        title: '排序', width: 96,
+                        render: (_: unknown, r: CaseItem) => (
+                          <SortNumberInput
+                            value={r.sort}
+                            max={sortedCases.length}
+                            onCommit={(pos) => {
+                              applyCaseOrder(moveIdTo(caseIds, r.id, pos));
+                              log('调整案例顺序', r.title, `移到第 ${pos} 位`);
+                            }}
+                          />
+                        ),
                       }] : []),
                       { title: '标题', dataIndex: 'title' },
                       { title: '赛道', dataIndex: 'track', render: (v: string) => <Tag color={TRACK_COLOR[v]} style={{ border: 'none' }}>{v}</Tag> },
@@ -837,7 +898,7 @@ export default function ContentAdmin() {
             },
             {
               /* V6.0 CR-28：场景卡由 cases.slice(0,8) 派生改为独立实体 sceneCards（此前无法新建 / 下线 / 删除） */
-              key: 'cards', label: `每周场景卡（${db.sceneCards.filter((s) => !s.is_deleted).length}）`,
+              key: 'cards', label: `每周场景卡（${visibleScenesV1.length}）`,
               children: (
                 <Space direction="vertical" size={10} style={{ width: '100%' }}>
                   <Space wrap>
@@ -848,13 +909,24 @@ export default function ContentAdmin() {
                       每周高频场景卡（30 秒学一个知识点）：首页胶囊卡片流展示，支持历史回看
                     </Typography.Text>
                   </Space>
-                  {db.sceneCards.filter((s) => !s.is_deleted).map((c) => (
+                  {visibleScenesV1.map((c) => (
                     <div
                       key={c.id}
                       {...(fullCrudOn ? sceneDrag.rowAttrs(c.id) : {})}
                       style={{ display: 'flex', alignItems: 'center', gap: 8 }}
                     >
                       {fullCrudOn && <span className="wb2-drag-handle" title="拖拽调整顺序">⠿</span>}
+                      {/* V10.13：行内排序号（触屏 / 键盘 / 精细调整通道，与拖拽同一落库口径） */}
+                      {fullCrudOn && (
+                        <SortNumberInput
+                          value={c.sort}
+                          max={visibleScenesV1.length}
+                          onCommit={(pos) => {
+                            applySceneOrder(moveIdTo(sceneIdsV1, c.id, pos));
+                            log('调整场景卡顺序', c.title, `移到第 ${pos} 位`);
+                          }}
+                        />
+                      )}
                       <Card key={c.id} size="small" style={{ flex: 1 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                           <Space wrap>
@@ -890,7 +962,7 @@ export default function ContentAdmin() {
                     </Card>
                     </div>
                   ))}
-                  {db.sceneCards.filter((s) => !s.is_deleted).length === 0 && (
+                  {visibleScenesV1.length === 0 && (
                     <Empty description="还没有场景卡" />
                   )}
                 </Space>
@@ -978,6 +1050,16 @@ export default function ContentAdmin() {
       >
         <Form form={form} layout="vertical">
           <Form.Item name="title" label="标题" rules={[{ required: true }]}><Input /></Form.Item>
+          {/* V10.13：排序号（编辑态显示当前 1-based 位次；保存即调位，与行内输入 / 拖拽同口径） */}
+          {fullCrudOn && editingId && (
+            <Form.Item
+              name="sort"
+              label="排序号"
+              extra="1 = 最前面；决定员工端「案例库」里的展示顺序。改完点保存即生效（会连带重排其他案例）"
+            >
+              <InputNumber min={1} max={Math.max(1, sortedCases.length)} precision={0} style={{ width: 120 }} />
+            </Form.Item>
+          )}
           <Form.Item name="track" label="赛道"><Select options={['客户赋能', '团队提效', '销售提效'].map((v) => ({ value: v, label: v }))} /></Form.Item>
           {/* V4.0 CR-03：去分层，改由发布者自选标签（支持回车创建自定义标签） */}
           <Form.Item name="tags" label="标签（可自由创建）">
@@ -1261,6 +1343,16 @@ export default function ContentAdmin() {
           <Form.Item name="tags" label="标签（可自由创建）">
             <Select mode="tags" placeholder="输入后回车即可创建新标签" options={tagPool.map((t) => ({ value: t, label: `#${t}` }))} />
           </Form.Item>
+          {/* V10.13：排序号（编辑态显示当前 1-based 位次；保存即调位） */}
+          {fullCrudOn && sceneEditing && (
+            <Form.Item
+              name="sort"
+              label="排序号"
+              extra="1 = 最前面；决定员工端首页「本周高频场景卡」里的展示顺序。改完点保存即生效（会连带重排其他场景卡）"
+            >
+              <InputNumber min={1} max={Math.max(1, visibleScenesV1.length)} precision={0} style={{ width: 120 }} />
+            </Form.Item>
+          )}
           <Form.Item name="status" label="状态">
             <Radio.Group
               optionType="button" buttonStyle="solid"

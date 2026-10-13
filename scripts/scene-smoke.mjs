@@ -12,6 +12,9 @@
  *   E 组锁「一行为一个案例」的分组 / 命名 / 作者 / 赛道 / 排序；
  *   F 组锁 UI 契约（不显示发布时间、案例名胶囊、作者·赛道·N 张、v1/v2 都传了 cases），
  *   防止 service 层对了但渲染层又写成老样子。
+ * V10.13 增补：
+ *   G 组锁后台排序修复 —— 拖拽必须重排数组（不是只写 sort）、后台列表必须按 sort 渲染、
+ *   比较器 NaN 安全。2026-10-13 线上报障「后台拖拽排序拖了没反应」的根因回归。
  */
 import { buildSync } from 'esbuild';
 import { createRequire } from 'node:module';
@@ -254,6 +257,76 @@ check('F5 v1 与 v2 都传了 cases（防版本漂移）', () => {
   return /buildSceneBoard\(db\.sceneCards[^)]*db\.cases/.test(homeV1) && /buildSceneBoard\(db\.sceneCards[^)]*db\.cases/.test(homeV2)
     ? true
     : '某一版首页没传 cases，案例名会取不到';
+});
+
+/* ------------------------------------------------------------------ */
+/* G. 后台排序（V10.13 修复回归）                                        */
+/*    锁的是这次修的根因：拖拽只写 sort 不重排数组 + 后台按数组原序渲染      */
+/* ------------------------------------------------------------------ */
+const soOut = join(mkdtempSync(join(tmpdir(), 'wbso-')), 'sortOrder.cjs');
+buildSync({ entryPoints: ['src/utils/sortOrder.ts'], bundle: true, format: 'cjs', platform: 'node', outfile: soOut, logLevel: 'silent' });
+const SO = require(soOut);
+
+check('G1 reorderWithSort：按新 id 顺序重排数组并重写 sort=0..n-1', () => {
+  const list = [
+    { id: 'a', sort: 5 }, { id: 'b', sort: 1 }, { id: 'c', sort: 3 },
+  ];
+  const out = SO.reorderWithSort(list, ['c', 'a', 'b']);
+  const ok = out.map((x) => x.id).join(',') === 'c,a,b'
+    && out.map((x) => x.sort).join(',') === '0,1,2';
+  return ok ? true : JSON.stringify(out.map((x) => [x.id, x.sort]));
+});
+check('G2 reorderWithSort：不在 ids 里的条目（已软删）垫尾且 sort 不动', () => {
+  const list = [{ id: 'a', sort: 9 }, { id: 'del', sort: 4 }, { id: 'b', sort: 7 }];
+  const out = SO.reorderWithSort(list, ['b', 'a']);
+  return out[out.length - 1].id === 'del' && out[out.length - 1].sort === 4
+    ? true : JSON.stringify(out.map((x) => [x.id, x.sort]));
+});
+check('G3 bySortAsc：两边都缺省不产出 NaN（老写法 Infinity-Infinity 的坑）', () => {
+  const arr = [{ id: 'x' }, { id: 'y' }, { id: 'z' }];
+  const sorted = [...arr].sort(SO.bySortAsc);
+  return sorted.map((x) => x.id).join(',') === 'x,y,z' ? true : '顺序被 NaN 比较器打乱';
+});
+check('G4 bySortAsc：有 sort 的排在无 sort 之前，升序', () => {
+  const arr = [{ id: 'x' }, { id: 'y', sort: 2 }, { id: 'z', sort: 1 }];
+  return [...arr].sort(SO.bySortAsc).map((x) => x.id).join(',') === 'z,y,x'
+    ? true : '缺省未垫底';
+});
+check('G5 moveIdTo：移到第 1 位 / 越界夹紧 / 原位不动', () => {
+  const ids = ['a', 'b', 'c', 'd'];
+  const first = SO.moveIdTo(ids, 'c', 1).join(',') === 'c,a,b,d';
+  const clamp = SO.moveIdTo(ids, 'a', 99).join(',') === 'b,c,d,a';
+  const noop = SO.moveIdTo(ids, 'b', 2).join(',') === 'a,b,c,d';
+  return first && clamp && noop ? true : JSON.stringify({ first, clamp, noop });
+});
+
+const adminV1 = readSrc('src/pages/b/ContentAdmin.tsx');
+const adminV2 = readSrc('src/pages/v2/ContentAdminV2.tsx');
+check('G6 v1/v2 后台场景卡列表都按 sort 渲染（不再按数组原序）', () => {
+  const v1ok = /visibleScenesV1 = db\.sceneCards\.filter\(\(s\) => !s\.is_deleted\)\.sort\(bySortAsc\)/.test(adminV1)
+    && /\{visibleScenesV1\.map\(\(c\) => \(/.test(adminV1);
+  const v2ok = /visibleScenes = db\.sceneCards\.filter\(\(s\) => !s\.is_deleted\)\.sort\(bySortAsc\)/.test(adminV2)
+    && /\{visibleScenes\.map\(\(c\) => \(/.test(adminV2);
+  return v1ok && v2ok ? true : `v1=${v1ok} v2=${v2ok}`;
+});
+check('G7 v1/v2 拖拽回调都走 reorderWithSort（重排数组，不是只写 sort）', () => {
+  const v1ok = /sceneCards: reorderWithSort\(p\.sceneCards, ids\)/.test(adminV1)
+    && /cases: reorderWithSort\(p\.cases, ids\)/.test(adminV1);
+  const v2ok = /sceneCards: reorderWithSort\(p\.sceneCards, ids\)/.test(adminV2)
+    && /cases: reorderWithSort\(p\.cases, ids\)/.test(adminV2);
+  return v1ok && v2ok ? true : `v1=${v1ok} v2=${v2ok}`;
+});
+check('G8 v1/v2 案例表格 dataSource 用排过序的列表', () => {
+  return /dataSource=\{sortedCases\}/.test(adminV1) && /dataSource=\{sortedCases\}/.test(adminV2)
+    ? true : '某版案例表格仍在用数组原序';
+});
+check('G9 老 bug 形态清零：不存在「只按 rank 写 sort」的残留回调', () => {
+  const stale = /rank\.get\(c\.id\)|rank\.get\(s\.id\)/;
+  return !stale.test(adminV1) && !stale.test(adminV2) ? true : '仍残留只写 sort 不重排数组的旧回调';
+});
+check('G10 员工端案例库比较器换共用 bySortAsc（NaN 安全）', () => {
+  const src = readSrc('src/hooks/useCaseFilters.ts');
+  return /\[\.\.\.filtered\]\.sort\(bySortAsc\)/.test(src) ? true : 'useCaseFilters 未换共用比较器';
 });
 
 /* ------------------------------------------------------------------ */
