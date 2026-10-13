@@ -457,6 +457,12 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
           render: (v: string) => <span className={`wb2-tag ${statusTone(v)}`}><i className="d" />{statusText(v)}</span>,
         },
         {
+          title: '作业详情', width: 110,
+          render: (_: unknown, r: AssignmentSubmit) => (
+            <Button size="small" type="link" onClick={() => setDetailId(r.id)}>查看详情</Button>
+          ),
+        },
+        {
           /** V8.3-10.10 业务方要求：最后一列「AI评分详情」；只读动作排在改数据的操作左边 */
           title: 'AI评分详情', width: 110,
           render: (_: unknown, r: AssignmentSubmit) => (
@@ -467,8 +473,6 @@ export default function JudgeReviewV2({ variant = 'admin' }: { variant?: 'admin'
           title: '操作', width: confirmMode ? 180 : 140,
           render: (_, r) => (
             <div style={{ display: 'flex', gap: 'var(--wb-space-2)', flexWrap: 'wrap' }}>
-              {/* V10.10：作业详情（只读入口，ADMIN 等只读身份也可查看作业内容） */}
-              <Button size="small" type="link" onClick={() => setDetailId(r.id)}>作业详情</Button>
               <Button size="small" type="link" disabled={!canOperate} onClick={() => { setReviseTarget(null); setScores({}); setOpinion(''); setCurrent(r); }}>打分</Button>
               {confirmMode ? (
                 r.confirmed ? (

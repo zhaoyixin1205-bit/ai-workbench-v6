@@ -363,7 +363,7 @@ export default function JudgeReview({ variant = 'admin' }: { variant?: 'admin' |
   const queueTable = (
             <Table
               size="small" rowKey="id" pagination={{ pageSize: 6 }} dataSource={queue}
-              scroll={{ x: 760 }}
+              scroll={{ x: 920 }}
               columns={[
                 /**
                  * V8.3-10.10 运营方口径：编号改为**序号**（1/2/3）。
@@ -400,6 +400,12 @@ export default function JudgeReview({ variant = 'admin' }: { variant?: 'admin' |
                   },
                 },
                 {
+                  title: '作业详情', width: 110,
+                  render: (_: unknown, r: AssignmentSubmit) => (
+                    <Button size="small" type="link" onClick={() => setDetailId(r.id)}>查看详情</Button>
+                  ),
+                },
+                {
                   /**
                    * V8.3-10.10 业务方要求：最后一列是「AI评分详情」。
                    * 放在操作列**之前** —— 「查看详情」是只读动作，
@@ -414,8 +420,6 @@ export default function JudgeReview({ variant = 'admin' }: { variant?: 'admin' |
                   title: '操作', width: confirmMode ? 180 : 140,
                   render: (_, r) => (
                     <Space size={4}>
-                      {/* V10.10：作业详情（只读入口，ADMIN 等只读身份也可查看作业内容） */}
-                      <Button size="small" type="link" onClick={() => setDetailId(r.id)}>作业详情</Button>
                       <Button size="small" type="link" disabled={!canOperate} onClick={() => { setReviseTarget(null); setScores({}); setOpinion(''); setCurrent(r); }}>打分</Button>
                       {confirmMode ? (
                         r.confirmed ? (

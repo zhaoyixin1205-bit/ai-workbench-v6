@@ -519,15 +519,18 @@ export default function AssignmentAdminV2() {
                         render: (v: SubmitStatus, r) => <SubmitStatusTag status={v} published={isPublished(r)} />,
                       },
                       {
-                        title: '操作', width: 220,
+                        title: '作业详情', width: 110,
                         render: (_, r) => (
-                          <div style={{ display: 'flex', gap: 'var(--wb-space-1)', flexWrap: 'wrap' }}>
-                            {/* V10.10：作业详情（只读入口，readOnly 也可见，便于评委 / 组织者查看作业内容） */}
-                            <Button size="small" type="link" onClick={() => setDetailId(r.id)}>作业详情</Button>
-                            {readOnly
-                              ? <span className="wb2-tag id"><i className="d" />只读</span>
-                              : <>
-                            {/* V8.3-10.07：「标记已跑分」→ 真正出分的「补跑 AI 评分」（正常链路已自动，此处为兜底） */}
+                          <Button size="small" type="link" onClick={() => setDetailId(r.id)}>查看详情</Button>
+                        ),
+                      },
+                      {
+                        title: '操作', width: 220,
+                        render: (_, r) => (readOnly
+                          ? <span className="wb2-tag id"><i className="d" />只读</span>
+                          : (
+                            <div style={{ display: 'flex', gap: 'var(--wb-space-1)', flexWrap: 'wrap' }}>
+                              {/* V8.3-10.07：「标记已跑分」→ 真正出分的「补跑 AI 评分」（正常链路已自动，此处为兜底） */}
                               {needsAiScore(r) && <Button size="small" type="link" onClick={() => rescore(r)}>补跑 AI 评分</Button>}
                               {r.status === 'AI_SCORED' && <Button size="small" type="link" onClick={() => toStatus(r.id, 'REVIEWING')}>送复核</Button>}
                               {/* V6.0 CR-19：复核完 → 已完成（公示不再是前置条件）→ 可选标记已共识 */}
@@ -544,10 +547,8 @@ export default function AssignmentAdminV2() {
                               {flowControlOn && allowedTargets(r.status).length > 0 && (
                                 <Button size="small" type="link" onClick={() => openFlow(r)}>流转</Button>
                               )}
-                            </>
-                            }
-                          </div>
-                        ),
+                            </div>
+                          )),
                       },
                     ]}
                   />

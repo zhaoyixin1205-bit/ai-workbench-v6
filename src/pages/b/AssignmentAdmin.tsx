@@ -495,14 +495,16 @@ export default function AssignmentAdmin() {
                     { title: '最终分', dataIndex: 'final_score', width: 80, render: (v?: number) => <span className="num" style={{ color: COLOR.primary }}>{v ?? '—'}</span> },
                     { title: '状态', dataIndex: 'status', render: (v, r) => <SubmitStatusTag status={v} published={isPublished(r)} /> },
                     {
-                      title: '操作', width: 150,
+                      title: '作业详情', width: 110,
                       render: (_, r) => (
-                        <Space size={4} wrap>
-                          {/* V10.10：作业详情（只读入口，readOnly 也可见，便于评委 / 组织者查看作业内容） */}
-                          <Button size="small" type="link" onClick={() => setDetailId(r.id)}>作业详情</Button>
-                          {readOnly
-                            ? <Typography.Text type="secondary" style={{ fontSize: 12 }}>只读</Typography.Text>
-                            : (
+                        <Button size="small" type="link" onClick={() => setDetailId(r.id)}>查看详情</Button>
+                      ),
+                    },
+                    {
+                      title: '操作', width: 150,
+                      render: (_, r) => (readOnly
+                        ? <Typography.Text type="secondary" style={{ fontSize: 12 }}>只读</Typography.Text>
+                        : (
                           <Space size={4}>
                             {/* V8.3-10.07：「标记已跑分」→ 真正出分的「补跑 AI 评分」（正常链路已自动，此处为兜底） */}
                             {needsAiScore(r) && <Button size="small" type="link" onClick={() => rescore(r)}>补跑 AI 评分</Button>}
@@ -525,9 +527,7 @@ export default function AssignmentAdmin() {
                               <Button size="small" type="link" onClick={() => openFlow(r)}>流转</Button>
                             )}
                           </Space>
-                          )}
-                        </Space>
-                      ),
+                        )),
                     },
                   ]}
                 />

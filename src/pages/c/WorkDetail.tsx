@@ -5,6 +5,7 @@ import { useStore } from '@/store/store';
 import { COLOR, GRADIENT, SHADOW } from '@/theme';
 import { SubmitStatusTag } from './WorkList';
 import { TrackTag, SoftTag } from '@/components/ui';
+import AttachmentLinks from '@/components/AttachmentLinks';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import type { SubmitStatus } from '@/mock/types';
 import { canApplyAsset } from '@/constants/statusMeta';
@@ -100,7 +101,7 @@ export default function WorkDetail() {
           )}
           <Divider orientation="left" style={{ fontSize: 14 }}>产出样本</Divider>
           <Typography.Paragraph style={{ color: COLOR.textSub, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{s.output_sample}</Typography.Paragraph>
-          <Space wrap>{s.attachments.map((a) => <SoftTag key={a.name} text={`📎 ${a.name}（${a.size}）`} tone="gray" />)}</Space>
+          <AttachmentLinks items={s.attachments} />
         </div>
       </Card>
 

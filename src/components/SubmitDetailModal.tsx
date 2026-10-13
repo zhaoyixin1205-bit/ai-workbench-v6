@@ -1,7 +1,10 @@
-import { Descriptions, Divider, Modal, Progress, Table, Tag, Typography } from 'antd';
+import { Button, Descriptions, Divider, Modal, Progress, Table, Tag, Typography } from 'antd';
+import { ExportOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import { useStore } from '@/store/store';
 import { SubmitStatusTag } from '@/pages/c/WorkList';
 import { TrackTag, SoftTag } from '@/components/ui';
+import AttachmentLinks from '@/components/AttachmentLinks';
 import type { AssignmentSubmit, ScoreCard } from '@/mock/types';
 
 /**
@@ -27,6 +30,7 @@ export default function SubmitDetailModal({
   onClose: () => void;
 }) {
   const { db } = useStore();
+  const navigate = useNavigate();
   const s: AssignmentSubmit | undefined = submitId
     ? db.submits.find((x) => x.id === submitId)
     : undefined;
@@ -58,7 +62,15 @@ export default function SubmitDetailModal({
     <Modal
       open={open}
       onCancel={onClose}
-      footer={null}
+      footer={[
+        <Button key="close" onClick={onClose}>关闭</Button>,
+        <Button
+          key="jump" type="primary" icon={<ExportOutlined />} disabled={!s}
+          onClick={() => { if (s) navigate(`/work/${s.id}`); }}
+        >
+          跳转到完整提报页
+        </Button>,
+      ]}
       width={760}
       style={{ top: '4vh' }}
       title={s ? `作业详情 · ${s.code} ${s.name}` : '作业详情'}
@@ -105,9 +117,7 @@ export default function SubmitDetailModal({
           </Typography.Paragraph>
 
           <div style={{ marginBottom: 8 }}>
-            {s.attachments?.length
-              ? s.attachments.map((a) => <SoftTag key={a.name} text={`📎 ${a.name}（${a.size}）`} tone="gray" />)
-              : <Typography.Text type="secondary" style={{ fontSize: 13 }}>无附件</Typography.Text>}
+            <AttachmentLinks items={s.attachments} />
           </div>
 
           {/* 评分明细：已出分才展示，未出分保持「尚未评分」提示，与员工端一致 */}

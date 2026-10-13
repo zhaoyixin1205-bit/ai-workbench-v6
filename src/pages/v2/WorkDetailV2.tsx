@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useStore } from '@/store/store';
 import { SubmitStatusTag } from '@/pages/c/WorkList';
 import { TrackTag, SoftTag } from '@/components/ui';
+import AttachmentLinks from '@/components/AttachmentLinks';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import type { SubmitStatus } from '@/mock/types';
 import { canApplyAsset } from '@/constants/statusMeta';
@@ -121,8 +122,8 @@ export default function WorkDetailV2() {
               )}
               <div className="wb2-card-t" style={{ marginTop: 'var(--wb-space-5)' }}>产出样本</div>
               <div className="wb2-kv">{s.output_sample}</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--wb-space-2)', marginTop: 'var(--wb-space-4)' }}>
-                {s.attachments.map((a) => <SoftTag key={a.name} text={`📎 ${a.name}（${a.size}）`} tone="gray" />)}
+              <div style={{ marginTop: 'var(--wb-space-4)' }}>
+                <AttachmentLinks items={s.attachments} />
               </div>
             </div>
           </div>
