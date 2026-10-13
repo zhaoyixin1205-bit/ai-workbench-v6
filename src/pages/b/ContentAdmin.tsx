@@ -1,5 +1,5 @@
 import {
-  Alert, Button, Card, Divider, Empty, Input, InputNumber, Modal, Radio, Segmented, Space, Table,
+  Alert, AutoComplete, Button, Card, Divider, Empty, Input, InputNumber, Modal, Radio, Segmented, Space, Table,
   Tabs, Tag, Tooltip, Typography, Form, Select, Upload, App as AntApp,
 } from 'antd';
 import { PlusOutlined, InboxOutlined, UploadOutlined, LinkOutlined } from '@ant-design/icons';
@@ -239,6 +239,8 @@ export default function ContentAdmin() {
         title: c.title, track: c.track, level: c.level, prompt: c.prompt, tags: c.tags,
         /** V10.13：排序号按 1-based 展示（与行内输入、员工端所见一致） */
         sort: typeof c.sort === 'number' ? c.sort + 1 : undefined,
+        /** V10.13：作者回填当前署名，支持在弹窗里修正 / 代录 */
+        author_name: c.author_name,
       });
       setVisibleSubjects(c.visible_subjects ?? []);
       setSkills(c.skill_packages ?? []);
@@ -255,9 +257,15 @@ export default function ContentAdmin() {
     return [...set].sort();
   }, [db.cases, db.topics]);
 
+  /** V10.13：作者候选 = 通讯录姓名去重。允许自由输入（案例作者也可能是客户 / 外部伙伴） */
+  const authorOptions = useMemo(
+    () => [...new Set(db.users.map((u) => u.name).filter(Boolean))].map((n) => ({ value: n })),
+    [db.users],
+  );
+
   /** V4.0 CR-08 + V4.1：新建/编辑案例并落库可见范围与附加资源（保存前回读校验） */
   const createCase = async () => {
-    let vals: { title?: string; track?: Track; level?: Level; prompt?: string; tags?: string[]; sort?: number };
+    let vals: { title?: string; author_name?: string; track?: Track; level?: Level; prompt?: string; tags?: string[]; sort?: number };
     try {
       vals = await form.validateFields();
     } catch {
@@ -274,12 +282,17 @@ export default function ContentAdmin() {
       const nextIds = typeof vals.sort === 'number'
         ? moveIdTo(caseIds, editingId, vals.sort)
         : caseIds;
+      /** V10.13：作者可编辑。只改展示名 author_name；author_union_id 保持原值
+          （积分 / 提报归属不因运营方改署名而漂移）。清空 = 不改，回退原署名。 */
+      const nextAuthor = vals.author_name?.trim() || undefined;
+      const beforeAuthor = db.cases.find((c) => c.id === editingId)?.author_name;
       setDb((p) => ({
         ...p,
         cases: reorderWithSort(
           p.cases.map((c) => (c.id === editingId ? {
             ...c,
             title: vals.title ?? c.title,
+            author_name: nextAuthor ?? c.author_name,
             track: vals.track ?? c.track,
             level: vals.level ?? c.level,
             prompt: vals.prompt ?? c.prompt,
@@ -293,7 +306,8 @@ export default function ContentAdmin() {
       }));
       log('编辑案例', vals.title ?? editingId,
         `Skill ${skills.length} 个 / 附件 ${atts.length} 个 / 可见范围 ${visibleSubjects.map((s) => s.name).join('、')}`
-        + (from >= 0 && nextIds[from] !== editingId ? ` / 顺序移到第 ${nextIds.indexOf(editingId) + 1} 位` : ''));
+        + (from >= 0 && nextIds[from] !== editingId ? ` / 顺序移到第 ${nextIds.indexOf(editingId) + 1} 位` : '')
+        + (nextAuthor && nextAuthor !== beforeAuthor ? ` / 作者 ${beforeAuthor ?? '—'}→${nextAuthor}` : ''));
       message.success(`已保存「${vals.title ?? ''}」`);
       setOpen(false);
       resetForm();
@@ -307,7 +321,8 @@ export default function ContentAdmin() {
           id: `CS${Date.now()}`, track: vals.track ?? '客户赋能', title: vals.title ?? '未命名案例',
           summary: '', pain_point: '', input: '', prompt: vals.prompt ?? '', output: '',
           acceptance: [], level: vals.level ?? '骨干层', tags: vals.tags ?? [],
-          author_union_id: me.union_id, author_name: me.name,
+          /** V10.13：作者可填 —— 运营方代录时署真实作者名；留空 = 当前操作人 */
+          author_union_id: me.union_id, author_name: vals.author_name?.trim() || me.name,
           like_count: 0, view_count: 0, reuse_count: 0, duration: '—', cover: '📘',
           status: '草稿', visible_subjects: visibleSubjects, created_at: DEMO_TODAY,
           /** V4.1：附加资源随案例一起落库，未配置即空数组（详情页不渲染空壳区块） */
@@ -1050,6 +1065,20 @@ export default function ContentAdmin() {
       >
         <Form form={form} layout="vertical">
           <Form.Item name="title" label="标题" rules={[{ required: true }]}><Input /></Form.Item>
+          {/* V10.13：作者可编辑 —— 员工端卡片 / 案例库都展示这个署名。
+              只改展示名，author_union_id（积分与提报归属）不动；清空 = 保持原署名。 */}
+          <Form.Item
+            name="author_name"
+            label="作者"
+            extra="员工端展示的案例署名。运营方代录或姓名有误时在这里修正；留空 = 当前操作人"
+          >
+            <AutoComplete
+              options={authorOptions}
+              placeholder={`留空 = ${me.name}（当前操作人）`}
+              filterOption={(input, option) => (option?.value ?? '').includes(input)}
+              allowClear
+            />
+          </Form.Item>
           {/* V10.13：排序号（编辑态显示当前 1-based 位次；保存即调位，与行内输入 / 拖拽同口径） */}
           {fullCrudOn && editingId && (
             <Form.Item

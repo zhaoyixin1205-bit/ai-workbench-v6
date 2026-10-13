@@ -356,6 +356,17 @@ check('H4 首页前 5 与后台案例表前 5 顺序一致（同输入同比较�
   const admin = cases.filter((c) => !c.is_deleted).sort(SO.bySortAsc).slice(0, 5).map((x) => x.id).join(',');
   return home === admin ? true : `home=${home} admin=${admin}`;
 });
+check('H5 v1/v2 案例编辑弹窗都有「作者」字段（可改署名）', () => {
+  const v1ok = /name="author_name"/.test(adminV1);
+  const v2ok = /name="author_name"/.test(adminV2);
+  return v1ok && v2ok ? true : `v1=${v1ok} v2=${v2ok}`;
+});
+check('H6 作者字段闭环：打开回填 + 保存回写（不清空丢失、不写死操作人）', () => {
+  const fillOk = /author_name: c\.author_name,/.test(adminV1) && /author_name: c\.author_name,/.test(adminV2);
+  const writeOk = /author_name: nextAuthor \?\? c\.author_name,/.test(adminV1)
+    && /author_name: nextAuthor \?\? c\.author_name,/.test(adminV2);
+  return fillOk && writeOk ? true : `fill=${fillOk} write=${writeOk}`;
+});
 
 /* ------------------------------------------------------------------ */
 const failed = results.filter((r) => !r.ok);
