@@ -139,11 +139,25 @@ export function aiScoreOf(s: AssignmentSubmit, card: ScoreCard): AiScoreResult {
     + (s.desensitized ? 0.2 : 0),
   );
 
+  /**
+   * V10.15 松紧度标尺：证据 ratio（0~1）→ 百分制得分率。
+   * 原实现 `0.45 + ratio × 0.55` 最低 45 分——「什么都不填也有 45」，
+   * 永不及格、没有区分度。现按运营方标尺分段（与服务端 aiScoreFallback 同算法）：
+   *   90~100 优秀 / 80~90 良好 / 70~80 一般 / 60~70 及格 / <60 不及格
+   */
+  const bandRatio = (ratio: number): number => {
+    if (ratio >= 0.85) return 0.9 + ((ratio - 0.85) / 0.15) * 0.1; // 90~100 优秀
+    if (ratio >= 0.65) return 0.8 + ((ratio - 0.65) / 0.2) * 0.1; // 80~90 良好
+    if (ratio >= 0.45) return 0.7 + ((ratio - 0.45) / 0.2) * 0.1; // 70~80 一般
+    if (ratio >= 0.25) return 0.6 + ((ratio - 0.25) / 0.2) * 0.1; // 60~70 及格
+    return 0.4 + (ratio / 0.25) * 0.2; // 40~60 不及格
+  };
+
   const kindRatio: Record<EvidenceKind, number> = {
-    真实性: clamp01(0.45 + quantRatio * 0.55),
-    业务价值: clamp01(0.45 + valueRatio * 0.55),
-    可复用性: clamp01(0.45 + reuseRatio * 0.55),
-    呈现完整度: clamp01(0.45 + presentRatio * 0.55),
+    真实性: bandRatio(quantRatio),
+    业务价值: bandRatio(valueRatio),
+    可复用性: bandRatio(reuseRatio),
+    呈现完整度: bandRatio(presentRatio),
   };
 
   const dimScores: Record<string, number> = {};

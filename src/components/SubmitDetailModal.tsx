@@ -129,7 +129,7 @@ export default function SubmitDetailModal({
           ) : (
             <>
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
-                <ScoreBlock label={`AI 分（${card.ai_weight}%）`} value={s.ai_score ?? '—'} />
+                <ScoreBlock label="AI 分（百分制）" value={s.ai_score ?? '—'} />
                 <ScoreBlock label={`评委分（${card.judge_weight}%）`} value={s.judge_score ?? '—'} />
                 <ScoreBlock label={`最终分（及格线 ${card.pass_line}）`} value={s.final_score} highlight />
               </div>

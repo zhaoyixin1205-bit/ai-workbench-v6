@@ -21,6 +21,7 @@ import { createRequire } from 'node:module';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import * as A from '../server/lib/aiScorer.mjs';
 
 const require = createRequire(import.meta.url);
 const out = join(mkdtempSync(join(tmpdir(), 'wbsc-')), 'sceneBoard.cjs');
@@ -366,6 +367,67 @@ check('H6 作者字段闭环：打开回填 + 保存回写（不清空丢失、�
   const writeOk = /author_name: nextAuthor \?\? c\.author_name,/.test(adminV1)
     && /author_name: nextAuthor \?\? c\.author_name,/.test(adminV2);
   return fillOk && writeOk ? true : `fill=${fillOk} write=${writeOk}`;
+});
+
+/* ------------------------------------------------------------------ */
+/* I. AI 评分百分制 + 松紧度标尺（V10.15）                               */
+/* 2026-10-15 用户反馈「评委复核页 AI 分显示 21.9/24.5」：根因是服务端      */
+/* composeTotal 加权分支漏了按维度满分归一化（v4 卡维度满分 30/30/25/15），   */
+/* 92 分水平的作业被算成 24.5。本组锁修复 + 松紧度标尺 + 展示口径。          */
+/* ------------------------------------------------------------------ */
+check('I1 composeTotal 加权分支按维度满分归一化（防 24.5 回归）', () => {
+  const src = readSrc('server/lib/aiScorer.mjs');
+  return /\(dimScores\[d\.name\] \/ \(d\.max_score \|\| 100\)\) \* \(d\.weight \|\| 0\)/.test(src)
+    ? true : '加权分支仍直接乘维度分，未按 max_score 归一化';
+});
+check('I2 AI 模型 prompt 含松紧度标尺与「不得再乘任何权重」', () => {
+  const src = readSrc('server/lib/aiScorer.mjs');
+  return /## 评分标尺/.test(src) && /不得再乘任何权重/.test(src)
+    ? true : 'buildPrompt 缺评分标尺段或缺禁止乘权重约束';
+});
+check('I3 composeTotal 单测：v4 小分制卡 29/28/21/14 → 92.0（线上真实数据）', () => {
+  const cardV4 = {
+    name: '应用实践作业思维评分卡', version: 'v4', total_rule: '加权求和',
+    dimensions: [
+      { name: '真实性', max_score: 30, weight: 30 },
+      { name: '业务价值', max_score: 30, weight: 30 },
+      { name: '可复用性', max_score: 25, weight: 25 },
+      { name: '呈现完整度', max_score: 15, weight: 15 },
+    ],
+  };
+  const a = A.composeTotal({ 真实性: 29, 业务价值: 28, 可复用性: 21, 呈现完整度: 14 }, cardV4);
+  const b = A.composeTotal({ 真实性: 26, 业务价值: 24, 可复用性: 22, 呈现完整度: 9 }, cardV4);
+  return a === 92 && b === 81 ? true : `29/28/21/14 -> ${a}（应 92）；26/24/22/9 -> ${b}（应 81）`;
+});
+check('I4 composeTotal 回归：满分 100 等权卡 90/85/80/88 → 85.8（归一化不影响百进制）', () => {
+  const card100 = {
+    name: '百分制卡', version: 'v1', total_rule: '加权求和',
+    dimensions: [
+      { name: '真实性', max_score: 100, weight: 25 },
+      { name: '业务价值', max_score: 100, weight: 25 },
+      { name: '可复用性', max_score: 100, weight: 25 },
+      { name: '呈现完整度', max_score: 100, weight: 25 },
+    ],
+  };
+  const t = A.composeTotal({ 真实性: 90, 业务价值: 85, 可复用性: 80, 呈现完整度: 88 }, card100);
+  return t === 85.8 ? true : `得到 ${t}（应 85.8）`;
+});
+check('I5 规则兜底松紧度：bandRatio 五段标尺，前后端同源', () => {
+  const fb = readSrc('server/lib/aiScoreFallback.mjs');
+  const fe = readSrc('src/service/submitPipeline.ts');
+  const seg = (src) => /0\.9 \+ \(\(ratio - 0\.85\)/.test(src) && /0\.4 \+ \(ratio \/ 0\.25\) \* 0\.2/.test(src)
+    && !/0\.45 \+ ratio \* 0\.55/.test(src);
+  return seg(fb) && seg(fe) ? true : `server=${seg(fb)} frontend=${seg(fe)}`;
+});
+check('I6 前端三处 AI 分标签为「百分制」且不再带权重百分比', () => {
+  const files = ['src/pages/c/WorkDetail.tsx', 'src/pages/v2/WorkDetailV2.tsx', 'src/components/SubmitDetailModal.tsx'];
+  const stale = files.filter((f) => /AI 分（\$\{card\.ai_weight\}%）/.test(readSrc(f)));
+  const ok = files.filter((f) => /AI 分（百分制）/.test(readSrc(f)));
+  return stale.length === 0 && ok.length === files.length ? true : `残留权重标签=${stale.join(',')} 百分制=${ok.length}/${files.length}`;
+});
+check('I7 导出给外部 AI 的指令（meta.prompt）同步含标尺与禁乘权重', () => {
+  const src = readSrc('server/index.mjs');
+  return /90~100 优秀/.test(src) && /不得再乘任何权重/.test(src) ? true : 'meta.prompt 缺松紧度标尺';
 });
 
 /* ------------------------------------------------------------------ */

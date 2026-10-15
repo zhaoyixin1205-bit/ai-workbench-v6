@@ -113,7 +113,7 @@ export default function WorkDetail() {
             ) : (
               <>
                 <Row gutter={12} style={{ marginBottom: 18 }}>
-                  <Col span={8}><ScoreCell value={s.ai_score ?? '—'} label={`AI 分（${card.ai_weight}%）`} /></Col>
+                  <Col span={8}><ScoreCell value={s.ai_score ?? '—'} label="AI 分（百分制）" /></Col>
                   <Col span={8}><ScoreCell value={s.judge_score ?? '—'} label={`评委分（${card.judge_weight}%）`} /></Col>
                   <Col span={8}><ScoreCell value={s.final_score} label={`最终分（及格线 ${card.pass_line}）`} highlight /></Col>
                 </Row>

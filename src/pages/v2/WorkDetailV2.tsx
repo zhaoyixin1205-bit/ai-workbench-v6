@@ -138,7 +138,7 @@ export default function WorkDetailV2() {
                 <>
                   <div className="wb2-metrics c3">
                     <div className="wb2-metric">
-                      <div className="lb">AI 分（{card.ai_weight}%）</div>
+                      <div className="lb">AI 分（百分制）</div>
                       <div className="vl">{s.ai_score ?? '—'}</div>
                     </div>
                     <div className="wb2-metric">
