@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Form, App as AntApp } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '@/store/store';
@@ -6,6 +6,10 @@ import { TRACKS } from '@/mock/types';
 import type { Attachment, Topic } from '@/mock/types';
 import { DEMO_TODAY } from '@/mock/seedBiz';
 import { useFileUpload } from '@/service/useFileUpload';
+import {
+  clearDraft, draftClock, draftStamp, readDraft, workDraftKey, writeDraft,
+  type WorkDraftTopicMode,
+} from '@/utils/workDraft';
 
 /**
  * 作业提报表单逻辑（P3-3 从 `pages/c/WorkSubmit.tsx` :27-193 原样抽出）
@@ -24,6 +28,9 @@ export const ALLOW_EXT = ['zip', 'md', 'yaml', 'pdf', 'docx', 'xlsx', 'png', 'jp
 /** V6.0 CR-18：三种选题形态，互斥 */
 export type TopicMode = 'EXISTING' | 'CUSTOM' | 'NONE';
 
+/** 自动保存防抖：与社区发帖（usePostComposer 1200ms）同一档，停笔 1.2s 落盘 */
+const DRAFT_DEBOUNCE_MS = 1200;
+
 export function useWorkSubmitForm(typeId: string | undefined, caseId: string | null, topicId: string | null) {
   const { db, me, setDb, log, flags, hasRole } = useStore();
   const nav = useNavigate();
@@ -33,6 +40,16 @@ export function useWorkSubmitForm(typeId: string | undefined, caseId: string | n
   const [atts, setAtts] = useState<Attachment[]>([]);
   const [savedAt, setSavedAt] = useState<string>('');
   const [topicMode, setTopicMode] = useState<TopicMode>('NONE');
+  /**
+   * V10.16 真草稿（修复「显示草稿已保存、重进却清空」）：
+   * 旧实现 saveDraft 只 set 组件 state + 弹 toast，零持久化。
+   * 现在写 localStorage（键按 unionId + typeId 隔离），挂载时探测、
+   * 恢复/丢弃由用户点，不自动覆盖（用户这次可能想填新内容）。
+   */
+  const [draftTip, setDraftTip] = useState(false);
+  /** 草稿完整保存时间（YYYY-MM-DD HH:mm，提示条用；页头只用时分） */
+  const [draftSavedAt, setDraftSavedAt] = useState('');
+  const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const type = db.assignmentTypes.find((t) => t.id === typeId) ?? db.assignmentTypes[0];
   const presetCase = db.cases.find((c) => c.id === caseId);
@@ -40,6 +57,9 @@ export function useWorkSubmitForm(typeId: string | undefined, caseId: string | n
   const period = type
     ? db.periods.find((p) => p.type_id === type.id && p.status === 'OPEN')
     : undefined;
+
+  /** 草稿键：按 unionId + 作业类型隔离（typeId 缺省时落到 default） */
+  const draftKey = workDraftKey(me.union_id, type?.id ?? typeId);
 
   /** V6.0 CR-18 开关：topicCustom 控制「其他」，workNoTopic 控制「不选选题」 */
   const topicCustomOn = flags.topicCustom !== false;
@@ -76,6 +96,79 @@ export function useWorkSubmitForm(typeId: string | undefined, caseId: string | n
   };
 
   /**
+   * V10.16：挂载时探测草稿。有草稿 → 提示条（恢复 / 丢弃），
+   * 同时把页头「✓ 草稿已保存」时间补上（旧版刷新后这里会丢）。
+   */
+  useEffect(() => {
+    const d = readDraft(draftKey);
+    if (d) {
+      setDraftTip(true);
+      setDraftSavedAt(d.savedAt);
+      setSavedAt(draftClock(d.savedAt));
+    }
+  }, [draftKey]);
+
+  /** 组件卸载时清掉未落盘的防抖定时器，防止卸载后回调再写一次 */
+  useEffect(() => () => {
+    if (draftTimer.current) clearTimeout(draftTimer.current);
+  }, []);
+
+  /** 内部：把当前表单 + 通道 + 附件 + 形态写成草稿（空内容不写） */
+  const persistDraft = (): boolean => {
+    const fields = form.getFieldsValue();
+    const ok = writeDraft(draftKey, {
+      fields, channel, topicMode, atts,
+      savedAt: draftStamp(),
+    });
+    if (ok) setSavedAt(draftClock(draftStamp()));
+    return ok;
+  };
+
+  /**
+   * 保存草稿（手动，底部按钮）。
+   * 文案点明「仅本机浏览器」——localStorage 不跨设备同步，是能力边界不是缺陷。
+   */
+  const saveDraft = () => {
+    if (!persistDraft()) {
+      message.error('保存失败：浏览器存储不可用（可能是隐私模式或空间已满）');
+      return;
+    }
+    message.success('草稿已保存（仅保存在本机浏览器，不计入提报次数）');
+  };
+
+  /**
+   * 表单变动 → 防抖自动保存（配得上页头那句「草稿自动保存，支持断点续填」）。
+   * 空表单跳过：一进页面不该凭空落一份草稿。
+   */
+  const onDraftChange = () => {
+    if (draftTimer.current) clearTimeout(draftTimer.current);
+    draftTimer.current = setTimeout(() => {
+      persistDraft();
+    }, DRAFT_DEBOUNCE_MS);
+  };
+
+  /** 恢复草稿：灌回表单 + 通道 + 附件 + 选题形态 */
+  const restoreDraft = () => {
+    const d = readDraft(draftKey);
+    if (!d) { setDraftTip(false); return; }
+    form.setFieldsValue(d.fields);
+    setChannel(d.channel);
+    setTopicMode(d.topicMode as TopicMode);
+    setAtts(d.atts);
+    setSavedAt(draftClock(d.savedAt));
+    setDraftTip(false);
+    message.success(`已恢复上次草稿（保存于 ${d.savedAt || '未知时间'}）`);
+  };
+
+  /** 丢弃草稿：只清草稿区，不动当前表单 */
+  const discardDraft = () => {
+    clearDraft(draftKey);
+    setDraftTip(false);
+    setSavedAt('');
+    message.success('已丢弃草稿');
+  };
+
+  /**
    * V6.0 CR-31：附件改走真实文件服务（此前只登记文件名，无法下载 —— A-39 遗留项结案）。
    * 开关 `realFileService === false` 时回退演示态（登记元数据、不给下载按钮），与 v1 同口径。
    */
@@ -84,11 +177,6 @@ export function useWorkSubmitForm(typeId: string | undefined, caseId: string | n
     max: 5,
     onDone: (a) => setAtts((p) => [...p, a]),
   });
-
-  const saveDraft = () => {
-    setSavedAt(new Date().toTimeString().slice(0, 5));
-    message.success('草稿已自动保存（草稿不计入提报次数）');
-  };
 
   const submit = (vals: Record<string, unknown>) => {
     if (!vals.desensitized) { message.error('未勾选脱敏声明，禁止提交'); return; }
@@ -191,6 +279,8 @@ export function useWorkSubmitForm(typeId: string | undefined, caseId: string | n
      * 文案同步改为真实承诺：自动评分 + 推送评委，而不是空头支票「触发组织者待办」。
      */
     message.success('提报成功！系统已自动完成 AI 评分，之后由组织者统一推送评委复核，结果出来后会通知你');
+    /** V10.16：提交成功即清草稿——留着会在下次进页面弹「检测到草稿」，但内容已提交，造成困惑 */
+    clearDraft(draftKey);
     nav('/work');
   };
 
@@ -198,7 +288,8 @@ export function useWorkSubmitForm(typeId: string | undefined, caseId: string | n
     form, type, period, presetCase, presetTopic,
     channel, setChannel,
     atts, setAtts, beforeUpload, uploading,
-    savedAt, saveDraft, submit,
+    savedAt, saveDraft, submit, onDraftChange,
+    draftTip, draftSavedAt, restoreDraft, discardDraft,
     /** V6.0 CR-17/CR-18：选题形态 */
     topicMode, switchTopicMode, selectableTopics, topicCustomOn, noTopicOn,
   };

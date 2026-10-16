@@ -1,4 +1,4 @@
-import { Alert, App as AntApp, Button, Checkbox, Form, Input, Radio, Select, Steps, Upload } from 'antd';
+import { Alert, App as AntApp, Button, Checkbox, Form, Input, Radio, Select, Space, Steps, Upload } from 'antd';
 import {
   ArrowLeftOutlined, DownloadOutlined, InboxOutlined, SaveOutlined, SafetyCertificateOutlined,
 } from '@ant-design/icons';
@@ -34,7 +34,8 @@ export default function WorkSubmitV2() {
   const {
     form, type, period, presetCase, presetTopic,
     channel, setChannel, atts, setAtts, beforeUpload, uploading,
-    savedAt, saveDraft, submit,
+    savedAt, saveDraft, submit, onDraftChange,
+    draftTip, draftSavedAt, restoreDraft, discardDraft,
     topicMode, switchTopicMode, selectableTopics, topicCustomOn, noTopicOn,
   } = useWorkSubmitForm(typeId, qs.get('case'), qs.get('topic'));
 
@@ -76,6 +77,21 @@ export default function WorkSubmitV2() {
         </div>
       </div>
 
+      {/* ---------- 草稿提示条（V10.16：探测到未提交草稿时给恢复/丢弃入口） ---------- */}
+      {draftTip && (
+        <Alert
+          type="info" showIcon style={{ marginBottom: 'var(--wb-space-4)' }}
+          message={`检测到未提交的草稿（保存于 ${draftSavedAt || '未知时间'}）`}
+          description="草稿只保存在本机浏览器，换设备不同步。"
+          action={
+            <Space>
+              <Button size="small" type="link" onClick={restoreDraft}>恢复草稿</Button>
+              <Button size="small" type="link" danger onClick={discardDraft}>丢弃</Button>
+            </Space>
+          }
+        />
+      )}
+
       <div className="wb2-card wb2-card-pad" style={{ marginBottom: 'var(--wb-space-5)' }}>
         <Steps
           size="small" current={0}
@@ -83,7 +99,7 @@ export default function WorkSubmitV2() {
         />
       </div>
 
-      <Form form={form} layout="vertical" onFinish={submit}>
+      <Form form={form} layout="vertical" onFinish={submit} onValuesChange={onDraftChange}>
         {/* ---------- 分组 1 ---------- */}
         <div className="wb2-card wb2-card-pad wb2-fg">
           <div className="wb2-card-t">① 选题信息</div>
@@ -281,7 +297,10 @@ export default function WorkSubmitV2() {
 
         {/* ---------- 底部操作条 ---------- */}
         <div className="wb2-actbar">
-          <Button icon={<SaveOutlined />} onClick={saveDraft}>保存草稿</Button>
+          <Space>
+            <Button icon={<SaveOutlined />} onClick={saveDraft}>保存草稿</Button>
+            {draftTip && <Button danger onClick={discardDraft}>丢弃草稿</Button>}
+          </Space>
           <Button type="primary" size="large" htmlType="submit">提交提报</Button>
         </div>
       </Form>

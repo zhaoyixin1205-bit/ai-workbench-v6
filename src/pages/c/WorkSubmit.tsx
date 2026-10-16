@@ -1,7 +1,7 @@
 import { Button, Card, Checkbox, Divider, Form, Input, Radio, Space, Steps, Tag, Typography, Upload, App as AntApp, Alert, Select } from 'antd';
 import { ArrowLeftOutlined, DownloadOutlined, InboxOutlined, SaveOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useStore } from '@/store/store';
 import { COLOR, GRADIENT, SHADOW } from '@/theme';
 import { TRACKS } from '@/mock/types';
@@ -10,6 +10,12 @@ import { DEMO_TODAY } from '@/mock/seedBiz';
 import type { UploadFile } from 'antd';
 import { useFileUpload } from '@/service/useFileUpload';
 import { downloadAttachment } from '@/service/fileService';
+import {
+  clearDraft, draftClock, draftStamp, readDraft, workDraftKey, writeDraft,
+} from '@/utils/workDraft';
+
+/** V10.16 草稿防抖：与社区发帖 / v2 提报同一档，停笔 1.2s 落盘 */
+const DRAFT_DEBOUNCE_MS = 1200;
 
 const ALLOW_EXT = ['zip', 'md', 'yaml', 'pdf', 'docx', 'xlsx', 'png', 'jpg'];
 
@@ -41,11 +47,37 @@ export default function WorkSubmit() {
   const [savedAt, setSavedAt] = useState<string>('');
   /** V6.0 CR-18：选题形态 —— 关联既有 / 其他·自定义 / 不选选题 */
   const [topicMode, setTopicMode] = useState<'EXISTING' | 'CUSTOM' | 'NONE'>('NONE');
+  /**
+   * V10.16 真草稿（修复「显示草稿已保存、重进却清空」）：
+   * 旧 saveDraft 只 set 组件 state + 弹 toast，零持久化，页面一卸载即丢。
+   * 现在写 localStorage（键按 unionId + 作业类型隔离，与 v2 同源同函数）。
+   */
+  const [draftTip, setDraftTip] = useState(false);
+  const [draftSavedAt, setDraftSavedAt] = useState('');
+  const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const type = db.assignmentTypes.find((t) => t.id === typeId) ?? db.assignmentTypes[0];
   const presetCase = db.cases.find((c) => c.id === qs.get('case'));
   const presetTopic = db.topics.find((t) => t.id === qs.get('topic'));
   const period = db.periods.find((p) => p.type_id === type.id && p.status === 'OPEN')!;
+
+  /** 草稿键：按 unionId + 作业类型隔离（与 v2 同源同函数） */
+  const draftKey = workDraftKey(me.union_id, type.id);
+
+  /** 挂载探测：有草稿 → 提示条（恢复 / 丢弃），页头补上保存时间 */
+  useEffect(() => {
+    const d = readDraft(draftKey);
+    if (d) {
+      setDraftTip(true);
+      setDraftSavedAt(d.savedAt);
+      setSavedAt(draftClock(d.savedAt));
+    }
+  }, [draftKey]);
+
+  /** 卸载时清掉未落盘的防抖定时器 */
+  useEffect(() => () => {
+    if (draftTimer.current) clearTimeout(draftTimer.current);
+  }, []);
 
   /** V6.0 CR-18 开关：topicCustom 控制「其他」，workNoTopic 控制「不选选题」 */
   const topicCustomOn = flags.topicCustom !== false;
@@ -92,9 +124,53 @@ export default function WorkSubmit() {
     onDone: (a) => setAtts((p) => [...p, a]),
   });
 
+  /** 内部：把当前表单 + 通道 + 附件 + 形态写成草稿 */
+  const persistDraft = (): boolean => {
+    const ok = writeDraft(draftKey, {
+      fields: form.getFieldsValue(),
+      channel, topicMode, atts,
+      savedAt: draftStamp(),
+    });
+    if (ok) setSavedAt(draftClock(draftStamp()));
+    return ok;
+  };
+
+  /** 保存草稿（手动）。文案点明「仅本机浏览器」——localStorage 不跨设备同步 */
   const saveDraft = () => {
-    setSavedAt(new Date().toTimeString().slice(0, 5));
-    message.success('草稿已自动保存（草稿不计入提报次数）');
+    if (!persistDraft()) {
+      message.error('保存失败：浏览器存储不可用（可能是隐私模式或空间已满）');
+      return;
+    }
+    message.success('草稿已保存（仅保存在本机浏览器，不计入提报次数）');
+  };
+
+  /** 表单变动 → 防抖自动保存；空表单跳过（一进页面不凭空落草稿） */
+  const onDraftChange = () => {
+    if (draftTimer.current) clearTimeout(draftTimer.current);
+    draftTimer.current = setTimeout(() => {
+      persistDraft();
+    }, DRAFT_DEBOUNCE_MS);
+  };
+
+  /** 恢复草稿：灌回表单 + 通道 + 附件 + 选题形态 */
+  const restoreDraft = () => {
+    const d = readDraft(draftKey);
+    if (!d) { setDraftTip(false); return; }
+    form.setFieldsValue(d.fields);
+    setChannel(d.channel);
+    setTopicMode(d.topicMode);
+    setAtts(d.atts);
+    setSavedAt(draftClock(d.savedAt));
+    setDraftTip(false);
+    message.success(`已恢复上次草稿（保存于 ${d.savedAt || '未知时间'}）`);
+  };
+
+  /** 丢弃草稿：只清草稿区，不动当前表单 */
+  const discardDraft = () => {
+    clearDraft(draftKey);
+    setDraftTip(false);
+    setSavedAt('');
+    message.success('已丢弃草稿');
   };
 
   const submit = (vals: Record<string, unknown>) => {
@@ -195,6 +271,8 @@ export default function WorkSubmit() {
      * 提示文案也据此改写，不再承诺「触发组织者待办」这种实际没做的事。
      */
     message.success(`提报成功！系统已自动完成 AI 评分，之后由组织者统一推送评委复核，结果出来后会通知你`);
+    /** V10.16：提交成功即清草稿——留着下次进页面会弹「检测到草稿」，但内容已提交，造成困惑 */
+    clearDraft(draftKey);
     nav('/work');
   };
 
@@ -204,6 +282,21 @@ export default function WorkSubmit() {
         <Link to="/work" style={{ color: COLOR.textSub, fontSize: 13, fontWeight: 500 }}>
           <ArrowLeftOutlined /> 返回作业提报
         </Link>
+
+        {/* V10.16：草稿提示条（探测到未提交草稿时给恢复/丢弃入口） */}
+        {draftTip && (
+          <Alert
+            type="info" showIcon
+            message={`检测到未提交的草稿（保存于 ${draftSavedAt || '未知时间'}）`}
+            description="草稿只保存在本机浏览器，换设备不同步。"
+            action={
+              <Space size={4}>
+                <Button size="small" type="link" onClick={restoreDraft}>恢复草稿</Button>
+                <Button size="small" type="link" danger onClick={discardDraft}>丢弃</Button>
+              </Space>
+            }
+          />
+        )}
 
         <Card styles={{ body: { padding: '18px 20px', background: GRADIENT.subtle } }}>
           <Steps
@@ -225,7 +318,7 @@ export default function WorkSubmit() {
           </div>
         </Card>
 
-        <Form form={form} layout="vertical" onFinish={submit}>
+        <Form form={form} layout="vertical" onFinish={submit} onValuesChange={onDraftChange}>
           {/* 第一段：选题信息 */}
           <Card title={<StepTitle n="1" text="选题信息" />}>
             {(presetCase || presetTopic) && (
@@ -423,7 +516,10 @@ export default function WorkSubmit() {
               display: 'flex', justifyContent: 'center', gap: 12,
             }}
           >
-            <Button icon={<SaveOutlined />} onClick={saveDraft}>保存草稿</Button>
+            <Space>
+              <Button icon={<SaveOutlined />} onClick={saveDraft}>保存草稿</Button>
+              {draftTip && <Button danger onClick={discardDraft}>丢弃草稿</Button>}
+            </Space>
             <Button type="primary" size="large" htmlType="submit">提交提报</Button>
           </div>
         </Form>

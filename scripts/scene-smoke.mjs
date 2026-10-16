@@ -28,6 +28,10 @@ const out = join(mkdtempSync(join(tmpdir(), 'wbsc-')), 'sceneBoard.cjs');
 buildSync({ entryPoints: ['src/service/sceneBoard.ts'], bundle: true, format: 'cjs', platform: 'node', outfile: out, logLevel: 'silent' });
 const S = require(out);
 
+/** V10.16：提报草稿纯函数（同法现场打包，不复制实现到脚本里） */
+const outDraft = join(mkdtempSync(join(tmpdir(), 'wbd-')), 'workDraft.cjs');
+buildSync({ entryPoints: ['src/utils/workDraft.ts'], bundle: true, format: 'cjs', platform: 'node', outfile: outDraft, logLevel: 'silent' });
+
 const results = [];
 const check = (name, fn) => {
   try {
@@ -428,6 +432,72 @@ check('I6 前端三处 AI 分标签为「百分制」且不再带权重百分比
 check('I7 导出给外部 AI 的指令（meta.prompt）同步含标尺与禁乘权重', () => {
   const src = readSrc('server/index.mjs');
   return /90~100 优秀/.test(src) && /不得再乘任何权重/.test(src) ? true : 'meta.prompt 缺松紧度标尺';
+});
+
+/* ------------------------------------------------------------------ */
+/* J. 作业提报草稿真持久化（V10.16）                                     */
+/* 2026-10-16 用户反馈「显示草稿已保存、重进却清空」：旧 saveDraft 只 set   */
+/* 组件 state + 弹 toast，零持久化。本组锁草稿存取链路（v1 内联 + v2 hook   */
+/* 双实现，共用 utils/workDraft 纯函数）。                                 */
+/* ------------------------------------------------------------------ */
+check('J1 草稿键按 unionId + 作业类型隔离（typeId 缺省落 default）', () => {
+  const W = require(outDraft);
+  return W.workDraftKey('u1', 'A1') === 'wb-work-draft-u1-A1'
+    && W.workDraftKey('u2', 'A1') !== W.workDraftKey('u1', 'A1')
+    && W.workDraftKey('u1', 'A2') !== W.workDraftKey('u1', 'A1')
+    && W.workDraftKey('u1', undefined) === 'wb-work-draft-u1-default'
+    ? true : '草稿键隔离不符合预期';
+});
+check('J2 空草稿判定：全空为 true、任一关键字段有值为 false', () => {
+  const W = require(outDraft);
+  return W.isEmptyDraft(undefined) === true
+    && W.isEmptyDraft({ title: '  ', scene_desc: '' }) === true
+    && W.isEmptyDraft({ title: '客户拜访地图' }) === false
+    && W.isEmptyDraft({ output_sample: '产出' }) === false
+    ? true : 'isEmptyDraft 判定不符';
+});
+check('J3 parseDraft：合法往返、坏 JSON/结构不对返回 null、缺字段补默认', () => {
+  const W = require(outDraft);
+  const d = { fields: { title: 'x' }, channel: '通道二·自建 Skill', topicMode: 'CUSTOM', atts: [{ id: 'f1' }], savedAt: '2026-10-16 17:31' };
+  const back = W.parseDraft(W.serializeDraft(d));
+  const ok = back && back.title === undefined && back.fields.title === 'x'
+    && back.channel === '通道二·自建 Skill' && back.topicMode === 'CUSTOM'
+    && back.atts.length === 1 && back.savedAt === '2026-10-16 17:31';
+  const bad = W.parseDraft('{oops') === null
+    && W.parseDraft('null') === null
+    && W.parseDraft(JSON.stringify({ foo: 1 })) === null
+    && W.parseDraft(null) === null;
+  const fixed = W.parseDraft(JSON.stringify({ fields: { title: 'y' } }));
+  return ok && bad && fixed && fixed.channel === '通道一·用现成 Skill' && fixed.topicMode === 'NONE' && fixed.atts.length === 0
+    ? true : `往返=${ok} 坏数据=${bad} 补默认=${!!fixed}`;
+});
+check('J4 时间戳：draftStamp 本地格式 + draftClock 只取时分', () => {
+  const W = require(outDraft);
+  const s = W.draftStamp(new Date(2026, 9, 16, 17, 31));
+  return s === '2026-10-16 17:31' && W.draftClock(s) === '17:31'
+    && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(W.draftStamp())
+    ? true : `stamp=${s}`;
+});
+check('J5 v2 hook 的 saveDraft 真实写 localStorage（不再是空壳 state）', () => {
+  const src = readSrc('src/hooks/useWorkSubmitForm.ts');
+  return /writeDraft\(draftKey/.test(src) && /localStorage\.setItem/.test(readSrc('src/utils/workDraft.ts'))
+    ? true : 'saveDraft 仍未落盘';
+});
+check('J6 v1/v2 提报页都挂了防抖自动保存（onValuesChange）', () => {
+  const v1 = /onValuesChange=\{onDraftChange\}/.test(readSrc('src/pages/c/WorkSubmit.tsx'));
+  const v2 = /onValuesChange=\{onDraftChange\}/.test(readSrc('src/pages/v2/WorkSubmitV2.tsx'));
+  return v1 && v2 ? true : `v1=${v1} v2=${v2}`;
+});
+check('J7 v1/v2 都有草稿恢复/丢弃 UI（提示条 + 按钮）', () => {
+  const v1 = readSrc('src/pages/c/WorkSubmit.tsx');
+  const v2 = readSrc('src/pages/v2/WorkSubmitV2.tsx');
+  const ui = (s) => /检测到未提交的草稿/.test(s) && /onClick=\{restoreDraft\}/.test(s) && /onClick=\{discardDraft\}/.test(s);
+  return ui(v1) && ui(v2) ? true : `v1=${ui(v1)} v2=${ui(v2)}`;
+});
+check('J8 提交成功即清草稿（hook 与 v1 内联两条提交路径都清）', () => {
+  const hook = /clearDraft\(draftKey\);?\s*\n\s*nav\('\/work'\)/.test(readSrc('src/hooks/useWorkSubmitForm.ts'));
+  const v1 = /clearDraft\(draftKey\);?\s*\n\s*nav\('\/work'\)/.test(readSrc('src/pages/c/WorkSubmit.tsx'));
+  return hook && v1 ? true : `hook=${hook} v1=${v1}`;
 });
 
 /* ------------------------------------------------------------------ */
