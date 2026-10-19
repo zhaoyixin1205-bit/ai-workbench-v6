@@ -422,7 +422,7 @@ export default function CLayoutV2() {
           <div>
             <b>2 · 照着做</b>
             <div style={{ fontSize: 13, color: 'var(--wb-ink-2)', marginTop: 2 }}>
-              案例页给了输入、可直接抄的提示词、产出物、验收标准四件套，缺一不可发布。
+              案例页给了输入、可直接抄的提示词、产出物、验收标准，照着做就行。
             </div>
           </div>
           <div>

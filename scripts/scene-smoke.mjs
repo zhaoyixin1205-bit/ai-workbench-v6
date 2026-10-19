@@ -15,6 +15,9 @@
  * V10.13 增补：
  *   G 组锁后台排序修复 —— 拖拽必须重排数组（不是只写 sort）、后台列表必须按 sort 渲染、
  *   比较器 NaN 安全。2026-10-13 线上报障「后台拖拽排序拖了没反应」的根因回归。
+ * V10.19 增补：
+ *   L 组锁后台案例编辑开放「正文七件套」—— 摘要/痛点/输入/提示词/产出/验收标准/耗时/封面
+ *   全部可编辑且均无 required；打开回填、保存落库、新建可填、审计日志、旧文案清零。
  */
 import { buildSync } from 'esbuild';
 import { createRequire } from 'node:module';
@@ -516,6 +519,70 @@ check('K3 v1 案例精选用 Row/Col 三列网格（lg={8}，不再 wb-scroll-x�
     && /<Col xs=\{24\} sm=\{12\} lg=\{8\} key=\{c\.id\}>/.test(src)
     && !/<div className="wb-scroll-x">/.test(src)
     ? true : 'v1 案例精选仍用横向滚动';
+});
+
+/* ------------------------------------------------------------------ */
+/* L. 后台案例编辑开放「正文七件套」（V10.19）                            */
+/* 2026-10-19 组织者反馈「编辑中应对所有字段可编辑」：此前弹窗只暴露提示词，   */
+/* 痛点/输入/产出/验收标准/耗时/摘要无处可改，历史「空壳案例」只能脚本补库。   */
+/* 拍板口径：全部可编辑 + 均选填（无 required），空字段详情页渲染为空。        */
+/* ------------------------------------------------------------------ */
+const CASE_FIELDS = ['summary', 'pain_point', 'input', 'prompt', 'output', 'acceptance', 'duration', 'cover'];
+/** 抠出「案例」弹窗片段（v1 Modal / v2 Dialog），避免误锁场景卡弹窗的同名字段 */
+const caseModalSrc = (src) => {
+  const i = src.indexOf("title={editingId ? '编辑案例' : '新建案例'}");
+  if (i < 0) return '';
+  const ends = [src.indexOf('</Modal>', i), src.indexOf('</Dialog>', i)].filter((x) => x >= 0).sort((a, b) => a - b);
+  return ends.length ? src.slice(i, ends[0]) : src.slice(i);
+};
+check('L1 v1/v2 案例弹窗含正文七件套 + 封面全部字段', () => {
+  const miss = [];
+  for (const [tag, src] of [['v1', adminV1], ['v2', adminV2]]) {
+    const modal = caseModalSrc(src);
+    for (const f of CASE_FIELDS) {
+      if (!new RegExp(`name="${f}"`).test(modal)) miss.push(`${tag}.${f}`);
+    }
+  }
+  return miss.length === 0 ? true : `缺字段：${miss.join(',')}`;
+});
+check('L2 七件套均无 required（组织者拍板「设置为非必填即可」）', () => {
+  const bad = [];
+  for (const [tag, src] of [['v1', adminV1], ['v2', adminV2]]) {
+    const modal = caseModalSrc(src);
+    for (const f of CASE_FIELDS) {
+      const m = modal.match(new RegExp(`<Form\\.Item\\s+name="${f}"[^>]*>`));
+      if (!m || /required/.test(m[0])) bad.push(`${tag}.${f}`);
+    }
+  }
+  return bad.length === 0 ? true : `带了 required：${bad.join(',')}`;
+});
+check('L3 打开弹窗回填七件套（历史案例内容不丢）', () => {
+  const fill = (src) => /summary: c\.summary, pain_point: c\.pain_point, input: c\.input, output: c\.output,/.test(src)
+    && /acceptance: c\.acceptance \?\? \[\], duration: c\.duration, cover: c\.cover,/.test(src);
+  return fill(adminV1) && fill(adminV2) ? true : `v1=${fill(adminV1)} v2=${fill(adminV2)}`;
+});
+check('L4 编辑保存落库七件套（长文本清空=置空；耗时/封面留空=保持原值）', () => {
+  const write = (src) => ['summary', 'pain_point', 'input', 'output', 'acceptance']
+    .every((f) => new RegExp(`${f}: vals\\.${f} \\?\\? c\\.${f},`).test(src))
+    && /duration: vals\.duration\?\.trim\(\) \|\| c\.duration,/.test(src)
+    && /cover: vals\.cover\?\.trim\(\) \|\| c\.cover,/.test(src);
+  return write(adminV1) && write(adminV2) ? true : `v1=${write(adminV1)} v2=${write(adminV2)}`;
+});
+check('L5 新建案例即可填七件套（不再硬编码空串 / — / 📘）', () => {
+  const create = (src) => /summary: vals\.summary \?\? '', pain_point: vals\.pain_point \?\? '', input: vals\.input \?\? '',/.test(src)
+    && /prompt: vals\.prompt \?\? '', output: vals\.output \?\? '', acceptance: vals\.acceptance \?\? \[\],/.test(src)
+    && /duration: vals\.duration\?\.trim\(\) \|\| '—', cover: vals\.cover\?\.trim\(\) \|\| '📘',/.test(src);
+  return create(adminV1) && create(adminV2) ? true : `v1=${create(adminV1)} v2=${create(adminV2)}`;
+});
+check('L6 正文字段变更进审计日志', () => {
+  const logOk = (src) => /正文字段 \$\{changedFields\.join\('、'\)\}/.test(src);
+  return logOk(adminV1) && logOk(adminV2) ? true : `v1=${logOk(adminV1)} v2=${logOk(adminV2)}`;
+});
+check('L7 「四件套缺一不可发布」旧文案清零（后台 + 新人引导，防自相矛盾）', () => {
+  const adminClean = !/四件套/.test(adminV1) && !/四件套/.test(adminV2);
+  const layoutClean = !/缺一不可发布/.test(readSrc('src/layouts/CLayout.tsx'))
+    && !/缺一不可发布/.test(readSrc('src/layouts/v2/CLayoutV2.tsx'));
+  return adminClean && layoutClean ? true : `admin=${adminClean} layout=${layoutClean}`;
 });
 
 /* ------------------------------------------------------------------ */

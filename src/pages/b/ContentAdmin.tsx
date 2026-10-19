@@ -237,6 +237,10 @@ export default function ContentAdmin() {
       setEditingId(c.id);
       form.setFieldsValue({
         title: c.title, track: c.track, level: c.level, prompt: c.prompt, tags: c.tags,
+        /** V10.19：正文七件套全部可编辑（均选填）—— 回填已有内容，
+            历史「空壳案例」也能直接在后台补齐，不再依赖脚本写库 */
+        summary: c.summary, pain_point: c.pain_point, input: c.input, output: c.output,
+        acceptance: c.acceptance ?? [], duration: c.duration, cover: c.cover,
         /** V10.13：排序号按 1-based 展示（与行内输入、员工端所见一致） */
         sort: typeof c.sort === 'number' ? c.sort + 1 : undefined,
         /** V10.13：作者回填当前署名，支持在弹窗里修正 / 代录 */
@@ -265,7 +269,11 @@ export default function ContentAdmin() {
 
   /** V4.0 CR-08 + V4.1：新建/编辑案例并落库可见范围与附加资源（保存前回读校验） */
   const createCase = async () => {
-    let vals: { title?: string; author_name?: string; track?: Track; level?: Level; prompt?: string; tags?: string[]; sort?: number };
+    let vals: {
+      title?: string; author_name?: string; track?: Track; level?: Level; prompt?: string; tags?: string[]; sort?: number;
+      /** V10.19：正文七件套（均选填） */
+      summary?: string; pain_point?: string; input?: string; output?: string; acceptance?: string[]; duration?: string; cover?: string;
+    };
     try {
       vals = await form.validateFields();
     } catch {
@@ -285,7 +293,8 @@ export default function ContentAdmin() {
       /** V10.13：作者可编辑。只改展示名 author_name；author_union_id 保持原值
           （积分 / 提报归属不因运营方改署名而漂移）。清空 = 不改，回退原署名。 */
       const nextAuthor = vals.author_name?.trim() || undefined;
-      const beforeAuthor = db.cases.find((c) => c.id === editingId)?.author_name;
+      const beforeCase = db.cases.find((c) => c.id === editingId);
+      const beforeAuthor = beforeCase?.author_name;
       setDb((p) => ({
         ...p,
         cases: reorderWithSort(
@@ -296,6 +305,17 @@ export default function ContentAdmin() {
             track: vals.track ?? c.track,
             level: vals.level ?? c.level,
             prompt: vals.prompt ?? c.prompt,
+            /** V10.19：正文七件套全部落库（均选填）。
+                长文本字段清空 = 真的置空（详情页渲染为空，不影响发布）；
+                耗时 / 封面是展示标签，清空无意义且会渲染出「耗时：」空签，
+                故留空 = 保持原值（与表单 extra 提示一致）。 */
+            summary: vals.summary ?? c.summary,
+            pain_point: vals.pain_point ?? c.pain_point,
+            input: vals.input ?? c.input,
+            output: vals.output ?? c.output,
+            acceptance: vals.acceptance ?? c.acceptance,
+            duration: vals.duration?.trim() || c.duration,
+            cover: vals.cover?.trim() || c.cover,
             tags: vals.tags ?? c.tags,
             visible_subjects: visibleSubjects,
             skill_packages: skills,
@@ -304,10 +324,17 @@ export default function ContentAdmin() {
           nextIds,
         ),
       }));
+      /** V10.19：正文字段变更进审计日志 —— 只列真正变化的项（与落库口径同归一化） */
+      const contentDiff = (['summary', 'pain_point', 'input', 'output', 'acceptance'] as const)
+        .filter((k) => JSON.stringify(beforeCase?.[k] ?? null) !== JSON.stringify(vals[k] ?? null));
+      const tagDiff = (['duration', 'cover'] as const)
+        .filter((k) => (beforeCase?.[k] ?? '') !== (vals[k]?.trim() || beforeCase?.[k] || ''));
+      const changedFields = [...contentDiff, ...tagDiff];
       log('编辑案例', vals.title ?? editingId,
         `Skill ${skills.length} 个 / 附件 ${atts.length} 个 / 可见范围 ${visibleSubjects.map((s) => s.name).join('、')}`
         + (from >= 0 && nextIds[from] !== editingId ? ` / 顺序移到第 ${nextIds.indexOf(editingId) + 1} 位` : '')
-        + (nextAuthor && nextAuthor !== beforeAuthor ? ` / 作者 ${beforeAuthor ?? '—'}→${nextAuthor}` : ''));
+        + (nextAuthor && nextAuthor !== beforeAuthor ? ` / 作者 ${beforeAuthor ?? '—'}→${nextAuthor}` : '')
+        + (changedFields.length ? ` / 正文字段 ${changedFields.join('、')}` : ''));
       message.success(`已保存「${vals.title ?? ''}」`);
       setOpen(false);
       resetForm();
@@ -319,11 +346,13 @@ export default function ContentAdmin() {
         ...p,
         cases: [{
           id: `CS${Date.now()}`, track: vals.track ?? '客户赋能', title: vals.title ?? '未命名案例',
-          summary: '', pain_point: '', input: '', prompt: vals.prompt ?? '', output: '',
-          acceptance: [], level: vals.level ?? '骨干层', tags: vals.tags ?? [],
+          /** V10.19：正文七件套新建时即可填写（均选填，历史默认为空） */
+          summary: vals.summary ?? '', pain_point: vals.pain_point ?? '', input: vals.input ?? '',
+          prompt: vals.prompt ?? '', output: vals.output ?? '', acceptance: vals.acceptance ?? [],
+          level: vals.level ?? '骨干层', tags: vals.tags ?? [],
           /** V10.13：作者可填 —— 运营方代录时署真实作者名；留空 = 当前操作人 */
           author_union_id: me.union_id, author_name: vals.author_name?.trim() || me.name,
-          like_count: 0, view_count: 0, reuse_count: 0, duration: '—', cover: '📘',
+          like_count: 0, view_count: 0, reuse_count: 0, duration: vals.duration?.trim() || '—', cover: vals.cover?.trim() || '📘',
           status: '草稿', visible_subjects: visibleSubjects, created_at: DEMO_TODAY,
           /** V4.1：附加资源随案例一起落库，未配置即空数组（详情页不渲染空壳区块） */
           skill_packages: skills,
@@ -331,7 +360,7 @@ export default function ContentAdmin() {
           sort: maxSort + 1,
         } as CaseItem, ...p.cases],
       };
-    }, '已创建草稿（四件套齐全后方可发布）');
+    }, '已创建草稿（正文内容均为选填，可随时在编辑中补齐）');
     if (ok) {
       log('新建案例', vals.title ?? '',
         `可见范围 ${visibleSubjects.map((s) => s.name).join('、')} · Skill ${skills.length} 个 · 附件 ${atts.length} 个`);
@@ -1099,7 +1128,27 @@ export default function ContentAdmin() {
           </Form.Item>
           {/* level 字段保留落库（历史数据兼容），但不再作为受众分层展示入口 */}
           <Form.Item name="level" label="建议层级（已废弃，仅历史兼容）"><Select options={['干部层', '骨干层'].map((v) => ({ value: v, label: v }))} /></Form.Item>
+          {/* ============================================================
+              V10.19：案例正文七件套全部开放编辑（均选填，无 required）
+              此前后台只暴露「提示词」一个正文字段，痛点 / 输入 / 产出 / 验收标准 /
+              耗时 / 摘要无处可改 —— 组织者反馈「编辑中应对所有字段可编辑」。
+              不设必填：空字段在详情页渲染为空，不影响保存与发布。
+              字段顺序与详情页阅读顺序一致：摘要 → 痛点 → 输入 → 提示词 → 产出 → 验收标准。
+              ============================================================ */}
+          <Form.Item name="summary" label="摘要（选填）" extra="案例库卡片与详情页的一段式简介"><Input.TextArea rows={2} /></Form.Item>
+          <Form.Item name="pain_point" label="痛点（选填）"><Input.TextArea rows={3} /></Form.Item>
+          <Form.Item name="input" label="输入（选填）"><Input.TextArea rows={3} /></Form.Item>
           <Form.Item name="prompt" label="可直接抄的提示词"><Input.TextArea rows={4} /></Form.Item>
+          <Form.Item name="output" label="产出物（选填）"><Input.TextArea rows={3} /></Form.Item>
+          <Form.Item name="acceptance" label="验收标准（选填）" extra="回车逐条加入；详情页按「标准 1 / 2 / 3…」步骤展示">
+            <Select mode="tags" placeholder="输入后回车即可添加一条验收标准" />
+          </Form.Item>
+          <Form.Item name="duration" label="建议耗时（选填）" extra="如「约 45 分钟」；留空 = 保持原值，列表与详情页标签展示">
+            <Input placeholder="约 45 分钟" style={{ width: 200 }} />
+          </Form.Item>
+          <Form.Item name="cover" label="封面图标（选填）" extra="案例卡片与详情页左上角的 emoji，如 📘；留空 = 保持原值">
+            <Input placeholder="📘" style={{ width: 120 }} />
+          </Form.Item>
 
           {/* ============================================================
               V4.1 新增①：可直接安装的 Skill（选填）
@@ -1230,7 +1279,7 @@ export default function ContentAdmin() {
               : '必填：不选就发布等于全员可见，请显式指定部门或人员。'}
           </Typography.Text>
           <Typography.Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 4 }}>
-            四件套（输入 / 提示词 / 产出物 / 验收标准）缺一不可发布；层级只可上调不可下调。
+            正文七件套均为选填：建议补齐痛点 / 输入 / 提示词 / 产出 / 验收标准，员工端详情页体验更完整。
           </Typography.Text>
         </Form>
       </Modal>
