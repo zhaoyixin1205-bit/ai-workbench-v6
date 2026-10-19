@@ -499,6 +499,24 @@ check('J8 提交成功即清草稿（hook 与 v1 内联两条提交路径都清�
   const v1 = /clearDraft\(draftKey\);?\s*\n\s*nav\('\/work'\)/.test(readSrc('src/pages/c/WorkSubmit.tsx'));
   return hook && v1 ? true : `hook=${hook} v1=${v1}`;
 });
+/* ---- K 组（V10.19）：首页案例精选固定 3 个 + 三列网格排版（禁回退横向滚动） ---- */
+check('K1 两版首页 hotCases 都 slice(0,3)（组织者拍板「3 个即可」，禁回退 5）', () => {
+  const ok2 = /const hotCases = \[\.\.\.db\.cases\]\.sort\(bySortAsc\)\.slice\(0, 3\);/.test(readSrc('src/pages/v2/HomeV2.tsx'));
+  const ok1 = /const hotCases = \[\.\.\.db\.cases\]\.sort\(bySortAsc\)\.slice\(0, 3\);/.test(readSrc('src/pages/c/Home.tsx'));
+  return ok2 && ok1 ? true : `v2=${ok2} v1=${ok1}`;
+});
+check('K2 v2 案例精选用三列网格 wb2-cgrid（剥注释后无 wb2-hscroll，不再横向滚动留空）', () => {
+  const src = readSrc('src/pages/v2/HomeV2.tsx').replace(/\/\*[\s\S]*?\*\//g, '');
+  return /<div className="wb2-cgrid">/.test(src) && !/wb2-hscroll/.test(src)
+    ? true : 'v2 案例精选仍用横向滚动';
+});
+check('K3 v1 案例精选用 Row/Col 三列网格（lg={8}，不再 wb-scroll-x）', () => {
+  const src = readSrc('src/pages/c/Home.tsx').replace(/\/\*[\s\S]*?\*\//g, '');
+  return /<Row gutter=\{\[16, 16\]\}>/.test(src)
+    && /<Col xs=\{24\} sm=\{12\} lg=\{8\} key=\{c\.id\}>/.test(src)
+    && !/<div className="wb-scroll-x">/.test(src)
+    ? true : 'v1 案例精选仍用横向滚动';
+});
 
 /* ------------------------------------------------------------------ */
 const failed = results.filter((r) => !r.ok);

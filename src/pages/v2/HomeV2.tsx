@@ -136,8 +136,11 @@ export default function HomeV2() {
    * 缺省垫底、同键稳定（Array.sort 规范保证稳定），全部缺省时保持 db.cases 原序，
    * 与 ContentAdmin 的 sortedCases 是同一把尺子：后台拖拽 / 排序号一改，首页即时跟随。
    * 此前是「最新发布优先」（created_at 倒序），后台排完序首页不跟随，用户看到两个顺序。
+   * V10.19：组织者拍板「显示 3 个即可」—— slice(0,3)，排版同步由横向滚动
+   * （.wb2-hscroll 定宽 216 留右侧空白）改三列网格 .wb2-cgrid，与案例库页同款，
+   * 卡框等高撑满一行，不再出现「3 张卡 + 一大块空白」的稀疏排版。
    */
-  const hotCases = [...db.cases].sort(bySortAsc).slice(0, 5);
+  const hotCases = [...db.cases].sort(bySortAsc).slice(0, 3);
   const bounties = db.bounties.filter((b) => b.status === 'PUBLISHED').slice(0, 4);
   const hotPosts = [...db.posts]
     .filter((p) => p.status === '正常')
@@ -311,12 +314,13 @@ export default function HomeV2() {
           <div className="t">案例精选 <span className="s">30 秒看懂别人做成了什么</span></div>
           <Link className="more" to="/cases">查看全部 <ArrowRightOutlined /></Link>
         </div>
-        <div className="wb2-hscroll">
+        {/* V10.19：3 个案例 → 三列网格（.wb2-cgrid，案例库页同款），等高撑满不再横向滚动留空 */}
+        <div className="wb2-cgrid">
           {hotCases.map((c) => {
             const skillN = flags.caseSkillPackage !== false ? (c.skill_packages?.length ?? 0) : 0;
             /* V8-10.07：`.eq` = 等高修饰类，案例外框大小一致 */
             return (
-              <Link key={c.id} to={`/cases/${c.id}`} style={{ display: 'block' }}>
+              <Link key={c.id} to={`/cases/${c.id}`}>
                 <div className="wb2-ccard eq" style={{ borderLeft: `3px solid ${TRACK_COLOR[c.track] ?? 'var(--wb-track-1)'}` }}>
                   <div className="ct">{c.title}</div>
                   <div className="cd" style={{ marginTop: 8 }}>{c.author_name} · {c.duration}</div>

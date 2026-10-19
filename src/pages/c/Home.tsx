@@ -136,8 +136,11 @@ export default function Home() {
    * 缺省垫底、同键稳定（Array.sort 规范保证稳定），全部缺省时保持 db.cases 原序，
    * 与 ContentAdmin 的 sortedCases 是同一把尺子：后台拖拽 / 排序号一改，首页即时跟随。
    * 此前是「最新发布优先」（created_at 倒序），后台排完序首页不跟随，用户看到两个顺序。
+   * V10.19：组织者拍板「显示 3 个即可」—— slice(0,3)，排版同步由横向滚动
+   * （.wb-scroll-x 定宽 216 留右侧空白）改 Row/Col 三列网格，与案例库页同款，
+   * 卡框等高撑满一行，不再出现「3 张卡 + 一大块空白」的稀疏排版。
    */
-  const hotCases = [...db.cases].sort(bySortAsc).slice(0, 5);
+  const hotCases = [...db.cases].sort(bySortAsc).slice(0, 3);
   const bounties = db.bounties.filter((b) => b.status === 'PUBLISHED').slice(0, 4);
   const hotPosts = [...db.posts].filter((p) => p.status === '正常').sort((a, b) => b.like_count + b.comment_count * 3 - (a.like_count + a.comment_count * 3)).slice(0, 3);
   /**
@@ -360,14 +363,15 @@ export default function Home() {
           </Space>
           <Link to="/cases" style={{ fontSize: 13, fontWeight: 500, color: COLOR.primary }}>查看全部 <ArrowRightOutlined /></Link>
         </div>
-        <div className="wb-scroll-x">
+        {/* V10.19：3 个案例 → Row/Col 三列网格（案例库页同款 lg={8}），等高撑满不再横向滚动留空 */}
+        <Row gutter={[16, 16]}>
           {hotCases.map((c) => {
             const skillN = flags.caseSkillPackage !== false ? (c.skill_packages?.length ?? 0) : 0;
             return (
               /* V4.1 Moka P1：hover 出最小信息集，省掉「点进去看一眼再退出来」 */
-              <HoverCard
-                key={c.id}
-                placement="bottom"
+              <Col xs={24} sm={12} lg={8} key={c.id}>
+                <HoverCard
+                  placement="bottom"
                 content={
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>{c.title}</div>
@@ -381,9 +385,10 @@ export default function Home() {
                   </div>
                 }
               >
-                {/* V8-10.07：外框大小一致 —— 固定宽 216 + 固定高 196，底部数据条 marginTop:auto 吸底 */}
-                <Link to={`/cases/${c.id}`} style={{ flex: '0 0 216px', display: 'block' }}>
-                  <div className="wb-card wb-card-hover" style={{ padding: 16, height: 196, display: 'flex', flexDirection: 'column' }}>
+                {/* V8-10.07：外框大小一致 —— 高度统一，底部数据条 marginTop:auto 吸底；
+                    V10.19：三列网格下 height:100% 让同行卡等高撑满单元格 */}
+                <Link to={`/cases/${c.id}`} style={{ display: 'block' }}>
+                  <div className="wb-card wb-card-hover" style={{ padding: 16, height: '100%', minHeight: 196, display: 'flex', flexDirection: 'column' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12, gap: 8 }}>
                       <CoverBlock emoji={c.cover} track={c.track} size={40} />
                       <TrackTag track={c.track} level={c.level} />
@@ -400,10 +405,11 @@ export default function Home() {
                     </div>
                   </div>
                 </Link>
-              </HoverCard>
+                </HoverCard>
+              </Col>
             );
           })}
-        </div>
+        </Row>
       </div>
 
 
