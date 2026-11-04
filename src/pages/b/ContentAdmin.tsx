@@ -16,6 +16,8 @@ import type {
 } from '@/mock/types';
 import { formatSize } from '@/mock/types';
 import { useFileUpload } from '@/service/useFileUpload';
+/** V10.20：管理端上传扩展口径（100MB + exe/rar/7z 等白名单），与员工端口径隔离 */
+import { ADMIN_FILE_ALLOW_EXT, ADMIN_FILE_MAX_BYTES } from '@/service/fileService';
 import { useDragSort } from '@/hooks/useDragSort';
 import { bySortAsc, moveIdTo, reorderWithSort } from '@/utils/sortOrder';
 import SortNumberInput from '@/components/SortNumberInput';
@@ -183,13 +185,16 @@ export default function ContentAdmin() {
 
   /**
    * V6.0 CR-31：Skill 包与案例附件改走真实文件服务（此前「只登记文件名与体积」—— A-39 结案）。
-   * zip 由服务端解包真实校验是否含 SKILL.md，不再是模拟通过。
+   * Skill 包的 zip 由服务端解包真实校验是否含 SKILL.md，不再是模拟通过。
+   * V10.20：管理端两点走扩展口径（100MB + exe/rar/7z 等），员工端四上传点不受影响。
    */
   const { beforeUpload: beforeSkillUpload, uploading: skillUploading } = useFileUpload(
     'CASE_SKILL', editingId || 'NEW-CASE',
     {
       count: skills.length,
       max: 10,
+      maxBytes: ADMIN_FILE_MAX_BYTES,
+      allowExt: ADMIN_FILE_ALLOW_EXT,
       onDone: (a) => setSkillDraft((d) => ({
         ...d, file_name: a.name, file_size: a.size, skill_url: a.url ?? '',
       })),
@@ -197,7 +202,11 @@ export default function ContentAdmin() {
   );
   const { beforeUpload: beforeAttachUpload, uploading: attachUploading } = useFileUpload(
     'CASE_ATTACH', editingId || 'NEW-CASE',
-    { count: atts.length, max: 10, onDone: (a) => setAtts((p) => [...p, a]) },
+    {
+      count: atts.length, max: 10,
+      maxBytes: ADMIN_FILE_MAX_BYTES, allowExt: ADMIN_FILE_ALLOW_EXT,
+      onDone: (a) => setAtts((p) => [...p, a]),
+    },
   );
 
   const resetForm = () => {
@@ -214,7 +223,7 @@ export default function ContentAdmin() {
   const addSkill = () => {
     if (!skillDraft.name.trim()) { message.warning('请先填 Skill 名称'); return; }
     if (skillType === 'LINK' && !skillDraft.url.trim()) { message.warning('选了「下载链接」就必须填链接'); return; }
-    if (skillType === 'UPLOAD' && !skillDraft.file_name) { message.warning('请先上传 Skill 压缩包'); return; }
+    if (skillType === 'UPLOAD' && !skillDraft.file_name) { message.warning('请先上传 Skill 文件'); return; }
     setSkills((p) => [...p, {
       id: `SK${Date.now()}${p.length}`,
       type: skillType,
@@ -1152,7 +1161,7 @@ export default function ContentAdmin() {
 
           {/* ============================================================
               V4.1 新增①：可直接安装的 Skill（选填）
-              三种承载方式：上传压缩包 / 填下载链接 / 文字说明，可并存多个
+              三种承载方式：上传文件（压缩包 / 文档 / md，单个最大 100MB）/ 填下载链接 / 文字说明，可并存多个
               ============================================================ */}
           {skillOn && (
             <>
@@ -1166,7 +1175,7 @@ export default function ContentAdmin() {
                 value={skillType}
                 onChange={(v) => setSkillType(String(v) as SkillPackage['type'])}
                 options={[
-                  { label: '上传压缩包', value: 'UPLOAD' },
+                  { label: '上传文件', value: 'UPLOAD' },
                   { label: '填下载链接', value: 'LINK' },
                 ]}
                 style={{ marginBottom: 12 }}
@@ -1182,14 +1191,15 @@ export default function ContentAdmin() {
                     onChange={(e) => setSkillDraft((d) => ({ ...d, version: e.target.value }))}
                   />
                   {skillType === 'UPLOAD' ? (
-                    /* V6.0 CR-31：真实上传；zip 由服务端解包校验 SKILL.md + manifest.yaml */
+                    /* V10.20：Skill 承载放宽为压缩包 / 文档 / md（zip 仍由服务端解包校验 SKILL.md）；
+                       accept 与 validateFile 的 ADMIN_FILE_ALLOW_EXT 对齐，单个文件最大 100MB */
                     <Upload
-                      accept=".zip,.rar,.7z,.skill"
+                      accept=".zip,.rar,.7z,.tar,.gz,.skill,.md,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv"
                       showUploadList={false}
                       beforeUpload={beforeSkillUpload}
                     >
                       <Button icon={<UploadOutlined />} loading={skillUploading > 0}>
-                        {skillDraft.file_name || '选择 Skill 压缩包'}
+                        {skillDraft.file_name || '选择文件（压缩包 / 文档 / md）'}
                       </Button>
                     </Upload>
                   ) : (
@@ -1199,6 +1209,11 @@ export default function ContentAdmin() {
                     />
                   )}
                 </Space>
+                {skillType === 'UPLOAD' && (
+                  <Typography.Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 4 }}>
+                    支持压缩包（zip / rar / 7z）、文档（pdf / docx / xlsx / pptx 等）与 md，单个文件最大 100MB；zip 会校验包内是否含 SKILL.md。
+                  </Typography.Text>
+                )}
                 <Input.TextArea
                   rows={2} placeholder="安装步骤 / 用法说明（选填，写清「装完第一步干什么」最有用）"
                   value={skillDraft.note}
@@ -1245,7 +1260,7 @@ export default function ContentAdmin() {
                 <p className="ant-upload-drag-icon"><InboxOutlined style={{ color: COLOR.primary }} /></p>
                 <p style={{ fontSize: 13, marginBottom: 4 }}>点这里或把文件拖进来</p>
                 <p style={{ fontSize: 12, color: COLOR.textMuted }}>
-                  非必填 · 支持任意类型（xlsx / docx / pdf / zip / 图片 …）
+                  非必填 · 支持任意类型（xlsx / docx / pdf / zip / exe / 安装包 / 图片 …，单个最大 100MB）
                 </p>
               </Upload.Dragger>
               {atts.length > 0 && (

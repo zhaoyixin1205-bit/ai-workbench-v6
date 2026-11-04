@@ -18,6 +18,9 @@
  * V10.19 增补：
  *   L 组锁后台案例编辑开放「正文七件套」—— 摘要/痛点/输入/提示词/产出/验收标准/耗时/封面
  *   全部可编辑且均无 required；打开回填、保存落库、新建可填、审计日志、旧文案清零。
+ * V10.20 增补：
+ *   M 组锁管理端上传扩展 —— Skill 承载「上传压缩包」→「上传文件」（压缩包 / 文档 / md，100MB）、
+ *   附件区补 exe 等安装包；前后端白名单 / 体积口径一致，zip 的 SKILL.md 校验收窄到 CASE_SKILL。
  */
 import { buildSync } from 'esbuild';
 import { createRequire } from 'node:module';
@@ -583,6 +586,59 @@ check('L7 「四件套缺一不可发布」旧文案清零（后台 + 新人引�
   const layoutClean = !/缺一不可发布/.test(readSrc('src/layouts/CLayout.tsx'))
     && !/缺一不可发布/.test(readSrc('src/layouts/v2/CLayoutV2.tsx'));
   return adminClean && layoutClean ? true : `admin=${adminClean} layout=${layoutClean}`;
+});
+
+/* ------------------------------------------------------------------ */
+/* V10.20：M 组锁管理端上传扩展（Skill 上传文件 / 100MB / exe 等） */
+const flat = (s) => s.replace(/\s+/g, ' ');
+check('M1 Skill 承载改「上传文件」，旧「上传压缩包 / 选择 Skill 压缩包」清零', () => {
+  const ok = (src) => src.includes("label: '上传文件', value: 'UPLOAD'")
+    && !src.includes('上传压缩包') && !src.includes('选择 Skill 压缩包');
+  return ok(adminV1) && ok(adminV2) ? true : `v1=${ok(adminV1)} v2=${ok(adminV2)}`;
+});
+check('M2 Skill 上传 accept 覆盖压缩包 / 文档 / md', () => {
+  const acc = '.zip,.rar,.7z,.tar,.gz,.skill,.md,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv';
+  const ok = (src) => src.includes(`accept="${acc}"`);
+  return ok(adminV1) && ok(adminV2) ? true : `v1=${ok(adminV1)} v2=${ok(adminV2)}`;
+});
+check('M3 管理端两个上传点走扩展口径（100MB + exe/rar/7z 白名单）', () => {
+  const ok = (src) => (src.match(/maxBytes: ADMIN_FILE_MAX_BYTES/g) ?? []).length >= 2
+    && (src.match(/allowExt: ADMIN_FILE_ALLOW_EXT/g) ?? []).length >= 2
+    && src.includes("import { ADMIN_FILE_ALLOW_EXT, ADMIN_FILE_MAX_BYTES } from '@/service/fileService'");
+  return ok(adminV1) && ok(adminV2) ? true : `v1=${ok(adminV1)} v2=${ok(adminV2)}`;
+});
+check('M4 附件区文案补 exe / 安装包与 100MB', () => {
+  const ok = (src) => src.includes('支持任意类型（xlsx / docx / pdf / zip / exe / 安装包 / 图片 …，单个最大 100MB）');
+  return ok(adminV1) && ok(adminV2) ? true : `v1=${ok(adminV1)} v2=${ok(adminV2)}`;
+});
+check('M5 前端 validateFile/uploadFile 支持口径覆写（opts.maxBytes/allowExt）', () => {
+  const svc = flat(readSrc('src/service/fileService.ts'));
+  const hook = flat(readSrc('src/service/useFileUpload.ts'));
+  const ok = svc.includes('export const ADMIN_FILE_MAX_BYTES = 100 * 1024 * 1024;')
+    && svc.includes("export const ADMIN_FILE_ALLOW_EXT = [ ...FILE_ALLOW_EXT, 'rar', '7z', 'tar', 'gz', 'doc', 'ppt', 'skill', 'exe', 'msi', 'dmg', 'apk', ];")
+    && svc.includes('opts?: { maxBytes?: number; allowExt?: readonly string[] },')
+    && svc.includes('const allow = opts?.allowExt ?? FILE_ALLOW_EXT;')
+    && svc.includes('const maxBytes = opts?.maxBytes ?? FILE_MAX_BYTES;')
+    && hook.includes('validateFile(file, { maxBytes: opts.maxBytes, allowExt: opts.allowExt })')
+    && hook.includes('realFileService: flags.realFileService, maxBytes: opts.maxBytes, allowExt: opts.allowExt,');
+  return ok ? true : '口径覆写链路不完整';
+});
+check('M6 服务端扩展白名单 / 100MB / zip 校验收窄到 CASE_SKILL', () => {
+  const srv = flat(readSrc('server/index.mjs'));
+  const ok = srv.includes("const ADMIN_EXT = new Set([...ALLOW_EXT, 'rar', '7z', 'tar', 'gz', 'doc', 'ppt', 'skill', 'exe', 'msi', 'dmg', 'apk']);")
+    && srv.includes('const ADMIN_MAX_BYTES = 100 * 1024 * 1024;')
+    && srv.includes("const isAdminBiz = bizType === 'CASE_SKILL' || bizType === 'CASE_ATTACH';")
+    && srv.includes('const allowExt = isAdminBiz ? ADMIN_EXT : ALLOW_EXT;')
+    && srv.includes('read = await readBody(req, bizMax + 1024);')
+    && srv.includes("if (ext === 'zip' && bizType === 'CASE_SKILL') {");
+  return ok ? true : '服务端口径缺失';
+});
+check('M7 前后端口径一致（基础白名单同集合 + 管理端同集合）', () => {
+  const svc = flat(readSrc('src/service/fileService.ts'));
+  const srv = flat(readSrc('server/index.mjs'));
+  const baseOk = svc.includes("export const FILE_ALLOW_EXT = [ 'zip', 'md', 'yaml', 'yml', 'pdf', 'docx', 'xlsx', 'xls', 'pptx', 'png', 'jpg', 'jpeg', 'txt', 'csv', ];")
+    && srv.includes("const ALLOW_EXT = new Set([ 'zip', 'md', 'yaml', 'yml', 'pdf', 'docx', 'xlsx', 'xls', 'pptx', 'png', 'jpg', 'jpeg', 'txt', 'csv', ]);");
+  return baseOk ? true : '前后端基础白名单不一致';
 });
 
 /* ------------------------------------------------------------------ */

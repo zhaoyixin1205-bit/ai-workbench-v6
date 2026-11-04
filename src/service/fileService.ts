@@ -6,7 +6,7 @@
  *    前端永远只调 `/api/files/*`，有没有后端由 `probeFileBackend()` 探测决定，不写死分支。
  * 2. **后端不可达自动降级**：探测失败即回到 A-39 演示态（只登记文件名与体积，url 为空），
  *    并在 UI 上如实说明「未接入文件服务」——不再出现「点了下载没反应」的假象。
- * 3. **前端校验只是体验，不作为安全边界**：白名单与 50MB 在前端拦截以免发出无谓请求，
+ * 3. **前端校验只是体验，不作为安全边界**：白名单与体积上限（员工端 50MB、管理端 100MB）在前端拦截以免发出无谓请求，
  *    服务端必须二次校验（前端校验不可信）。
  * 4. **下载地址一律走服务端代理**：前端不接触 object_key，避免真实路径暴露。
  */
@@ -32,6 +32,18 @@ export const FILE_ALLOW_EXT = [
 ];
 /** 单文件上限 50MB */
 export const FILE_MAX_BYTES = 50 * 1024 * 1024;
+
+/**
+ * V10.20 管理端（内容管理：Skill 包 / 案例附件）扩展口径。
+ * Skill 承载从「只能传 zip」放宽为压缩包 + 文档 + md；补充附件扩展 exe 等安装包。
+ * 与服务端 ADMIN_EXT / ADMIN_MAX_BYTES 同口径；员工端四上传点仍走上面的基础口径。
+ */
+export const ADMIN_FILE_ALLOW_EXT = [
+  ...FILE_ALLOW_EXT,
+  'rar', '7z', 'tar', 'gz', 'doc', 'ppt', 'skill', 'exe', 'msi', 'dmg', 'apk',
+];
+/** 管理端单文件上限 100MB */
+export const ADMIN_FILE_MAX_BYTES = 100 * 1024 * 1024;
 
 /** 服务端返回的统一结构 */
 interface UploadResp {
@@ -67,15 +79,21 @@ export function isFileBackendKnown(): boolean | null {
 
 /**
  * 前端预校验：拦截明显不合规的文件，避免发出注定失败的请求。
+ * `opts` 供管理端上传点覆写口径（更大的白名单与体积上限）；不传 = 员工端基础口径。
  * 返回 null 表示通过；否则返回可直接展示给用户的错误文案。
  */
-export function validateFile(file: File): string | null {
+export function validateFile(
+  file: File,
+  opts?: { maxBytes?: number; allowExt?: readonly string[] },
+): string | null {
   const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
-  if (!FILE_ALLOW_EXT.includes(ext)) {
-    return `不支持的文件类型 .${ext}（白名单：${FILE_ALLOW_EXT.join(' / ')}）`;
+  const allow = opts?.allowExt ?? FILE_ALLOW_EXT;
+  if (!allow.includes(ext)) {
+    return `不支持的文件类型 .${ext}（白名单：${allow.join(' / ')}）`;
   }
-  if (file.size > FILE_MAX_BYTES) {
-    return `单个文件不得超过 50MB（当前 ${(file.size / 1024 / 1024).toFixed(1)}MB）`;
+  const maxBytes = opts?.maxBytes ?? FILE_MAX_BYTES;
+  if (file.size > maxBytes) {
+    return `单个文件不得超过 ${Math.round(maxBytes / 1024 / 1024)}MB（当前 ${(file.size / 1024 / 1024).toFixed(1)}MB）`;
   }
   return null;
 }
@@ -109,16 +127,17 @@ function demoRecord(
 /**
  * 上传文件。
  * 后端可用 → 真实上传并拿回 file_id；不可用或开关关闭 → 降级为演示态记录（不抛错，业务流不中断）。
- * zip：服务端解包校验包内必须含 SKILL.md（manifest.yaml 已于 2026-10-10 放宽为不强制），不通过时以 Error 抛出并带缺失清单。
+ * Skill 包（CASE_SKILL）的 zip：服务端解包校验包内必须含 SKILL.md（manifest.yaml 已于 2026-10-10
+ * 放宽为不强制），不通过时以 Error 抛出并带缺失清单；其余业务（附件 / 提报 / 悬赏）的 zip 不校验。
  */
 export async function uploadFile(
   file: File,
   bizType: AttachmentFile['biz_type'],
   bizId: string,
   uploader: string,
-  opts?: { realFileService?: boolean },
+  opts?: { realFileService?: boolean; maxBytes?: number; allowExt?: readonly string[] },
 ): Promise<AttachmentFile> {
-  const err = validateFile(file);
+  const err = validateFile(file, { maxBytes: opts?.maxBytes, allowExt: opts?.allowExt });
   if (err) throw new Error(err);
 
   const on = opts?.realFileService !== false && (await probeFileBackend());

@@ -92,7 +92,7 @@ function HoverLift({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** 可直接安装的 Skill 卡：压缩包 / 下载链接两种承载方式 */
+/** 可直接安装的 Skill 卡：上传文件（压缩包 / 文档 / md）/ 下载链接两种承载方式 */
 export function SkillCard({
   item, onAct, onRemove,
 }: {
@@ -153,7 +153,7 @@ export function SkillCard({
               icon={isUpload ? <DownloadOutlined /> : <LinkOutlined />}
               onClick={act}
             >
-              {isUpload ? '下载并安装' : '复制下载链接'}
+              {isUpload ? '下载文件' : '复制下载链接'}
             </Button>
             {onRemove && (
               <Tooltip title="移除该 Skill">

@@ -5,6 +5,9 @@
  * `beforeUpload`，校验口径与文案各不相同，且都只是「登记文件名」。
  * 这里统一为一份：校验 → 真实上传 → 落元数据 → 回写业务对象，
  * 开关关闭或后端不可达时自动回到演示态（只登记元数据 + 诚实文案）。
+ *
+ * V10.20：管理端两个上传点（案例 Skill 包 / 案例附件）可经 opts 覆写口径
+ * （100MB 体积上限 + exe / rar / 7z 等扩展白名单）；员工端口径不变。
  */
 
 import { App } from 'antd';
@@ -21,6 +24,10 @@ interface Opts {
   max?: number;
   /** 上传成功后回调，由调用方写进自己的表单状态 */
   onDone: (a: Attachment) => void;
+  /** 单文件体积上限（管理端传 100MB 口径；不传 = 员工端 50MB） */
+  maxBytes?: number;
+  /** 类型白名单（管理端传扩展口径，含 exe/rar/7z 等；不传 = 员工端基础白名单） */
+  allowExt?: readonly string[];
 }
 
 export function useFileUpload(bizType: AttachmentFile['biz_type'], bizId: string, opts: Opts) {
@@ -29,7 +36,7 @@ export function useFileUpload(bizType: AttachmentFile['biz_type'], bizId: string
   const [uploading, setUploading] = useState(0);
 
   const beforeUpload = (file: File) => {
-    const err = validateFile(file);
+    const err = validateFile(file, { maxBytes: opts.maxBytes, allowExt: opts.allowExt });
     if (err) {
       message.error(err);
       return false;
@@ -48,7 +55,9 @@ export function useFileUpload(bizType: AttachmentFile['biz_type'], bizId: string
     }
 
     setUploading((n) => n + 1);
-    uploadFile(file, bizType, bizId, me.name, { realFileService: flags.realFileService })
+    uploadFile(file, bizType, bizId, me.name, {
+      realFileService: flags.realFileService, maxBytes: opts.maxBytes, allowExt: opts.allowExt,
+    })
       .then((f) => {
         /** 元数据进全局台账，便于后台统一查看与审计 */
         setDb((p) => ({ ...p, attachmentFiles: [f, ...(p.attachmentFiles ?? [])] }));

@@ -135,8 +135,8 @@ export function isEmptyCampaign(c: Campaign | undefined): boolean {
 
 /**
  * V4.1：可直接安装的 Skill
- * 三种承载方式可并存（文字说明 / 上传压缩包 / 下载链接），由发布者任选其一或组合：
- *  - UPLOAD：上传 .zip 等 Skill 压缩包（纯前端 mock，只登记文件名与大小，不落二进制）
+ * 三种承载方式可并存（文字说明 / 上传文件 / 下载链接），由发布者任选其一或组合：
+ *  - UPLOAD：上传 Skill 文件（V10.20 起支持压缩包 / 文档 / md，管理端单个最大 100MB，真实落库可下载）
  *  - LINK  ：填一个下载链接
  *  - note  ：安装步骤 / 用法说明（文字框）
  */

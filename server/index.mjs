@@ -36,6 +36,16 @@ const ALLOW_EXT = new Set([
 ]);
 const MAX_BYTES = 50 * 1024 * 1024;
 
+/**
+ * V10.20 管理端（内容管理：CASE_SKILL / CASE_ATTACH）扩展口径。
+ * Skill 承载从「只能传 zip」放宽为压缩包 + 文档 + md；补充附件扩展 exe 等安装包。
+ * 与前端 ADMIN_FILE_ALLOW_EXT / ADMIN_FILE_MAX_BYTES 同口径；员工端 bizType 维持上面的基础口径。
+ */
+const ADMIN_EXT = new Set([...ALLOW_EXT, 'rar', '7z', 'tar', 'gz', 'doc', 'ppt', 'skill', 'exe', 'msi', 'dmg', 'apk']);
+const ADMIN_MAX_BYTES = 100 * 1024 * 1024;
+/** 按业务类型取体积上限：管理端两点 100MB，其余（提报 / 悬赏 / 社区）50MB */
+const BIZ_MAX_BYTES = { CASE_SKILL: ADMIN_MAX_BYTES, CASE_ATTACH: ADMIN_MAX_BYTES };
+
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8',
@@ -163,6 +173,8 @@ async function handle(req, res) {
       stateDriver: state?.name ?? 'none',
       maxBytes: MAX_BYTES,
       allowExt: [...ALLOW_EXT],
+      adminMaxBytes: ADMIN_MAX_BYTES,
+      adminExt: [...ADMIN_EXT],
       now: new Date().toISOString(),
     });
   }
@@ -880,20 +892,24 @@ async function handle(req, res) {
     if (!['CASE_SKILL', 'CASE_ATTACH', 'SUBMIT', 'BOUNTY_SOLUTION', 'POST_ATTACH'].includes(bizType)) {
       return sendJson(res, 400, { ok: false, error: `biz_type 非法：${bizType}` });
     }
+    /* V10.20：管理端两点走扩展白名单与 100MB；其余维持基础口径（服务端独立校验，不信前端） */
+    const isAdminBiz = bizType === 'CASE_SKILL' || bizType === 'CASE_ATTACH';
+    const allowExt = isAdminBiz ? ADMIN_EXT : ALLOW_EXT;
+    const bizMax = BIZ_MAX_BYTES[bizType] ?? MAX_BYTES;
     const ext = name.split('.').pop()?.toLowerCase() ?? '';
-    if (!ALLOW_EXT.has(ext)) {
+    if (!allowExt.has(ext)) {
       return sendJson(res, 400, { ok: false, error: `不支持的文件类型 .${ext}` });
     }
 
     let read;
     try {
-      read = await readBody(req);
+      read = await readBody(req, bizMax + 1024);
     } catch (e) {
       return sendJson(res, 400, { ok: false, error: `读取失败：${e.message}` });
     }
     if (read.overflow) {
       res.once('finish', () => req.destroy());
-      return sendJson(res, 413, { ok: false, error: '文件超过 50MB 上限' });
+      return sendJson(res, 413, { ok: false, error: `文件超过 ${Math.round(bizMax / 1024 / 1024)}MB 上限` });
     }
     const buf = read.buf;
     if (buf.length === 0) return sendJson(res, 400, { ok: false, error: '文件为空' });
@@ -903,8 +919,10 @@ async function handle(req, res) {
       bizType, bizId, name, ext, size: buf.length, driver: repo.name, objectKey: key, uploadedBy,
     });
 
-    // zip 真实校验：解包确认含 SKILL.md（2026-10-10 放宽：manifest.yaml 不再强制）
-    if (ext === 'zip') {
+    // zip 真实校验：解包确认含 SKILL.md（2026-10-10 放宽：manifest.yaml 不再强制）。
+    // V10.20 收窄到 CASE_SKILL：附件 / 提报 / 悬赏 / 社区的 zip（模板包、数据包）不强制 SKILL.md，
+    // 此前的全局校验会把正常附件误判为「压缩包缺少必含文件」。
+    if (ext === 'zip' && bizType === 'CASE_SKILL') {
       try {
         const r = validateSkillZip(buf);
         meta.zip_checked = true;
@@ -1083,7 +1101,7 @@ Promise.all([repo.init(), state.init()])
       console.log(`[server] 文件存储驱动: ${repo.name}`);
       console.log(`[server] 业务数据存储驱动: ${state.name}${state.name === 'pg' ? '（多人共享已启用）' : '（单实例模式）'}`);
       console.log(`[server] 静态资源: ${DIST}`);
-      console.log(`[server] 限制: ≤50MB · 白名单 ${[...ALLOW_EXT].join('/')}`);
+      console.log(`[server] 限制: ≤50MB（管理端 ≤100MB）· 白名单 ${[...ALLOW_EXT].join('/')} · 管理端追加 ${[...ADMIN_EXT].filter((e) => !ALLOW_EXT.has(e)).join('/')}`);
     });
   })
   .catch((e) => {
