@@ -98,7 +98,7 @@ a {
 .wb-metric {
   font-size: 32px;
   font-weight: 800;
-  color: #ff6b35;
+  color: #FF6B35;
   line-height: 1.1;
   letter-spacing: -0.02em;
 }
@@ -158,7 +158,7 @@ a {
   transition: color 0.2s ease;
 }
 .wb-tabbar-item.active {
-  color: #ff6b35;
+  color: #FF6B35;
 }
 .wb-tabbar-item .anticon {
   font-size: 20px;
@@ -178,7 +178,7 @@ a {
 /* Banner / Hero：渐变 + 柔和阴影 */
 .wb-banner {
   position: relative;
-  background: linear-gradient(135deg, #ff6b35 0%, #ff7b47 35%, #ff9d76 100%);
+  background: linear-gradient(135deg, #FF6B35 0%, #FF7B47 35%, #ff9d76 100%);
   color: #fff;
   border-radius: 20px;
   padding: 28px;
@@ -233,7 +233,7 @@ a {
 
 /* 通用按钮增强 */
 .wb-btn-primary {
-  background: linear-gradient(135deg, #ff6b35 0%, #ff7b47 100%);
+  background: linear-gradient(135deg, #FF6B35 0%, #FF7B47 100%);
   border: none;
   box-shadow: 0 4px 12px rgba(255, 107, 53, 0.22);
   transition: all 0.2s ease;
@@ -267,7 +267,7 @@ body[data-ui="v1"] .ant-card{
               border-color 240ms ease;
 }
 body[data-ui="v1"] .ant-card-hoverable:hover{
-  border-color: #ffe4d9 !important;
+  border-color: #daebfb !important;
   box-shadow: rgba(30, 36, 53, 0.16) 0 7px 14px;
   transform: translateY(-2px);
 }
@@ -304,7 +304,7 @@ body[data-ui="v1"] .ant-btn-primary.ant-btn-lg:hover{
 }
 body[data-ui="v1"] .ant-btn:not(.ant-btn-primary):not(.ant-btn-link):not(.ant-btn-text):hover{
   border-color: #ffb694 !important;
-  color: #e55d2b !important;
+  color: #E55D2B !important;
 }
 
 /* —— 标签：把 antd 预设色统一成低饱和 chip —— */
@@ -319,7 +319,7 @@ body[data-ui="v1"] .ant-tag{
 }
 body[data-ui="v1"] .ant-tag-orange,
 body[data-ui="v1"] .ant-tag-volcano{
-  background: #fff1eb !important;
+  background: #FFF1EB !important;
   color: #c2410c !important;
 }
 body[data-ui="v1"] .ant-tag-blue,
@@ -439,19 +439,19 @@ body[data-ui="v1"] .ant-segmented .ant-segmented-item{
   transition: all 0.2s ease;
 }
 body[data-ui="v1"] .ant-segmented .ant-segmented-item:hover:not(.ant-segmented-item-selected){
-  color: #e55d2b;
+  color: #E55D2B;
 }
 body[data-ui="v1"] .ant-segmented .ant-segmented-item-selected{
   box-shadow: 0 2px 8px rgba(31, 41, 55, 0.08);
 }
 body[data-ui="v1"] .ant-segmented .ant-segmented-item-selected .ant-segmented-item-label{
-  color: #e55d2b;
+  color: #E55D2B;
   font-weight: 600;
 }
 
 /* —— 单选按钮组：选中态用主色浅底，替代纯描边 —— */
 body[data-ui="v1"] .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled){
-  background: #fff1eb !important;
+  background: #FFF1EB !important;
   border-color: #ffb694 !important;
   color: #c2410c !important;
   font-weight: 600;
@@ -461,7 +461,7 @@ body[data-ui="v1"] .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapp
   background-color: #ffb694 !important;
 }
 body[data-ui="v1"] .ant-radio-group-solid .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled){
-  background: linear-gradient(135deg, #ff7b47 0%, #ff6b35 100%) !important;
+  background: linear-gradient(135deg, #FF7B47 0%, #FF6B35 100%) !important;
   border-color: transparent !important;
   color: #fff !important;
   box-shadow: 0 4px 12px rgba(255, 107, 53, 0.22) !important;
@@ -741,20 +741,20 @@ body[data-ui="v1"] .ant-menu-light.ant-menu-root.ant-menu-inline{
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
-  background: #fff1eb;
+  background: #FFF1EB;
   border-radius: 12px;
   transition: background 120ms cubic-bezier(0.2, 0.8, 0.2, 1),
               transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .wb-nudge:hover {
-  background: #ffe4d9;
+  background: #daebfb;
   transform: translateX(3px);
 }
 .wb-nudge-icon {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #ff6b35;
+  background: #FF6B35;
   flex-shrink: 0;
   box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.16);
 }
@@ -808,8 +808,8 @@ body[data-ui="v1"] .ant-menu-light.ant-menu-root.ant-menu-inline{
   transition: all 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .wb-helper-item:hover {
-  color: #e55d2b;
-  background: #fff1eb;
+  color: #E55D2B;
+  background: #FFF1EB;
 }
 .wb-helper-item .anticon { font-size: 16px; }
 

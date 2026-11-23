@@ -300,7 +300,7 @@ export default function Profile() {
               children: (
                 <>
                   <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
-                    <span style={{ fontSize: 12, color: '#857E90' }}>
+                    <span style={{ fontSize: 12, color: '#8a8fa6' }}>
                       未读 {unreadCount} 条 · 共 {myMessages.length} 条（群通知只显示、不占红点）
                     </span>
                     <Button

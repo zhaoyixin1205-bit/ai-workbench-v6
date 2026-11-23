@@ -9,7 +9,7 @@ import { useCaseFilters } from '@/hooks/useCaseFilters';
 import { useTopicPick } from '@/hooks/useTopicPick';
 import { Dialog } from '@/components/v2/Dialog';
 import { HoverCard } from '@/components/ui';
-import { trackVar } from '@/theme/v2/track';
+import { trackTint, trackVar } from '@/theme/v2/track';
 import { useNoteVisible } from '@/auth/annotation';
 import '../../theme/v2/template.css';
 
@@ -199,10 +199,11 @@ export default function CaseListV2() {
                     <div className="ct">{c.title}</div>
                     <div className="cd">{c.pain_point}</div>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 'var(--wb-space-3)' }}>
-                      <span className="wb2-tag"><i className="d" style={{ background: trackVar(c.track) }} />{c.track}</span>
-                      {skillN > 0 && <span className="wb2-tag" style={{ color: 'var(--wb-primary)' }}>🧩 可直装 {skillN}</span>}
-                      {attN > 0 && <span className="wb2-tag" style={{ color: 'var(--wb-info)' }}>📎 {attN}</span>}
-                      {c.tags.map((t) => <span key={t} className="wb2-tag">#{t}</span>)}
+                      {/* V11.23 方案S 定稿：色块标签（软底深字全 Pill），赛道色随 tint 走 */}
+                      <span className="wb2-tag tint" style={{ background: trackTint(c.track).bg, color: trackTint(c.track).ink }}>{c.track}</span>
+                      {skillN > 0 && <span className="wb2-tag tint" style={{ background: 'var(--wb-success-soft)', color: 'var(--wb-success)' }}>🧩 可直接用 {skillN}</span>}
+                      {attN > 0 && <span className="wb2-tag tint" style={{ background: 'var(--wb-info-soft)', color: 'var(--wb-info-hover)' }}>📎 {attN}</span>}
+                      {c.tags.map((t) => <span key={t} className="wb2-tag tint" style={{ background: 'var(--wb-accent-purple-soft)', color: 'var(--wb-accent-purple-deep)' }}>#{t}</span>)}
                     </div>
                     <div className="cf">
                       <span><EyeOutlined /> {c.view_count}</span>
@@ -352,8 +353,7 @@ export default function CaseListV2() {
                 {topicView.title}
               </div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-                <span className="wb2-tag">
-                  <i className="d" style={{ background: trackVar(topicView.track) }} />
+                <span className="wb2-tag tint" style={{ background: trackTint(topicView.track).bg, color: trackTint(topicView.track).ink }}>
                   {topicView.track}
                 </span>
                 <span className="wb2-tag">难度 {topicView.difficulty}</span>

@@ -26,7 +26,7 @@ function ScoreCell({ value, label, highlight }: { value: React.ReactNode; label:
     <div style={{
       padding: '14px 16px', borderRadius: 14, height: '100%',
       background: highlight ? GRADIENT.metric : '#FAFBFC',
-      border: highlight ? '1px solid #FFE4D9' : '1px solid #F0F1F4',
+      border: highlight ? '1px solid #daebfb' : '1px solid #F0F1F4',
     }}>
       <div
         className="num"
@@ -199,7 +199,7 @@ export default function WorkDetail() {
             />
           </Card>
 
-          <div className="wb-card" style={{ marginTop: 16, background: GRADIENT.metric, border: '1px solid #FFE4D9', boxShadow: SHADOW.card }}>
+          <div className="wb-card" style={{ marginTop: 16, background: GRADIENT.metric, border: '1px solid #daebfb', boxShadow: SHADOW.card }}>
             <Space wrap>
               <Button
                 icon={<InboxOutlined />} disabled={!canApplyAsset(s.status)}

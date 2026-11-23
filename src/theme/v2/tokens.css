@@ -1,97 +1,117 @@
 /**
  * 设计令牌 v2 · 唯一色源与尺度源
  *
- * ⚠️ 本文件是 P2 提案 §2 + P2.5 视觉稿第 3 轮定稿后的**落地基准**，值与视觉稿一一对应。
- * 现状（v1）全库 103 个颜色字面量、0 个 CSS 变量；本文件是收口的第一步。
- *
- * ⚠️ V9.0-10.08 暖白迁移（依据《橙白 · IP彩色系 UI 设计参考手册》）：
- *   原体系是**冷灰蓝**（页面底 #F5F7FC / 描边 #D6DFEE / 冷墨 #0F172A / 卡片零投影 / 圆角 12px），
- *   与手册的「白底橙主 + 大圆角 + 柔和暖影 + 紫粉点缀」有结构性差异。本次整体迁移为**暖白派**：
- *     ① 页面底改暖白 #FFFDFA，描边改暖 #F2EBDD，不再用冷调分隔；
- *     ② 墨色微暖（#2B2A33 系），保留四级阶梯以保证表格/说明文字对比度；
- *     ③ 卡片/列表加**暖调柔影** rgba(120,70,20,…)，替代「零投影 + 描边」的冷平质感；
- *     ④ 圆角放大到 6/8/16/20（原 4/6/12），接近手册的 10/14/20 区间但不牺牲控件密度；
- *     ⑤ 引入紫 / 粉紫 / 橙黄三档 IP 点缀色做「小面积强调」，浅蓝最少。
- *   主色 **不改**：#FF6B35 已是品牌既定色，与手册 #FF6B1C 同色系，换值收益小于全站返工成本。
+ * ⚠️ V10.20 方案S落地（《最优融合版》，2026-11-20 用户确认）：
+ *   由「橙白 · IP彩色系」整体迁移为**方案S 暖纸纪律派**：
+ *     ① 页面底改暖纸 #FBF8F3，卡片零阴影 + 发丝边 #ECE5DA 承载结构（E/Notion 骨架）；
+ *     ② 全站唯一饱和行动色 = IP 主行动蓝 #3E8EDE（D 的色彩纪律 + B 的 IP 色），
+ *        按钮 / 链接 / 选中态 / 进度条之外，不再出现饱和色；
+ *     ③ 一域一色分类学（F 的分类学）：橙=作业提报 / 紫=案例与选题 / 青=社区问答 /
+ *        粉=悬赏榜 —— 颜色是「找路」的工具，四域色只做导航点、左条、贴纸卡顶条；
+ *     ④ 墨色换深空墨 #2A2E45（IP 全套描边色），贴纸卡用 2px 墨描边；
+ *     ⑤ 阴影纪律：内容卡 0 阴影，悬浮层用中性墨影 rgba(42,46,69,…)。
+ *   本文件是 P2 提案 §2 + P2.5 视觉稿定稿后的**落地基准**，变量名不变、值整体迁移 ——
+ *   全站 var(--wb-*) 消费方无需改动即跟随换肤。
  *
  * 用法：
  *   1. CSS 里写 var(--wb-primary)
  *   2. TS 内联样式写 WB.color.primary（见 ./index.ts，由本文件同源导出）
- *   3. AntD 组件走 ./antd.ts 的 themeV2（开启 cssVar 后 AntD 自身也产出 --ant-* 变量）
+ *   3. AntD 组件走 ./index.ts 的 themeV2（开启 cssVar 后 AntD 自身也产出 --ant-* 变量）
  *
- * 命名规则：--wb-{类别}-{语义}；色值小写，与视觉稿一致。
+ * 命名规则：--wb-{类别}-{语义}；色值小写。
  */
 
 :root {
-  /* ========== 1. 行动与信息（双主色：橙=行动，蓝=信息） ========== */
+  /* ========== 1. 行动与信息（V11.23 融合版：主色回归品牌橙 #FF6B35，骨架仍是方案S） ========== */
   --wb-primary: #ff6b35;
-  --wb-primary-hover: #f05a28;
-  --wb-primary-active: #d94e1f;
-  --wb-primary-soft: #fff3e8; /* 手册 orange-light：暖底不刺眼 */
-  --wb-primary-subtle: #ffe8d9;
-  /* Hero 渐变末端（原 template.css 内联 #ff8f5e，P3-6 收编为令牌） */
-  --wb-primary-light: #ff9f76;
-  /* 品牌色上的「墨色」：白底 / 暖底都可读的深橙，用于强调文字与品牌按钮 */
+  --wb-primary-hover: #e55d2b;
+  --wb-primary-active: #c24e20;
+  --wb-primary-soft: #fff1eb; /* 橙浅底：选中态、信息条 */
+  --wb-primary-subtle: #ffe4d9; /* 稍深一档：hover 浅底 */
+  /* Hero 渐变末端（保留变量名，用于橙色高光） */
+  --wb-primary-light: #ff8f5e;
+  /* 品牌色上的「墨色」：橙底/浅橙底上都可读的深橙 */
   --wb-primary-ink: #c2410c;
 
-  --wb-info: #2563eb;
-  --wb-info-hover: #1d4ed8;
-  --wb-info-soft: #eff8ff;
+  --wb-info: #3e8ede; /* 信息色回到品牌蓝（与主橙区分，附件/提示类用） */
+  --wb-info-hover: #2f76bd;
+  --wb-info-soft: #eaf3fc;
 
-  /* ========== 1.5 IP 彩色系点缀（V9.0 新增，取自《橙白 IP 手册》） ==========
-     只做**小面积强调**：8px 圆点、3px 左条、标签浅底、渐变 CTA。
-     禁止铺成大块底色 —— 手册原则「白色承载一切，橙色是主角，紫/粉/橙黄只点缀」。 */
-  --wb-accent-purple: #8b5cf6; /* 帐Sir 紫 · 第二强调色 */
-  --wb-accent-purple-deep: #6d28d9;
-  --wb-accent-purple-soft: #f6f1ff;
-  --wb-accent-magenta: #ec4899; /* 粉紫 · 渐变末梢 / 成就徽章 */
-  --wb-accent-magenta-soft: #fff0f6;
-  --wb-accent-amber: #ffb020; /* 橙黄 · 宇航员，队列/进行中状态 */
-  --wb-accent-amber-soft: #fff7e6;
-  --wb-accent-sky: #38bdf8; /* 浅蓝 · 最少用，仅数据/信息辅助 */
-  --wb-accent-sky-soft: #eff8ff;
+  /* ========== 1.5 功能域四色（S 一域一色分类学 · V10.20 新增） ==========
+     颜色即导航：作业=橙 / 案例=紫 / 社区=青 / 悬赏=粉。
+     只做导航点、3px 左条、贴纸卡顶条与浅底标签，禁止铺大块饱和底色。 */
+  --wb-domain-work: #f7a325; /* 作业提报 · 冲线宇航员橙 */
+  --wb-domain-work-soft: #fef4e2;
+  --wb-domain-case: #8b7fd7; /* 案例与选题 · 帐Sir 星云紫 */
+  --wb-domain-case-soft: #f0eefb;
+  --wb-domain-community: #6fc8bc; /* 社区问答 · 星尘青 */
+  --wb-domain-community-soft: #e9f7f4;
+  --wb-domain-bounty: #ff8fa3; /* 悬赏榜 · 云腮粉 */
+  --wb-domain-bounty-soft: #ffedf2;
+  /* 贴纸卡墨描边（IP 全套描边色，与 --wb-ink-1 同值，独立命名以表意） */
+  --wb-ink-edge: #2a2e45;
 
-  /* 品牌渐变：橙 → 粉紫 → 紫（手册的同款三段渐变，用于 Hero / 主 CTA） */
-  --wb-gradient-brand: linear-gradient(135deg, #ff6b35 0%, #ec4899 55%, #8b5cf6 100%);
+  /* ========== 1.6 IP 彩色系点缀（沿用变量名，值对齐四域色） ==========
+     兼容既有消费方：accent-* 与四域色一一对应（purple=案例 / magenta=悬赏 /
+     amber=作业 / sky=社区），语义从「装饰点缀」升级为「功能域标识」。 */
+  --wb-accent-purple: #8b7fd7;
+  --wb-accent-purple-deep: #6c62b8;
+  --wb-accent-purple-soft: #f0eefb;
+  --wb-accent-magenta: #ff8fa3;
+  --wb-accent-magenta-soft: #ffedf2;
+  --wb-accent-amber: #f7a325;
+  --wb-accent-amber-soft: #fef4e2;
+  --wb-accent-sky: #6fc8bc;
+  --wb-accent-sky-soft: #e9f7f4;
 
-  /* ========== 2. 中性（暖墨，与暖白底同源） ========== */
-  --wb-ink-1: #2b2a33; /* 标题、数值（手册 text-main） */
-  --wb-ink-2: #514b5b; /* 正文（手册 text-sub #6E6B76 偏浅，压深一档保对比） */
-  --wb-ink-3: #857e90; /* 说明、占位 */
-  --wb-ink-4: #bab3c1; /* 禁用、行分隔 */
+  /* 品牌渐变：S 的 Hero = 深空墨画布 + 行动蓝高光（贴纸宇宙的黑板时刻） */
+  --wb-gradient-brand: linear-gradient(135deg, #ff6b35 0%, #ec4899 55%, #8b5cf6 100%); /* V9 品牌三段渐变回归 */
 
-  /* ========== 3. 表面（5 层，页面靠底色交替制造节奏） ========== */
-  --wb-surface-page: #fffdfa; /* 页面底（暖白，手册 warm-bg） */
-  --wb-surface-card: #ffffff; /* 卡片面（上层） */
-  --wb-surface-band: #f6f1ff; /* 区块底（紫浅，替代原冷调靛蓝） */
-  --wb-surface-brand: #fff3e8; /* 暖调区块底（与主色同源） */
-  --wb-surface-cool: #eff8ff; /* 信息块（提示 / 数据区） */
-  --wb-surface-sunken: #fbf6ef; /* 表头、凹陷区（暖灰） */
+  /* ========== 2. 中性（深空墨，IP 全套描边色系） ========== */
+  --wb-ink-1: #2a2e45; /* 标题、数值、贴纸描边 */
+  --wb-ink-2: #4c5168; /* 正文 */
+  --wb-ink-3: #8a8fa6; /* 说明、占位 */
+  --wb-ink-4: #c2c6d6; /* 禁用、行分隔 */
 
-  --wb-border: #f2ebdd; /* 暖描边（手册 warm-border） */
-  --wb-border-strong: #e4d7c3; /* 输入框描边 */
-  --wb-border-subtle: #f7f1e6; /* 行分隔（最弱档） */
+  /* ========== 3. 表面（5 层，暖纸画布 + 白卡，靠发丝边与留白制造层次） ========== */
+  --wb-surface-page: #fbf8f3; /* 页面底（暖纸，E/Notion 画布） */
+  --wb-surface-card: #ffffff; /* 卡片面（上层，零阴影 + 发丝边） */
+  --wb-surface-band: #f5f1ea; /* 区块底（暖纸深一档：表头、条带） */
+  --wb-surface-brand: #eaf3fc; /* 行动蓝浅底区块 */
+  --wb-surface-cool: #e9f7f4; /* 青域信息块 */
+  --wb-surface-sunken: #f5f1ea; /* 凹陷区（与 band 同源） */
+
+  --wb-border: #ece5da; /* 发丝边（暖纸系，一切卡片的唯一边界语言） */
+  --wb-border-strong: #dcd3c4; /* 输入框描边 */
+  --wb-border-subtle: #f3eee5; /* 行分隔（最弱档） */
 
   /* ========== 4. 状态色（配额封顶 3 个） ========== */
   --wb-success: #059669;
   --wb-success-soft: #ecfdf5;
-  --wb-warning: #d97706; /* v1 是 #F59E0B，黄底白字对比不足 */
+  --wb-warning: #d97706; /* 黄底白字对比不足，压深一档 */
   --wb-warning-soft: #fffbeb;
   --wb-error: #dc2626;
   --wb-error-soft: #fef2f2;
 
-  /* ========== 5. 赛道标识色（只做 8px 圆点 / 3px 左条，不做整块底色） ========== */
-  --wb-track-1: #ff6b35; /* 客户赋能 */
-  --wb-track-2: #2563eb; /* 团队提效 */
-  --wb-track-3: #7c3aed; /* 销售提效 */
+  /* ========== 5. 赛道标识色（对齐四域色系：橙 / 蓝 / 紫） ========== */
+  --wb-track-1: #f7a325; /* 效率提升 / 客户赋能 */
+  --wb-track-2: #3e8ede; /* 业务增长 / 团队提效 */
+  --wb-track-3: #8b7fd7; /* 组织发展 / 销售提效 */
+  /* V11.23 方案S 定稿：色块标签（软底 + 深字，截图定稿样式） */
+  --wb-track-1-soft: #fef4e2;
+  --wb-track-1-ink: #b26a0a;
+  --wb-track-2-soft: #eaf3fc;
+  --wb-track-2-ink: #2f76bd;
+  --wb-track-3-soft: #f0eefb;
+  --wb-track-3-ink: #6c62b8;
 
-  /* ========== 6. 字号阶梯（6 级；v1 是 21 级） ========== */
+  /* ========== 6. 字号阶梯（6 级） ========== */
   --wb-fs-caption: 11px; /* 时间戳、辅助说明 */
   --wb-fs-label: 12px; /* 表头、标签 */
   --wb-fs-body: 14px; /* 正文、表格、按钮 */
   --wb-fs-subtitle: 16px; /* 卡片标题 */
   --wb-fs-section: 20px; /* 页面标题 */
-  --wb-fs-display: 24px; /* 指标数字（替代 v1 的 30/34/52） */
+  --wb-fs-display: 24px; /* 指标数字 */
 
   /* ========== 7. 间距（4px 基线 + 2px 半步） ========== */
   --wb-space-1: 2px;
@@ -104,21 +124,21 @@
   --wb-space-8: 40px;
   --wb-space-9: 48px;
 
-  /* ========== 8. 圆角（V9.0 放大到暖派区间；原为 4/6/12） ========== */
+  /* ========== 8. 圆角（内容卡 8px / 大区块 16 / 贴纸 12 / 胶囊 999） ========== */
   --wb-radius-sm: 6px; /* 小标签、进度条 */
-  --wb-radius-md: 8px; /* 按钮、输入框 */
-  --wb-radius-lg: 16px; /* 卡片、列表行、弹窗（手册 14-20） */
+  --wb-radius-md: 8px; /* 按钮、输入框、内容卡 */
+  --wb-radius-lg: 16px; /* 弹窗、大区块 */
   --wb-radius-xl: 20px; /* 页面级大区块、Hero */
-  --wb-radius-pill: 999px; /* 状态点、头像 */
+  --wb-radius-sticker: 12px; /* 贴纸卡（S/H） */
+  --wb-radius-pill: 999px; /* 状态点、头像、Pill 按钮 */
 
-  /* ========== 9. 阴影（V9.0：由「卡片零投影」改为暖调柔影） ==========
-     手册原则：大圆角 + 柔和暖影替代锋利商务风。rgb(120,70,20) 是暖褐，
-     在暖白底上比冷灰影更「贴纸」、不和橙色主色打架。 */
+  /* ========== 9. 阴影（S 纪律：内容卡零阴影，发丝边承载结构；
+     悬浮层用中性墨影 rgba(42,46,69,…)——深空墨上的影不发脏） ========== */
   --wb-shadow-none: none;
-  --wb-shadow-card: 0 1px 2px rgba(120, 70, 20, 0.05), 0 6px 16px rgba(120, 70, 20, 0.06);
-  --wb-shadow-card-hover: 0 10px 24px rgba(120, 70, 20, 0.1);
-  --wb-shadow-popover: 0 6px 18px rgba(120, 70, 20, 0.1);
-  --wb-shadow-modal: 0 16px 40px rgba(120, 70, 20, 0.16);
+  --wb-shadow-card: none;
+  --wb-shadow-card-hover: 0 10px 24px rgba(42, 46, 69, 0.1);
+  --wb-shadow-popover: 0 6px 18px rgba(42, 46, 69, 0.1);
+  --wb-shadow-modal: 0 16px 40px rgba(42, 46, 69, 0.18);
 
   /* ========== 10. 层级 ========== */
   --wb-z-base: 0;
@@ -138,9 +158,9 @@
   --wb-motion-fade: 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-/* 键盘焦点环：聚焦时边框加深，不换底色、不加外发光 */
+/* 键盘焦点环：聚焦时边框加深，不换底色、不加外发光（行动蓝） */
 :focus-visible {
-  outline: 2px solid rgba(255, 107, 53, 0.55);
+  outline: 2px solid rgba(62, 142, 222, 0.55);
   outline-offset: 2px;
   border-radius: var(--wb-radius-md);
 }

@@ -96,7 +96,7 @@ export default function RoleSwitcher() {
           style={{
             display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
             padding: '4px 10px 4px 4px', borderRadius: 999, background: COLOR.primaryLight,
-            border: '1px solid #FFE4D9', transition: 'all 0.2s ease',
+            border: '1px solid #daebfb', transition: 'all 0.2s ease',
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.boxShadow = SHADOW.button;
@@ -104,7 +104,7 @@ export default function RoleSwitcher() {
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.boxShadow = 'none';
-            e.currentTarget.style.borderColor = '#FFE4D9';
+            e.currentTarget.style.borderColor = '#daebfb';
           }}
         >
           <Avatar size={24} style={{ background: GRADIENT.primary, fontSize: 12, fontWeight: 700 }}>

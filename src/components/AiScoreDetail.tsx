@@ -173,8 +173,8 @@ export default function AiScoreDetail({
               <div
                 key={r.name}
                 style={{
-                  border: '1px solid #F2EBDD', borderRadius: 8, padding: '10px 12px',
-                  background: '#FFFDFA',
+                  border: '1px solid #ECE5DA', borderRadius: 8, padding: '10px 12px',
+                  background: '#fbf8f3',
                 }}
               >
                 <Space align="baseline" size={8} wrap>
@@ -184,7 +184,7 @@ export default function AiScoreDetail({
                   </Typography.Text>
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>/ {r.max}</Typography.Text>
                 </Space>
-                <div style={{ marginTop: 6, fontSize: 13, lineHeight: 1.7, color: '#2B2A33', overflowWrap: 'anywhere' }}>
+                <div style={{ marginTop: 6, fontSize: 13, lineHeight: 1.7, color: '#2a2e45', overflowWrap: 'anywhere' }}>
                   {r.reason ?? (
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                       （本次无该维度理由{model.degraded ? '：规则引擎不产出理由' : ''}）
@@ -199,8 +199,8 @@ export default function AiScoreDetail({
           {model.summary && (
             <div
               style={{
-                border: '1px solid #F2EBDD', borderLeft: '3px solid #FF6B35',
-                borderRadius: 8, padding: '10px 12px', background: '#FFFDFA',
+                border: '1px solid #ECE5DA', borderLeft: '3px solid #FF6B35',
+                borderRadius: 8, padding: '10px 12px', background: '#fbf8f3',
               }}
             >
               <Typography.Text strong style={{ fontSize: 13 }}>总体评价</Typography.Text>

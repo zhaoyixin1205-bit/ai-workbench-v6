@@ -185,6 +185,23 @@
   font-weight: 500;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
 }
+/* ---- V11.23 方案S 全平铺：域色着色（与值守四域同源，激活态仍走 primary 胶囊） ---- */
+.wb2-nav-item.tone-blue.on {
+  background: var(--wb-primary);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 2px 6px rgba(62, 142, 222, 0.32);
+}
+.wb2-nav-item.tone-orange { color: var(--wb-domain-work); }
+.wb2-nav-item.tone-purple { color: var(--wb-domain-case); }
+.wb2-nav-item.tone-pink { color: var(--wb-domain-bounty); }
+.wb2-nav-item.tone-teal { color: var(--wb-domain-community); }
+.wb2-nav-item.tone-ink { color: var(--wb-ink-2); }
+.wb2-nav-item.tone-orange:hover,
+.wb2-nav-item.tone-purple:hover,
+.wb2-nav-item.tone-pink:hover,
+.wb2-nav-item.tone-teal:hover,
+.wb2-nav-item.tone-ink:hover { color: var(--wb-ink-1); }
 .wb2-nav-item.home {
   padding: 4px 12px;
   border-radius: var(--wb-radius-sm);

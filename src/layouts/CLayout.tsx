@@ -76,11 +76,16 @@ export default function CLayout() {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }} onClick={() => nav('/')}>
-          <div style={{
-            width: 32, height: 32, borderRadius: 10, background: GRADIENT.primary,
-            color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontWeight: 800, fontSize: 14, letterSpacing: '0.5px', boxShadow: SHADOW.button,
-          }}>AI</div>
+          {/* V10.20 方案S：全站主形象 AI 宇航员值守 Logo（v1/v2 同源） */}
+          <img
+            src="/ip/mascot-ai.jpg"
+            alt="AI 赋能工作台"
+            draggable={false}
+            style={{
+              width: 32, height: 32, borderRadius: 10, objectFit: 'cover', objectPosition: 'center top',
+              flexShrink: 0, boxShadow: '0 2px 6px rgba(42, 46, 69, 0.18)',
+            }}
+          />
           <Typography.Text strong style={{ fontSize: 16, whiteSpace: 'nowrap', lineHeight: 1.2 }}>AI 赋能工作台</Typography.Text>
         </div>
 

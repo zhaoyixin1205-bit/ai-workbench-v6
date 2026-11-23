@@ -11,6 +11,8 @@ import { COLOR, GRADIENT, SHADOW } from '@/theme';
 import { CoverBlock, HoverCard, MetricCard, Nudge, TrackTag } from '@/components/ui';
 import TeamBoard from '@/components/TeamBoard';
 import SceneBoard from '@/components/SceneBoard';
+/* V10.20 方案S：IP 值守 · 功能板块（v1/v2 同源组件） */
+import DutyBoard from '@/components/DutyBoard';
 import { buildSceneBoard } from '@/service/sceneBoard';
 import AnnounceTicker, { type TickerItem } from '@/components/AnnounceTicker';
 import { DEMO_TODAY } from '@/mock/seedBiz';
@@ -349,6 +351,9 @@ export default function Home() {
           />
         </Col>
       </Row>
+
+      {/* V10.20 方案S：IP 值守 · 功能板块（v1/v2 同源组件；资源库→悬赏榜换防） */}
+      <DutyBoard />
 
       {/* V4.0 CR-01：我的团队（属性驱动，不带团队时整块不渲染） */}
       <TeamBoard />

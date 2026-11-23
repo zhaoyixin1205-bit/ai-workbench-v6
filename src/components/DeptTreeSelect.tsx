@@ -70,7 +70,7 @@ export default function DeptTreeSelect({
         popupMatchSelectWidth={320}
       />
       {hitCount !== null && (
-        <span style={{ fontSize: 11, color: '#857E90' }}>
+        <span style={{ fontSize: 11, color: '#8a8fa6' }}>
           当前命中 <b className="num">{hitCount}</b> 人（含下级）
         </span>
       )}
@@ -86,7 +86,7 @@ export function DeptHitCount({ ids, prefix = '当前命中' }: { ids: string[]; 
   const union = deptSubtreeUnion(depts, ids);
   const n = db.users.filter((u) => u.status !== 99 && (u.dept_id_list ?? []).some((d) => union.has(d))).length;
   return (
-    <span style={{ fontSize: 11, color: 'var(--wb-ink-3, #857E90)' }}>
+    <span style={{ fontSize: 11, color: 'var(--wb-ink-3, #8a8fa6)' }}>
       {prefix} <b className="num">{n}</b> 人（含下级）
     </span>
   );

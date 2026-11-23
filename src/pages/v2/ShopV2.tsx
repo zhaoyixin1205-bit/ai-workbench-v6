@@ -89,7 +89,7 @@ export default function ShopV2() {
       </div>
 
       <div className="wb2-metrics">
-        <div className="wb2-metric" style={{ background: 'linear-gradient(120deg, var(--wb-primary) 0%, #ff8f5e 100%)', color: '#fff' }}>
+        <div className="wb2-metric" style={{ background: 'linear-gradient(120deg, var(--wb-primary) 0%, #FF8F5E 100%)', color: '#fff' }}>
           <div className="lb" style={{ color: 'rgba(255,255,255,.92)' }}><WalletOutlined /> 我的可用积分</div>
           <div className="vl" style={{ color: '#fff' }}>{myPoints}</div>
           <div className="sb" style={{ color: 'rgba(255,255,255,.9)' }}>排名还会继续变，快去做任务</div>

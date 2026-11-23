@@ -87,7 +87,7 @@ export default function PostRichEditor({
   };
 
   return (
-    <div style={{ border: '1px solid var(--wb-border, #F2EBDD)', borderRadius: 8, overflow: 'hidden' }}>
+    <div style={{ border: '1px solid var(--wb-border, #ece5da)', borderRadius: 8, overflow: 'hidden' }}>
       <Toolbar
         editor={editor}
         defaultConfig={{
@@ -125,8 +125,8 @@ export default function PostRichEditor({
         mode="default"
       />
       <div style={{
-        padding: '4px 10px', fontSize: 11, color: 'var(--wb-ink-3, #857E90)',
-        borderTop: '1px solid var(--wb-border, #F2EBDD)', background: 'var(--wb-surface-sunken, #FBF6EF)',
+        padding: '4px 10px', fontSize: 11, color: 'var(--wb-ink-3, #8a8fa6)',
+        borderTop: '1px solid var(--wb-border, #ece5da)', background: 'var(--wb-surface-sunken, #f5f1ea)',
       }}>
         正文图片 {countImages(value)} / {maxImages} 张 · 涉客户数据的截图请先脱敏
       </div>

@@ -100,10 +100,16 @@ export default function BLayout() {
           className="only-pc"
         >
           <div style={{ padding: '16px 16px 8px', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{
-              width: 26, height: 26, borderRadius: 8, background: COLOR.primary, color: '#fff',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700,
-            }}>W</div>
+            {/* V10.20 方案S：主形象 AI 宇航员值守后台 Logo（v1/v2 同源） */}
+            <img
+              src="/ip/mascot-ai.jpg"
+              alt="管理后台"
+              draggable={false}
+              style={{
+                width: 26, height: 26, borderRadius: 8, objectFit: 'cover', objectPosition: 'center top',
+                flexShrink: 0,
+              }}
+            />
             <Typography.Text strong>管理后台</Typography.Text>
           </div>
           <Menu

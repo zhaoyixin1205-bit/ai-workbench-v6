@@ -103,7 +103,14 @@ export default function BLayoutV2() {
       {visibleKeys.size > 0 && (
         <aside className="wb2-side only-pc">
           <div style={{ padding: '8px 20px 4px', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span className="wb2-logo-mark" style={{ width: 26, height: 26, fontSize: 13 }}>W</span>
+            {/* V10.20 方案S：主形象 AI 宇航员值守后台 Logo */}
+            <img
+              className="wb2-logo-mark"
+              src="/ip/mascot-ai.jpg"
+              alt="管理后台"
+              draggable={false}
+              style={{ width: 26, height: 26, objectFit: 'cover', objectPosition: 'center top' }}
+            />
             <span style={{ fontWeight: 600, fontSize: 14, color: 'var(--wb-ink-1)' }}>管理后台</span>
           </div>
 

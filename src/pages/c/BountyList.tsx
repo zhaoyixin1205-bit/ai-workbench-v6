@@ -352,7 +352,7 @@ export default function BountyList() {
                   />
                   <TrackTag track={detail.track} />
                   <span style={{ background: COLOR.primaryLight, color: '#C2410C', fontSize: 12, fontWeight: 700, padding: '2px 10px', borderRadius: 6 }} className="num">{detail.points} 积分</span>
-                  <span style={{ background: '#F7F1E6', color: COLOR.textSub, fontSize: 11, padding: '2px 8px', borderRadius: 6 }}>{detail.source}</span>
+                  <span style={{ background: '#f3eee5', color: COLOR.textSub, fontSize: 11, padding: '2px 8px', borderRadius: 6 }}>{detail.source}</span>
                 </Space>
                 <Typography.Title level={3} style={{ margin: 0 }}>{detail.title}</Typography.Title>
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>

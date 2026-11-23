@@ -4,77 +4,79 @@ import type { ThemeConfig } from 'antd';
  * PRD 第 9 章 UI/UE 设计规范 — 色彩体系（表 79）
  *  参考 getdesign.md 提升质感：保持浅色主战场，但加入更深的阴影、渐变、更克制的辅助色
  *
- * ⚠️ V9.0-10.08 暖白迁移（依据《橙白 · IP彩色系 UI 设计参考手册》）：
- *   底色 / 描边 / 墨色整体由冷灰蓝换为暖白系，与 v2 令牌（src/theme/v2/tokens.css）保持同乔木调，
- *   否则会出现「v1 冷、v2 暖」的版本漂移。主色 #FF6B35 不动（品牌既定色）。
+ * ⚠️ V10.20 方案S落地（2026-11-20 用户确认《最优融合版》）：
+ *   由「橙白 · IP彩色系」整体迁移为**方案S 暖纸纪律派**，与 v2 令牌（src/theme/v2/tokens.css）同源：
+ *     ① 页面底改暖纸 #FBF8F3，发丝边 #ECE5DA，卡片零阴影（E/Notion 骨架）；
+ *     ② 全站唯一饱和行动色 = IP 主行动蓝 #FF6B35（D 的纪律 + B 的 IP 色）；
+ *     ③ 墨色换深空墨 #2A2E45（IP 全套描边色）；
+ *     ④ 一域一色分类学：橙=作业 / 紫=案例 / 青=社区 / 粉=悬赏（见 IP 色组）。
  */
 export const COLOR = {
   primary: '#FF6B35',
   primaryPressed: '#E55D2B',
-  primaryLight: '#FFF3E8', // 手册 orange-light
-  primarySoft: '#FFE4D9',
+  primaryLight: '#FFF1EB', // 行动蓝浅底
+  primarySoft: '#DAEBFB',
   info: '#2563EB',
   ai: '#7C3AED',
   success: '#059669',
-  warning: '#F59E0B',
+  warning: '#D97706',
   error: '#DC2626',
-  bg: '#FFFDFA', // 暖白底（原 #F5F7FB）
-  bgDeep: '#FBF6EF', // 暖灰凹陷（原 #EEF0F4）
+  bg: '#FBF8F3', // 暖纸底（原 #fbf8f3）
+  bgDeep: '#F5F1EA', // 暖纸凹陷（原 #f5f1ea）
   card: '#FFFFFF',
-  border: '#F2EBDD', // 暖描边（原 #E5E7EB）
-  borderLight: '#F7F1E6',
-  text: '#2B2A33',
-  textSub: '#514B5B',
-  textMuted: '#857E90',
-  darkHeader: '#111827',
+  border: '#ECE5DA', // 发丝边（原 #ece5da）
+  borderLight: '#F3EEE5',
+  text: '#2A2E45',
+  textSub: '#4C5168',
+  textMuted: '#8A8FA6',
+  darkHeader: '#2A2E45',
   darkHeaderText: '#F9FAFB',
-  /* ---- V9.0 IP 彩色系点缀：只做小面积强调，不铺大块底色 ---- */
-  purple: '#8B5CF6',
-  purpleDeep: '#6D28D9',
-  purpleLight: '#F6F1FF',
-  magenta: '#EC4899',
-  magentaLight: '#FFF0F6',
-  amber: '#FFB020',
-  amberLight: '#FFF7E6',
-  sky: '#38BDF8',
-  skyLight: '#EFF8FF',
+  /* ---- V10.20 方案S：功能域四色（一域一色分类学，小面积强调） ---- */
+  purple: '#8B7FD7',
+  purpleDeep: '#6C62B8',
+  purpleLight: '#F0EEFB',
+  magenta: '#FF8FA3',
+  magentaLight: '#FFEDF2',
+  amber: '#F7A325',
+  amberLight: '#FEF4E2',
+  sky: '#6FC8BC',
+  skyLight: '#E9F7F4',
 } as const;
 
 export const GRADIENT = {
-  primary: 'linear-gradient(135deg, #FF6B35 0%, #FF8F5E 55%, #FF9D70 100%)',
-  primaryDark: 'linear-gradient(135deg, #E85A28 0%, #FF6B35 100%)',
-  /** V9.0：页面级大横幅统一用手册同款三段渐变（橙 → 粉紫 → 紫）；
-   *  小面积（头像/图标）仍用 primary 纯橙渐变，避免花。 */
+  primary: 'linear-gradient(135deg, #FF6B35 0%, #FF8F5E 100%)',
+  primaryDark: 'linear-gradient(135deg, #E55D2B 0%, #FF6B35 100%)',
+  /** 方案S：页面级大横幅 = 深空墨画布 + 行动蓝高光（贴纸宇宙的黑板时刻） */
   hero: 'linear-gradient(135deg, #FF6B35 0%, #EC4899 55%, #8B5CF6 100%)',
-  subtle: 'linear-gradient(180deg, #FFFFFF 0%, #FFFDFA 100%)',
-  metric: 'linear-gradient(135deg, #FFFFFF 0%, #FFF8F5 100%)',
-  /** V9.0：手册同款品牌渐变（橙 → 粉紫 → 紫），用于 Hero / 主 CTA / 成就区 */
+  subtle: 'linear-gradient(180deg, #FFFFFF 0%, #FBF8F3 100%)',
+  metric: 'linear-gradient(135deg, #FFFFFF 0%, #FCFAF6 100%)',
+  /** 方案S：与 hero 同源，用于 Hero / 主 CTA / 成就区 */
   brand: 'linear-gradient(135deg, #FF6B35 0%, #EC4899 55%, #8B5CF6 100%)',
-  /** V9.0：紫倾向的柔和渐变，用于辅区块（比橙浅，避免整页都在强调） */
-  soft: 'linear-gradient(135deg, #F6F1FF 0%, #FFF0F6 100%)',
+  /** 行动蓝浅底渐变，用于辅区块 */
+  soft: 'linear-gradient(135deg, #FFF1EB 0%, #F0EEFB 100%)',
 };
 
 /**
- * V9.0-10.08：阴影由中性灰 rgba(31,41,55) 改为暖褐 rgba(120,70,20)。
- * 原因：暖白底上打冷灰影会「发脏」，暖褐影在视觉上像白纸落在木桌上，
- * 与橙色主色同源，同时保留原有的四级强度语义（浮起 / 悬浮 / 抬升 / 发光）。
+ * V10.20 方案S：内容卡零阴影（发丝边承载结构，E/Notion 骨架）；
+ * 悬浮层用中性墨影 rgba(42,46,69,…)——深空墨上的影不发脏。
+ * 保留原有四级强度语义（浮起 / 悬浮 / 抬升 / 发光）。
  */
 export const SHADOW = {
-  card: '0 2px 8px rgba(120, 70, 20, 0.06), 0 1px 2px rgba(120, 70, 20, 0.04)',
-  cardHover: '0 12px 28px rgba(120, 70, 20, 0.10), 0 4px 8px rgba(120, 70, 20, 0.05)',
-  elevated: '0 8px 24px rgba(120, 70, 20, 0.08), 0 2px 4px rgba(120, 70, 20, 0.04)',
-  button: '0 4px 12px rgba(255, 107, 53, 0.22)',
-  buttonHover: '0 6px 16px rgba(255, 107, 53, 0.30)',
-  dropdown: '0 8px 30px rgba(120, 70, 20, 0.12)',
-  inset: 'inset 0 1px 2px rgba(120, 70, 20, 0.05)',
+  card: 'none',
+  cardHover: '0 10px 24px rgba(42, 46, 69, 0.10)',
+  elevated: '0 8px 24px rgba(42, 46, 69, 0.10)',
+  button: 'none',
+  buttonHover: '0 6px 16px rgba(62, 142, 222, 0.22)',
+  dropdown: '0 8px 30px rgba(42, 46, 69, 0.12)',
+  inset: 'inset 0 1px 2px rgba(42, 46, 69, 0.05)',
   /* ---- V4.1 Moka 复刻：阴影不用纯黑，强调元素用品牌色光晕代替灰影 ---- */
   /** 极轻浮起（列表行、小卡默认态） */
-  flat: 'rgba(120, 70, 20, 0.14) 0 2px 4px',
+  flat: 'rgba(42, 46, 69, 0.14) 0 2px 4px',
   /** 悬浮卡 / 下拉 / hover 预览 */
-  float: 'rgba(120, 70, 20, 0.16) 0 7px 14px',
+  float: 'rgba(42, 46, 69, 0.16) 0 7px 14px',
   /** 品牌色光晕：被强调的元素看起来在「发光」而不是「浮起来」 */
-  glow: 'rgba(255, 138, 96, 0.28) 0 14px 28px, rgba(255, 138, 96, 0.16) 0 6px 10px',
-  glowSoft: 'rgba(255, 138, 96, 0.20) 0 8px 20px',
+  glow: 'rgba(62, 142, 222, 0.28) 0 14px 28px, rgba(62, 142, 222, 0.16) 0 6px 10px',
+  glowSoft: 'rgba(62, 142, 222, 0.20) 0 8px 20px',
 };
 
 /** V4.1 圆角四档制（源自 Moka 规格：4/8 → 12/16 → 20+ → 胶囊） */
@@ -134,7 +136,7 @@ export const theme: ThemeConfig = {
       defaultShadow: 'none',
       borderRadius: 10,
     },
-    Table: { headerBg: COLOR.bgDeep, borderColor: COLOR.borderLight, cellPaddingBlock: 16, cellPaddingInline: 20, rowHoverBg: '#FDF8F1' },
+    Table: { headerBg: COLOR.bgDeep, borderColor: COLOR.borderLight, cellPaddingBlock: 16, cellPaddingInline: 20, rowHoverBg: '#f8f4ec' },
     Layout: { bodyBg: COLOR.bg, headerBg: COLOR.card, headerHeight: 64 },
     Tabs: { itemSelectedColor: COLOR.primary, inkBarColor: COLOR.primary, margin: 8 },
     /* V9.0：列表行距放松，与 v2 的 .wb2-li 卡片列表在尺度上对齐 */
@@ -148,16 +150,16 @@ export const theme: ThemeConfig = {
   },
 };
 
-/** 赛道 / 状态 语义色映射 */
+/** 赛道 / 状态 语义色映射（V10.20 方案S：对齐四域色系） */
 export const TRACK_COLOR: Record<string, string> = {
-  客户赋能: '#FF6B35',
-  团队提效: '#2563EB',
-  销售提效: '#7C3AED',
+  客户赋能: '#F7A325',
+  团队提效: '#3E8EDE', /* 赛道蓝不随主色走（v2 track-2 同源） */
+  销售提效: '#8B7FD7',
 };
 
 /** 更现代的浅色 tag 配色：低饱和背景 + 深色文字 */
 export const TRACK_TAG: Record<string, { bg: string; color: string }> = {
-  客户赋能: { bg: '#FFF1EB', color: '#C2410C' },
-  团队提效: { bg: '#EFF6FF', color: '#1D4ED8' },
-  销售提效: { bg: '#F3E8FF', color: '#7E22CE' },
+  客户赋能: { bg: '#FEF4E2', color: '#B45309' },
+  团队提效: { bg: '#EAF3FC', color: '#2F76BD' }, /* 赛道蓝浅底 */
+  销售提效: { bg: '#F0EEFB', color: '#6C62B8' },
 };

@@ -579,7 +579,7 @@ export default function JudgeReview({ variant = 'admin' }: { variant?: 'admin' |
                 style={{
                   display: 'flex', alignItems: 'center', gap: 10,
                   marginBottom: 10, paddingBottom: 10,
-                  borderBottom: '1px solid #F2EBDD',
+                  borderBottom: '1px solid #ece5da',
                 }}
               >
                 <Typography.Text strong style={{ fontSize: 13 }}>复核进度</Typography.Text>

@@ -199,7 +199,7 @@ function ScoreBlock({ label, value, highlight }: { label: string; value: React.R
       background: highlight ? '#FFF1E9' : '#FAFBFC',
       border: highlight ? '1px solid #FFD9C2' : '1px solid #F0F1F4',
     }}>
-      <div className="num" style={{ fontSize: 26, fontWeight: 800, color: highlight ? '#FF6B35' : '#2B2A33' }}>{value}</div>
+      <div className="num" style={{ fontSize: 26, fontWeight: 800, color: highlight ? '#FF6B35' : '#2a2e45' }}>{value}</div>
       <div style={{ fontSize: 12, color: '#8A8F99', marginTop: 6 }}>{label}</div>
     </div>
   );

@@ -1,0 +1,179 @@
+/**
+ * IP 值守 · 功能板块样式（方案S · V10.20）
+ * 贴纸卡纪律：2px 墨描边（--wb-ink-edge）+ 域色顶条 + 零阴影；
+ * hover 才微旋转 + 浮起 —— 动效只表达「可点」，不做装饰动画。
+ */
+
+.wb-duty {
+  margin: var(--wb-space-6) 0;
+}
+
+.wb-duty-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--wb-space-4);
+  margin-bottom: var(--wb-space-4);
+}
+
+/* V11.23 方案S 定稿：板块头改为「功能域 · 伙伴值守」大标题 + 右侧认识伙伴 */
+.wb-duty-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--wb-ink-1);
+  letter-spacing: -0.01em;
+}
+.wb-duty-title b {
+  color: var(--wb-primary);
+  font-weight: 800;
+}
+.wb-duty-more {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--wb-ink-2);
+  font-size: var(--wb-fs-label);
+  font-weight: 600;
+  cursor: pointer;
+}
+.wb-duty-more:hover { color: var(--wb-primary); }
+
+.wb-duty-sub {
+  color: var(--wb-ink-3);
+  font-size: var(--wb-fs-label);
+}
+
+.wb-duty-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--wb-space-5);
+}
+
+.wb-duty-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--wb-surface-card);
+  border: 2px solid var(--wb-ink-edge);
+  border-radius: var(--wb-radius-sticker);
+  padding: var(--wb-space-5);
+  overflow: hidden;
+  transition: transform var(--wb-motion-fast), box-shadow var(--wb-motion-fast);
+}
+
+.wb-duty-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 6px;
+  background: var(--duty-color, var(--wb-primary));
+}
+
+.wb-duty-card[data-domain='work'] { --duty-color: var(--wb-domain-work); }
+.wb-duty-card[data-domain='case'] { --duty-color: var(--wb-domain-case); }
+.wb-duty-card[data-domain='community'] { --duty-color: var(--wb-domain-community); }
+.wb-duty-card[data-domain='bounty'] { --duty-color: var(--wb-domain-bounty); }
+
+.wb-duty-card:hover {
+  transform: rotate(-1deg) translateY(-3px);
+  box-shadow: var(--wb-shadow-card-hover);
+}
+
+.wb-duty-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wb-space-3);
+  margin-bottom: var(--wb-space-3);
+}
+
+.wb-duty-name {
+  font-size: var(--wb-fs-subtitle);
+  font-weight: 800;
+  color: var(--wb-ink-1);
+  letter-spacing: -0.01em;
+}
+
+.wb-duty-mascot {
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border-radius: var(--wb-radius-pill);
+  background: var(--duty-color);
+  color: #fff;
+  font-size: var(--wb-fs-caption);
+  font-weight: 600;
+}
+
+.wb-duty-figure {
+  align-self: center;
+  width: 96px;
+  height: 96px;
+  margin: var(--wb-space-2) 0 var(--wb-space-4);
+  border-radius: 50%;
+  background: var(--duty-soft, var(--wb-primary-soft));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.wb-duty-card[data-domain='work'] { --duty-soft: var(--wb-domain-work-soft); }
+.wb-duty-card[data-domain='case'] { --duty-soft: var(--wb-domain-case-soft); }
+.wb-duty-card[data-domain='community'] { --duty-soft: var(--wb-domain-community-soft); }
+.wb-duty-card[data-domain='bounty'] { --duty-soft: var(--wb-domain-bounty-soft); }
+
+.wb-duty-figure img {
+  width: 82%;
+  height: 82%;
+  object-fit: contain;
+}
+
+.wb-duty-duty {
+  font-size: var(--wb-fs-body);
+  color: var(--wb-ink-2);
+  margin-bottom: var(--wb-space-5);
+}
+
+.wb-duty-foot {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wb-space-3);
+}
+
+.wb-duty-stat {
+  font-size: var(--wb-fs-label);
+  color: var(--wb-ink-3);
+}
+
+.wb-duty-cta {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--duty-color);
+  font-size: var(--wb-fs-body);
+  font-weight: 700;
+}
+
+.wb-duty-badge {
+  position: absolute;
+  top: 14px;
+  right: -30px;
+  transform: rotate(35deg);
+  background: var(--wb-domain-bounty);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 34px;
+  letter-spacing: 0.05em;
+}
+
+@media (max-width: 640px) {
+  .wb-duty-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--wb-space-4);
+  }
+  .wb-duty-figure { width: 72px; height: 72px; }
+}

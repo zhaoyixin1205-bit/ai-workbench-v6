@@ -5,7 +5,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useStore } from '@/store/store';
 import { useCaseSimilar } from '@/hooks/useCaseSimilar';
 import { SkillCard, AttachCard } from '@/components/ResourceCards';
-import { trackVar } from '@/theme/v2/track';
+import { trackTint } from '@/theme/v2/track';
 import '../../theme/v2/template.css';
 
 /**
@@ -67,11 +67,12 @@ export default function CaseDetailV2() {
         <div style={{ flex: 1, minWidth: 0 }}>
           <h1 className="wb2-ph-t">{c.title}</h1>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 'var(--wb-space-3)' }}>
-            <span className="wb2-tag"><i className="d" style={{ background: trackVar(c.track) }} />{c.track}</span>
-            <span className="wb2-tag">建议耗时 {c.duration}</span>
-            {skills.length > 0 && <span className="wb2-tag" style={{ color: 'var(--wb-primary)' }}>可直接装 · {skills.length} 个 Skill</span>}
-            {atts.length > 0 && <span className="wb2-tag" style={{ color: 'var(--wb-info)' }}>{atts.length} 个附件</span>}
-            {c.tags.map((t) => <span key={t} className="wb2-tag">#{t}</span>)}
+            {/* V11.23 方案S 定稿：色块标签（软底深字全 Pill），与列表卡同语言 */}
+            <span className="wb2-tag tint" style={{ background: trackTint(c.track).bg, color: trackTint(c.track).ink }}>{c.track}</span>
+            <span className="wb2-tag tint">建议耗时 {c.duration}</span>
+            {skills.length > 0 && <span className="wb2-tag tint" style={{ background: 'var(--wb-success-soft)', color: 'var(--wb-success)' }}>可直接用 · {skills.length} 个 Skill</span>}
+            {atts.length > 0 && <span className="wb2-tag tint" style={{ background: 'var(--wb-info-soft)', color: 'var(--wb-info-hover)' }}>{atts.length} 个附件</span>}
+            {c.tags.map((t) => <span key={t} className="wb2-tag tint" style={{ background: 'var(--wb-accent-purple-soft)', color: 'var(--wb-accent-purple-deep)' }}>#{t}</span>)}
           </div>
         </div>
         <div className="wb2-ph-a">

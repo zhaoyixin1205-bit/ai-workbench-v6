@@ -87,6 +87,7 @@ export const RADIUS = {
   md: 'var(--wb-radius-md)',
   lg: 'var(--wb-radius-lg)',
   xl: 'var(--wb-radius-xl)',
+  sticker: 'var(--wb-radius-sticker)',
   pill: 'var(--wb-radius-pill)',
 } as const;
 
@@ -113,9 +114,10 @@ export const WB = { color: COLOR, font: FONT, space: SPACE, radius: RADIUS, shad
 /**
  * 暖影常量：与 tokens.css 的 --wb-shadow-* 同源。
  * AntD token 只吃字面量（不吃 var()），所以值与 CSS 必须手工保持一致 —— 改一处要改两边。
+ * V10.20 方案S：内容卡零阴影（发丝边承载结构），悬浮层用中性墨影 rgba(42,46,69,…)。
  */
-const WARM_SHADOW_CARD = '0 1px 2px rgba(120,70,20,0.05), 0 6px 16px rgba(120,70,20,0.06)';
-const WARM_SHADOW_MODAL = '0 16px 40px rgba(120,70,20,0.16)';
+const WARM_SHADOW_CARD = 'none';
+const WARM_SHADOW_MODAL = '0 16px 40px rgba(42,46,69,0.18)';
 
 /**
  * AntD 主题 v2
@@ -127,31 +129,32 @@ const WARM_SHADOW_MODAL = '0 16px 40px rgba(120,70,20,0.16)';
  *   ★3 borderRadius 10/16 → 8/16（SM 6）
  *   ★4 colorWarning #F59E0B → #D97706（原值黄底白字对比不足）
  *
- * V9.0-10.08 暖白迁移：字体色 / 描边 / 底色整体换暖（#2B2A33 墨、#F2EBDD 描边、#FFFDFA 页底），
+ * V9.0-10.08 暖白迁移：字体色 / 描边 / 底色整体换暖（#2a2e45 墨、#ece5da 描边、#fbf8f3 页底），
  * 并保持与 tokens.css 的 --wb-* 一一对应 —— CSS 变量是唯一色源，这里只是把同一组值喂给 AntD。
  */
 export const themeV2: ThemeConfig = {
   cssVar: true,
   token: {
+    // V11.23 融合版：主色回归品牌橙 #FF6B35（值与 tokens.css 同源）；信息色留品牌蓝
     colorPrimary: '#FF6B35',
     colorInfo: '#2563EB',
     colorSuccess: '#059669',
     colorWarning: '#D97706',
     colorError: '#DC2626',
 
-    colorText: '#2B2A33',
-    colorTextSecondary: '#514B5B',
-    colorTextTertiary: '#857E90',
-    colorTextQuaternary: '#BAB3C1',
+    colorText: '#2A2E45',
+    colorTextSecondary: '#4C5168',
+    colorTextTertiary: '#8A8FA6',
+    colorTextQuaternary: '#C2C6D6',
 
-    colorBorder: '#F2EBDD',
-    colorBorderSecondary: '#F7F1E6',
-    colorBgLayout: '#FFFDFA',
+    colorBorder: '#ECE5DA',
+    colorBorderSecondary: '#F3EEE5',
+    colorBgLayout: '#FBF8F3',
     colorBgContainer: '#FFFFFF',
     colorBgElevated: '#FFFFFF',
 
-    borderRadius: 8, // ★3
-    borderRadiusLG: 16, // ★3
+    borderRadius: 8,
+    borderRadiusLG: 16,
     borderRadiusSM: 6,
 
     fontSize: 14,
@@ -162,28 +165,26 @@ export const themeV2: ThemeConfig = {
   },
   components: {
     Card: {
-      boxShadow: WARM_SHADOW_CARD, // ★2
+      boxShadow: WARM_SHADOW_CARD, // ★2 方案S：零阴影 + 发丝边
       borderRadiusLG: 16,
-      paddingLG: 24, // V9.0：卡片四面留白加大（原 20）
-      colorBorderSecondary: '#F7F1E6',
+      paddingLG: 24,
+      colorBorderSecondary: '#ECE5DA',
     },
     Button: {
       borderRadius: 6,
-      primaryShadow: 'none', // 主按钮不再发橙光
+      primaryShadow: 'none',
       defaultShadow: 'none',
       controlHeight: 36,
       fontWeight: 500,
     },
     Table: {
-      headerBg: '#FBF6EF',
-      headerColor: '#857E90',
+      headerBg: '#F5F1EA',
+      headerColor: '#8A8FA6',
       headerSplitColor: 'transparent',
-      borderColor: '#F7F1E6',
-      /* V9.0：行高 / 行宽都放松一档 —— 表格是最容易挤的信息密度
-         12/16 → 16/20，视觉行数减少但可读性提升，配合暖白底不显空 */
+      borderColor: '#F3EEE5',
       cellPaddingBlock: 16,
       cellPaddingInline: 20,
-      rowHoverBg: '#FDF8F1',
+      rowHoverBg: '#F8F4EC',
     },
     /* V9.0 新增：列表呼吸感。v1 页面大量直接使用 AntD List，
        这里把行距一次性放松，避免每页单独覆写 CSS 导致两版漂移。 */
@@ -193,13 +194,13 @@ export const themeV2: ThemeConfig = {
       descriptionFontSize: 12,
     },
     Layout: {
-      bodyBg: '#F5F7FC',
+      bodyBg: '#FBF8F3',
       headerBg: '#FFFFFF',
       headerHeight: 56,
       headerPadding: '0 24px',
     },
     Menu: {
-      itemSelectedBg: '#FFF3E8',
+      itemSelectedBg: '#EAF3FC',
       itemSelectedColor: '#FF6B35',
       itemBorderRadius: 8,
       groupTitleFontSize: 11,
@@ -210,15 +211,15 @@ export const themeV2: ThemeConfig = {
     },
     Tag: {
       borderRadiusSM: 6,
-      defaultBg: '#FBF6EF',
-      defaultColor: '#514B5B',
+      defaultBg: '#F5F1EA',
+      defaultColor: '#4C5168',
     },
     Input: { borderRadius: 8, controlHeight: 36 },
     Select: { borderRadius: 8, controlHeight: 36 },
     Modal: { borderRadiusLG: 16, contentBg: '#FFFFFF', titleFontSize: 16, boxShadow: WARM_SHADOW_MODAL },
     Drawer: { colorBgElevated: '#FFFFFF' },
-    Segmented: { itemSelectedBg: '#FFFFFF', trackBg: '#FBF6EF' },
-    Empty: { colorTextDescription: '#857E90' },
+    Segmented: { itemSelectedBg: '#FFFFFF', trackBg: '#F5F1EA' },
+    Empty: { colorTextDescription: '#8A8FA6' },
     Statistic: { contentFontSize: 24, titleFontSize: 12 },
   },
 };

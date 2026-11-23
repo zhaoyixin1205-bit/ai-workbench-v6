@@ -38,25 +38,33 @@ interface NavItem {
   key: string;
   label: string;
   mobile?: string;
+  /** V11.23 方案S：域色着色（blue/orange/purple/pink/teal/ink），与值守四域同源 */
+  tone?: 'blue' | 'orange' | 'purple' | 'pink' | 'teal' | 'ink';
   icon: React.ReactNode;
   group: 'main' | 'act' | 'grow';
 }
 
 /** 分组定义：main=独立入口；act=我要参与；grow=学习与产出 */
+/**
+ * V11.23 方案S 全栈重构：顶部导航改为全平铺（用户拍板 A）。
+ * 顺序对齐首页值守四域：作业提报(橙) → 案例与选题(紫) → 悬赏榜(粉) → 社区(青)，
+ * 悬赏榜按拍板提前到社区之前；低频栏目全保留；评委评分收进顶栏右侧按钮。
+ * tone = 域色，用于导航文字着色（与 DutyBoard 四域同源）。
+ */
 const NAV: NavItem[] = [
-  { key: '/', label: '首页', icon: <HomeOutlined />, group: 'main' },
-  /* V7.0 CR-32：评委评分入口，排在「案例与选题」之前，与 v1 菜单顺序一致 */
-  { key: '/judge', label: '评委评分', icon: <SafetyCertificateOutlined />, group: 'act' },
-  { key: '/cases', label: '案例与选题', icon: <BulbOutlined />, group: 'act' },
-  { key: '/bounty', label: '悬赏榜', icon: <TrophyOutlined />, group: 'act' },
-  { key: '/work', label: '作业提报', mobile: '交作业', icon: <FormOutlined />, group: 'act' },
-  { key: '/clinic', label: '专家门诊', mobile: '问诊', icon: <MedicineBoxOutlined />, group: 'grow' },
-  { key: '/community', label: '社区', icon: <TeamOutlined />, group: 'grow' },
-  { key: '/assets', label: '资产库', icon: <AppstoreOutlined />, group: 'grow' },
-  { key: '/shop', label: '积分商城', icon: <GiftOutlined />, group: 'grow' },
+  { key: '/', label: '首页', tone: 'blue', icon: <HomeOutlined />, group: 'main' },
+  { key: '/work', label: '作业提报', mobile: '交作业', tone: 'orange', icon: <FormOutlined />, group: 'act' },
+  { key: '/cases', label: '案例与选题', tone: 'purple', icon: <BulbOutlined />, group: 'act' },
+  { key: '/bounty', label: '悬赏榜', tone: 'pink', icon: <TrophyOutlined />, group: 'act' },
+  { key: '/community', label: '社区', tone: 'teal', icon: <TeamOutlined />, group: 'grow' },
+  { key: '/clinic', label: '专家门诊', mobile: '问诊', tone: 'teal', icon: <MedicineBoxOutlined />, group: 'grow' },
+  { key: '/assets', label: '资产库', tone: 'teal', icon: <AppstoreOutlined />, group: 'grow' },
+  { key: '/shop', label: '积分商城', tone: 'orange', icon: <GiftOutlined />, group: 'grow' },
   /* V6.0 CR-30：负责人团队视图 */
-  { key: '/team', label: '我的团队', icon: <TeamOutlined />, group: 'grow' },
-  { key: '/me', label: '个人中心', mobile: '我的', icon: <UserOutlined />, group: 'main' },
+  { key: '/team', label: '我的团队', tone: 'ink', icon: <TeamOutlined />, group: 'grow' },
+  { key: '/me', label: '个人中心', mobile: '我的', tone: 'ink', icon: <UserOutlined />, group: 'main' },
+  /* V7.0 CR-32：评委评分 —— 桌面端收进顶栏右侧按钮，移动端 tabbar 白名单仍保留 */
+  { key: '/judge', label: '评委评分', tone: 'ink', icon: <SafetyCertificateOutlined />, group: 'act' },
 ];
 
 const GROUP_LABEL: Record<string, string> = { act: '我要参与', grow: '学习与产出' };
@@ -117,8 +125,6 @@ export default function CLayoutV2() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [kw, setKw] = useState('');
-  /** 分组下拉展开态：hover 与 click 共用（触屏无 hover，故必须支持点击） */
-  const [openGroup, setOpenGroup] = useState<'act' | 'grow' | null>(null);
 
   /** V8.3-10.08 需求⑤：红点口径下沉到 messageCenter —— 广播不再计入个人未读 */
   const unread = countMyUnread(db.messages, me);
@@ -160,19 +166,6 @@ export default function CLayoutV2() {
 
   useEffect(() => { setCursor(0); }, [kw]);
 
-  /** 跳路由后收起分组下拉（否则面板会挂在旧页面上） */
-  useEffect(() => { setOpenGroup(null); }, [loc.pathname]);
-
-  /** 点击顶栏之外关闭分组下拉（触屏点击开合后需要） */
-  useEffect(() => {
-    if (!openGroup) return;
-    const onDown = (e: MouseEvent) => {
-      if (!(e.target as HTMLElement).closest('.wb2-nav-group')) setOpenGroup(null);
-    };
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, [openGroup]);
-
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -196,74 +189,37 @@ export default function CLayoutV2() {
     nav(to);
   };
 
-  /**
-   * 分组导航（方案 D）：组名常驻、子项 hover/点击展开
-   *
-   * 相对「9 项平铺」的变化：顶栏导航区从约 719px 降到约 260px，1280 视口不再与右侧重叠。
-   * 能力零损失：① 触发按钮上显示当前所在子项，当前位置始终可见；
-   * ② 子项仍走 checkCAccess 过滤后的 navItems，与页级守卫同一份授权表；
-   * ③ 触屏无 hover，故同时支持点击开合。
-   */
-  const renderGroup = (g: 'act' | 'grow') => {
-    const items = navItems.filter((n) => n.group === g);
-    if (items.length === 0) return null;
-    const active = items.find((n) => currentPath === n.key);
-    return (
-      <div
-        className={`wb2-nav-group${openGroup === g ? ' open' : ''}`}
-        key={g}
-        onMouseEnter={() => setOpenGroup(g)}
-        onMouseLeave={() => setOpenGroup((v) => (v === g ? null : v))}
-      >
-        <button
-          type="button"
-          className={`wb2-nav-trigger${active ? ' on' : ''}`}
-          onClick={() => setOpenGroup((v) => (v === g ? null : g))}
-          aria-expanded={openGroup === g}
-        >
-          <span className="gp">{GROUP_LABEL[g]}</span>
-          {active && <span className="cur">{active.label}</span>}
-          <DownOutlined className="caret" />
-        </button>
-        <div className="wb2-nav-drop">
-          <div className="wb2-nav-label">{GROUP_LABEL[g]}</div>
-          <div className="wb2-nav-box col">
-            {items.map((n) => (
-              <button
-                key={n.key}
-                className={`wb2-nav-item${currentPath === n.key ? ' on' : ''}`}
-                onClick={() => { setOpenGroup(null); nav(n.key); }}
-              >
-                {n.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  };
+  /* V11.23 方案S：分组下拉随全平铺导航一并移除（renderGroup / openGroup 已删除） */
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--wb-surface-page)', display: 'flex', flexDirection: 'column' }}>
       {/* ================= 顶栏 ================= */}
       <header className="wb2-hd only-pc">
         <button className="wb2-logo" onClick={() => nav('/')}>
-          <span className="wb2-logo-mark" style={{ fontSize: 12, fontWeight: 700 }}>AI</span>
+          {/* V10.20 方案S：全站主形象 AI 宇航员值守 Logo */}
+          <img
+            className="wb2-logo-mark"
+            src="/ip/mascot-ai.jpg"
+            alt="AI 赋能工作台"
+            draggable={false}
+            style={{ objectFit: 'cover', objectPosition: 'center top' }}
+          />
           <span className="wb2-logo-name">AI 赋能工作台</span>
         </button>
 
         <nav className="wb2-nav">
-          {navItems.filter((n) => n.group === 'main').map((n) => (
-            <button
-              key={n.key}
-              className={`wb2-nav-item home${currentPath === n.key ? ' on' : ''}`}
-              onClick={() => nav(n.key)}
-            >
-              {n.label}
-            </button>
-          ))}
-          {renderGroup('act')}
-          {renderGroup('grow')}
+          {/* V11.23 方案S：全平铺（评委评分除外 —— 收进顶栏右侧按钮） */}
+          {navItems
+            .filter((n) => n.key !== '/judge')
+            .map((n) => (
+              <button
+                key={n.key}
+                className={`wb2-nav-item tone-${n.tone ?? 'ink'}${currentPath === n.key ? ' on' : ''}`}
+                onClick={() => nav(n.key)}
+              >
+                {n.label}
+              </button>
+            ))}
         </nav>
 
         <div className="wb2-hd-right">
@@ -290,6 +246,13 @@ export default function CLayoutV2() {
             </div>
           )}
 
+          {navItems.some((n) => n.key === '/judge') && (
+            <Tooltip title="评委评分">
+              <Button size="small" icon={<SafetyCertificateOutlined />} onClick={() => nav('/judge')}>
+                <span className="wb2-admin-txt">评分</span>
+              </Button>
+            </Tooltip>
+          )}
           {canAdmin && (
             <Tooltip title="管理后台 / 工作台">
               <Button size="small" icon={<SettingOutlined />} onClick={() => nav('/admin')}>
@@ -309,7 +272,13 @@ export default function CLayoutV2() {
       {/* 移动端顶栏 */}
       <header className="wb2-hd only-mobile" style={{ height: 52 }}>
         <button className="wb2-logo" onClick={() => nav('/')}>
-          <span className="wb2-logo-mark" style={{ fontSize: 12, fontWeight: 700 }}>AI</span>
+          <img
+            className="wb2-logo-mark"
+            src="/ip/mascot-ai.jpg"
+            alt="AI 赋能工作台"
+            draggable={false}
+            style={{ objectFit: 'cover', objectPosition: 'center top' }}
+          />
           <span className="wb2-logo-name">AI 赋能工作台</span>
         </button>
         <div className="wb2-hd-right">

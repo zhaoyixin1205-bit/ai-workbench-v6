@@ -161,25 +161,30 @@ export default function Login({ callbackPath = '' }: { callbackPath?: string }) 
   return (
     <div style={{
       minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'var(--wb-surface-page, #FFFDFA)', padding: 24,
+      background: 'var(--wb-surface-page, #fbf8f3)', padding: 24,
     }}>
       <div style={{ width: '100%', maxWidth: 520 }}>
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
-          <div style={{
-            width: 56, height: 56, margin: '0 auto 14px', borderRadius: 18,
-            background: 'linear-gradient(135deg,#FF6B35,#EC4899 55%,#8B5CF6)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: '#fff', fontSize: 24, fontWeight: 800,
-          }}>W</div>
+          {/* V10.20 方案S：全站主形象 AI 宇航员值守登录页 */}
+          <img
+            src="/ip/mascot-ai.jpg"
+            alt="WorkBuddy AI 赋能工作台"
+            draggable={false}
+            style={{
+              width: 72, height: 72, margin: '0 auto 14px', borderRadius: '50%',
+              objectFit: 'cover', objectPosition: 'center top', display: 'block',
+              boxShadow: '0 6px 18px rgba(42, 46, 69, 0.20)',
+            }}
+          />
           <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em' }}>WorkBuddy AI 赋能工作台</div>
-          <div style={{ fontSize: 13, color: 'var(--wb-ink-3,#857E90)', marginTop: 6 }}>
+          <div style={{ fontSize: 13, color: 'var(--wb-ink-3,#8a8fa6)', marginTop: 6 }}>
             请先确认你的身份 —— 不同角色看到的页面与数据不同
           </div>
         </div>
 
         {sessionNotice && !busy && (
           <div style={{
-            background: '#FFF7E6', border: '1px solid #FFE0A3', borderRadius: 10,
+            background: '#fef4e2', border: '1px solid #FFE0A3', borderRadius: 10,
             padding: '10px 12px', marginBottom: 14, fontSize: 12.5, color: '#92400E', lineHeight: 1.7,
           }}>
             {sessionNotice}
@@ -200,13 +205,13 @@ export default function Login({ callbackPath = '' }: { callbackPath?: string }) 
 
         {!busy && dingtalkOn !== false && (
           <div style={{
-            background: 'var(--wb-surface-card,#fff)', border: '1px solid var(--wb-border,#F2EBDD)',
+            background: 'var(--wb-surface-card,#fff)', border: '1px solid var(--wb-border,#ECE5DA)',
             borderRadius: 'var(--wb-radius-lg,16px)', padding: 28, textAlign: 'center',
             boxShadow: 'var(--wb-shadow-card)',
           }}>
             <QrcodeOutlined style={{ fontSize: 44, color: '#1677FF' }} />
             <div style={{ marginTop: 14, fontWeight: 700, fontSize: 16 }}>钉钉扫码登录</div>
-            <div style={{ fontSize: 12.5, color: 'var(--wb-ink-3,#857E90)', marginTop: 6, lineHeight: 1.7 }}>
+            <div style={{ fontSize: 12.5, color: 'var(--wb-ink-3,#8a8fa6)', marginTop: 6, lineHeight: 1.7 }}>
               身份与权限以钉钉通讯录为准，换人登录即换视角
             </div>
             <Button
@@ -236,18 +241,18 @@ export default function Login({ callbackPath = '' }: { callbackPath?: string }) 
 
         {!busy && dingtalkOn === false && (
           <div style={{
-            background: 'var(--wb-surface-card,#fff)', border: '1px solid var(--wb-border,#F2EBDD)',
+            background: 'var(--wb-surface-card,#fff)', border: '1px solid var(--wb-border,#ECE5DA)',
             borderRadius: 'var(--wb-radius-lg,16px)', padding: 20,
             boxShadow: 'var(--wb-shadow-card)',
           }}>
-            <div style={{ fontSize: 13, color: 'var(--wb-ink-2,#514B5B)', marginBottom: 12 }}>
+            <div style={{ fontSize: 13, color: 'var(--wb-ink-2,#4c5168)', marginBottom: 12 }}>
               <SafetyCertificateOutlined style={{ marginRight: 6, color: '#D97706' }} />
               钉钉免登未启用（服务端未配置 DINGTALK_CLIENT_ID / SECRET），下面是按角色选择身份。
             </div>
             <div style={{ maxHeight: 360, overflow: 'auto', paddingRight: 4 }}>
               {[...byRole.entries()].map(([role, list]) => (
                 <div key={role} style={{ marginBottom: 14 }}>
-                  <div style={{ fontSize: 12, color: 'var(--wb-ink-3,#857E90)', marginBottom: 6 }}>
+                  <div style={{ fontSize: 12, color: 'var(--wb-ink-3,#8a8fa6)', marginBottom: 6 }}>
                     {ROLE_LABEL[role as Role] ?? role} · {list.length} 人
                   </div>
                   <Space size={6} wrap>

@@ -363,6 +363,14 @@
   border-radius: var(--wb-radius-pill);
   flex: 0 0 auto;
 }
+/* V11.23 方案S 定稿：色块标签变体 —— 软底深字、全 Pill 半径（案例/选题/悬赏卡） */
+.wb2-tag.tint {
+  border-radius: var(--wb-radius-pill);
+  padding: 2px 12px;
+  font-weight: 600;
+  background: var(--wb-surface-sunken);
+}
+.wb2-tag.tint .d { display: none; }
 /* 状态语义：只在这 4 档内取色，避免 v1 的 7 组配色 */
 .wb2-tag.ok { color: var(--wb-success); }
 .wb2-tag.ok .d { background: var(--wb-success); }
@@ -613,6 +621,23 @@
   height: 260px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.12);
+}
+/* V10.20 方案S：全站主形象 AI 宇航员驻守 Hero 右下（窄屏隐藏，不与按钮抢位；
+   right 预留 110px 避开右侧「怎么用 / 反馈 / 回顶」悬浮工具条） */
+.wb2-hero-ip {
+  position: absolute;
+  right: 110px;
+  bottom: -14px;
+  width: 128px;
+  height: 128px;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: center top;
+  box-shadow: 0 6px 18px rgba(42, 46, 69, 0.28);
+  pointer-events: none;
+}
+@media (max-width: 1020px) {
+  .wb2-hero-ip { display: none; }
 }
 .wb2-hero .row {
   position: relative;
@@ -1063,4 +1088,165 @@
   font-size: var(--wb-fs-label);
   color: var(--wb-ink-3);
   white-space: nowrap;
+}
+
+/* ================= V11.23 融合版：品牌渐变 × 方案S 居中栈 =================
+   骨架仍是方案S（四 IP 圆圈行 → 届次大标题 → 副题 → CTA → 能量条），
+   主色回归品牌橙 #FF6B35，Hero 底铺 V9 品牌三段渐变（橙→粉紫→紫），
+   文字/按钮/能量条反白 —— 与旧版渐变 Hero 同源，保证品牌记忆延续。 */
+.wb2-hero2 {
+  position: relative;
+  text-align: center;
+  padding: 30px 24px 26px;
+  margin-top: 4px;
+  border-radius: 24px;
+  background: var(--wb-gradient-brand);
+  overflow: hidden;
+}
+/* 右上柔光圆（旧版 Hero 同款语言） */
+.wb2-hero2::after {
+  content: '';
+  position: absolute;
+  inset: auto -50px -90px auto;
+  width: 280px;
+  height: 280px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  pointer-events: none;
+}
+.wb2-hero2 .ip-row {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+  margin-bottom: 20px;
+}
+.wb2-hero2 .ip {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: #fff;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 4px 14px rgba(42, 46, 69, 0.22);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.wb2-hero2 .ip img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+}
+.wb2-hero2 .ip.c-orange { border-color: #ffd9a3; }
+.wb2-hero2 .ip.c-purple { border-color: #e4ddff; }
+.wb2-hero2 .ip.c-teal   { border-color: #c8f0ea; }
+.wb2-hero2 .ip.c-pink   { border-color: #ffd3dc; }
+.wb2-hero2 h1 {
+  position: relative;
+  z-index: 1;
+  margin: 0 0 10px;
+  font-size: 40px;
+  line-height: 1.22;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #fff;
+  text-shadow: 0 2px 10px rgba(120, 40, 10, 0.18);
+}
+.wb2-hero2 h1 em {
+  font-style: normal;
+  margin-left: 8px;
+  padding: 2px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.22);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+.wb2-hero2 .desc {
+  position: relative;
+  z-index: 1;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.88);
+  margin-bottom: 20px;
+}
+.wb2-hero2 .cta {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.wb2-hero2 .btn-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff;
+  color: var(--wb-primary);
+  font-weight: 800;
+  font-size: 15px;
+  padding: 11px 30px;
+  border-radius: 999px;
+  box-shadow: 0 4px 14px rgba(120, 40, 10, 0.25);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.wb2-hero2 .btn-main:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(120, 40, 10, 0.32);
+  color: var(--wb-primary-hover);
+}
+.wb2-hero2 .btn-link {
+  color: rgba(255, 255, 255, 0.92);
+  font-weight: 600;
+  font-size: 14px;
+}
+.wb2-hero2 .btn-link:hover { color: #fff; }
+.wb2-hero2 .energy {
+  position: relative;
+  z-index: 1;
+  max-width: 560px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  padding: 10px 20px;
+  backdrop-filter: blur(2px);
+}
+.wb2-hero2 .energy .lab {
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+}
+.wb2-hero2 .energy .bar {
+  flex: 1;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.28);
+  overflow: hidden;
+}
+.wb2-hero2 .energy .bar i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: #fff;
+  transition: width 0.4s ease;
+}
+.wb2-hero2 .energy .rt {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.85);
+  white-space: nowrap;
+}
+@media (max-width: 900px) {
+  .wb2-hero2 { padding: 22px 16px 22px; border-radius: 18px; }
+  .wb2-hero2 h1 { font-size: 26px; }
+  .wb2-hero2 .ip { width: 46px; height: 46px; }
+  .wb2-hero2 .ip-row { gap: 12px; }
+}
 }

@@ -6,16 +6,18 @@
  *   ②仅换视觉外壳：Hero 品牌带、指标卡令牌化、区块标题统一、卡片零投影
  *   ③AnnounceTicker / TeamBoard 为 v1 既有组件，直接复用不复制
  */
-import { Button, Empty, Progress } from 'antd';
+import { Button, Empty } from 'antd';
 import { useNoteVisible } from '@/auth/annotation';
 import {
   ArrowRightOutlined, CheckCircleOutlined, ClockCircleOutlined,
-  FireOutlined, RocketOutlined, TeamOutlined, TrophyOutlined,
+  FireOutlined, TeamOutlined, TrophyOutlined,
 } from '@ant-design/icons';
 import { Link } from 'react-router-dom';
 import { useStore, useStats } from '@/store/store';
 import TeamBoard from '@/components/TeamBoard';
 import SceneBoard from '@/components/SceneBoard';
+/* V10.20 方案S：IP 值守 · 功能板块（四板块 = 作业/案例/社区/悬赏，资源库→悬赏榜换防） */
+import DutyBoard from '@/components/DutyBoard';
 import { buildSceneBoard } from '@/service/sceneBoard';
 import AnnounceTicker, { type TickerItem } from '@/components/AnnounceTicker';
 import { DEMO_TODAY } from '@/mock/seedBiz';
@@ -180,46 +182,49 @@ export default function HomeV2() {
     '业务增长': 'var(--wb-track-2)',
     '组织发展': 'var(--wb-track-3)',
   };
+  /** V11.23：赛道 → 色块标签令牌序号（soft/ink 配对） */
+  const TRACK_IDX: Record<string, number> = { '效率提升': 1, '客户赋能': 1, '业务增长': 2, '团队提效': 2, '组织发展': 3, '销售提效': 3 };
+
+  /* V11.23 方案S：届次名按「·」切段 —— 前段常规、尾段高亮胶囊（截图定稿样式） */
+  const dotIdx = campaign.name.lastIndexOf('·');
+  const titleMain = dotIdx > 0 ? campaign.name.slice(0, dotIdx) : campaign.name;
+  const titleHi = dotIdx > 0 ? campaign.name.slice(dotIdx + 1).trim() : '';
 
   return (
     <div>
-      {/* Hero */}
-      <div className="wb2-hero">
-        <div className="row">
-          <div style={{ flex: '1 1 420px', minWidth: 0 }}>
-            <span className="pill"><RocketOutlined /> {campaign.status}</span>
-            {curStage && <span className="sub" style={{ marginLeft: 10 }}>{stageLabel(curStage.stage)}阶段</span>}
-            <h1>{campaign.name}</h1>
-            <div className="desc">
-              {campaign.start_date} ~ {campaign.end_date}
-              {deadline.date ? ` ｜ 作业提报截止 ${deadline.date}` : ''} ｜ 做出属于你的一件作品，让别人照着就能用
-            </div>
-            <div className="pg">
-              <div className="lab">
-                <span>我的进度 · 提报 {mySubmitDone}/1</span>
-                <span style={{ fontWeight: 600 }}>
-                  {daysLeft === null ? '' : `距截止 ${Math.max(0, daysLeft)} 天`}
-                </span>
-              </div>
-              <Progress
-                percent={Math.min(100, mySubmitDone * 100)}
-                strokeColor="#fff"
-                trailColor="rgba(255,255,255,.32)"
-                showInfo={false}
-                size={{ height: 8 }}
-                style={{ marginBottom: 0 }}
-              />
-            </div>
-          </div>
-          <div className="acts">
-            <Link className="act" to="/work">去提报 <ArrowRightOutlined /></Link>
-            <Link className="act ghost" to="/cases">看案例</Link>
-          </div>
+      {/* V11.23 方案S 定稿：首页 Hero 改居中栈 —— 四 IP 圆圈行（AI 宇航员退居 Logo，值守四域）
+          → 届次大标题（尾段高亮胶囊）→ 周期副题 → 去提报 CTA → 我的能量条 */}
+      <section className="wb2-hero2">
+        <div className="ip-row" aria-hidden>
+          <span className="ip c-orange"><img src="/ip/astronaut.png" alt="冲线宇航员" draggable={false} /></span>
+          <span className="ip c-purple"><img src="/ip/zhangsir.png" alt="帐Sir" draggable={false} /></span>
+          <span className="ip c-teal"><img src="/ip/yunxiaoshui.png" alt="云小税" draggable={false} /></span>
+          <span className="ip c-pink"><img src="/ip/xiaor.png" alt="小R" draggable={false} /></span>
         </div>
-      </div>
+        <h1>
+          {titleMain}
+          {titleHi && <em>{titleHi}</em>}
+        </h1>
+        <div className="desc">
+          让更多人看见运用 · 当前周期 {campaign.start_date} → {campaign.end_date}
+          {curStage ? ` · ${stageLabel(curStage.stage)}` : ''} · 全员可参与
+        </div>
+        <div className="cta">
+          <Link className="btn-main" to="/work">去提报 <ArrowRightOutlined /></Link>
+          <Link className="btn-link" to="/cases">看实例</Link>
+        </div>
+        <div className="energy">
+          <span className="lab">🚀 我的能量 · {myPoints} 分</span>
+          <div className="bar"><i style={{ width: `${Math.min(100, Math.max(4, myPoints))}%` }} /></div>
+          <span className="rt">{daysLeft === null ? '周期进行中' : `距截止 ${Math.max(0, daysLeft)} 天`}</span>
+        </div>
+      </section>
 
       {/* CR-13：公告条置于 Hero 之下、待办之上；无公告时整条不渲染 */}
       {tickerOn && tickerItems.length > 0 && <AnnounceTicker items={tickerItems} />}
+
+      {/* V11.23 方案S（用户 11-23 拍板）：IP 值守紧随公告条、在我的待办之前 */}
+      <DutyBoard />
 
       {/* 我的待办 */}
       <section className="wb2-card">
@@ -324,6 +329,10 @@ export default function HomeV2() {
                 <div className="wb2-ccard eq" style={{ borderLeft: `3px solid ${TRACK_COLOR[c.track] ?? 'var(--wb-track-1)'}` }}>
                   <div className="ct">{c.title}</div>
                   <div className="cd" style={{ marginTop: 8 }}>{c.author_name} · {c.duration}</div>
+                  {/* V11.23 方案S 定稿：色块标签与案例库同语言 */}
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                    <span className="wb2-tag tint" style={{ background: `var(--wb-track-${TRACK_IDX[c.track] ?? 1}-soft)`, color: `var(--wb-track-${TRACK_IDX[c.track] ?? 1}-ink)` }}>{c.track}</span>
+                  </div>
                   <div className="cf">
                     <span className="grow"><FireOutlined /> {c.view_count} · 👍 {c.like_count}</span>
                     {skillN > 0 && <span style={{ color: 'var(--wb-primary-ink)', fontWeight: 600 }}>🧩 {skillN}</span>}
